@@ -2,6 +2,7 @@
 // It runs on a Raspberry Pi Zero, in the same configuration as SeedSigner.
 package main
 
+
 import (
 	"fmt"
 	"log"
@@ -12,6 +13,7 @@ import (
 )
 
 func main() {
+	fmt.Println("Application started...")
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "controller: %v\n", err)
 		os.Exit(2)
@@ -20,13 +22,21 @@ func main() {
 
 func run() error {
 	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
+	fmt.Println("Inside run() function...")  // New debug point
 	version := os.Getenv("sh_version")
+	fmt.Println("Version detected:", version)
+
 	p, err := Init()
 	if err != nil {
 		return err
 	}
+
+	fmt.Println("Initialization successful, running GUI...")
+
 	for range gui.Run(p, version) {
+		fmt.Println("GUI running...")
 	}
+	fmt.Println("Exiting run()")
 	return nil
 }
 
