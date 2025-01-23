@@ -3,6 +3,7 @@
 package main
 
 
+
 import (
 	"fmt"
 	"log"
@@ -26,8 +27,10 @@ func run() error {
 	version := os.Getenv("sh_version")
 	fmt.Println("Version detected:", version)
 
+	fmt.Println("Before GUI initialization...")
 	p, err := Init()
 	if err != nil {
+		log.Fatalf("Initialization failed: %v", err)
 		return err
 	}
 
