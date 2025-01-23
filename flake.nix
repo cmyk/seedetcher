@@ -1,5 +1,5 @@
 {
-  description = "Builds Seedhammer disk image for Raspberry Pi";
+  description = "Builds seedetcher disk image for Raspberry Pi";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/23.11";
@@ -68,7 +68,7 @@
 
               # For reproducible builds.
               KBUILD_BUILD_TIMESTAMP = timestamp;
-              KBUILD_BUILD_USER = "seedhammer";
+              KBUILD_BUILD_USER = "seedetcher";
               KBUILD_BUILD_HOST = "seedetcher.com";
 
               enableParallelBuilding = true;
@@ -291,7 +291,7 @@
                   self.packages.${system}.kernel;
 
               initramfs = self.lib.${system}.mkinitramfs debug;
-              img-name = if debug then "seedhammer-debug.img" else "seedhammer.img";
+              img-name = if debug then "seedetcher-debug.img" else "seedetcher.img";
               cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 rdinit=/controller oops=panic quiet";
               configtxt = pkgs.writeText "config.txt" ''
                 initramfs initramfs.cpio.gz followkernel
@@ -339,7 +339,7 @@
                 # Create boot partition.
                 START=$(${pkgs.util-linux}/bin/fdisk -l -o Start disk.img|tail -n 1)
                 SECTORS=$(${pkgs.util-linux}/bin/fdisk -l -o Sectors disk.img|tail -n 1)
-                ${pkgs.dosfstools}/bin/mkfs.vfat --invariant -i deadbeef -n seedhammer disk.img --offset $START $(sectorsToBlocks $SECTORS)
+                ${pkgs.dosfstools}/bin/mkfs.vfat --invariant -i deadbeef -n seedetcher disk.img --offset $START $(sectorsToBlocks $SECTORS)
                 OFFSET=$(sectorsToBytes $START)
 
                 # Copy boot files.
@@ -570,7 +570,7 @@
             initramfs-debug = self.lib.${system}.mkinitramfs true;
             image = self.lib.${system}.mkimage false;
             image-debug = self.lib.${system}.mkimage true;
-            # reload the controller binary to a running seedhammer debug image.
+            # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = localpkgs; in pkgs.writeShellScriptBin "reload" ''
               set -e
               USBDEV=$1
@@ -613,12 +613,12 @@
                   exit 1
               fi
 
-              flake="github:seedhammer/seedhammer/$VERSION"
+              flake="github:seedetcher/seedetcher/$VERSION"
               nix build "$flake"
               nix run "$flake"#stamp-release $VERSION
 
               if [[ -v SSH_SIGNING_KEY ]]; then
-                ssh-keygen -Y sign -f "$SSH_SIGNING_KEY" -n seedhammer.img seedhammer-"$VERSION".img
+                ssh-keygen -Y sign -f "$SSH_SIGNING_KEY" -n seedetcher.img seedetcher-"$VERSION".img
               fi
             '';
             stamp-release = let pkgs = localpkgs; in pkgs.writeShellScriptBin "stamp-release" ''
@@ -634,8 +634,8 @@
               TMPDIR="$(mktemp -d)"
               trap 'rm -rf -- "$TMPDIR"' EXIT
 
-              src="result/seedhammer.img"
-              dst="seedhammer-$VERSION.img"
+              src="result/seedetcher.img"
+              dst="seedetcher-$VERSION.img"
 
               # Append the version string to the kernel cmdline, to be read by the controller binary.
               START=$(${pkgs.util-linux}/bin/fdisk -l -o Start $src|tail -n 1)
