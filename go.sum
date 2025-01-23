@@ -163,5 +163,3 @@ periph.io/x/conn/v3 v3.7.0 h1:f1EXLn4pkf7AEWwkol2gilCNZ0ElY+bxS4WE2PQXfrA=
 periph.io/x/conn/v3 v3.7.0/go.mod h1:ypY7UVxgDbP9PJGwFSVelRRagxyXYfttVh7hJZUHEhg=
 periph.io/x/host/v3 v3.8.2 h1:ayKUDzgUCN0g8+/xM9GTkWaOBhSLVcVHGTfjAOi8OsQ=
 periph.io/x/host/v3 v3.8.2/go.mod h1:yFL76AesNHR68PboofSWYaQTKmvPXsQH2Apvp/ls/K4=
-seedetcher.com v1.3.1 h1:Yhc0SNygIyoMwsM2a27H6y+CBjTAziCIz7/8XIhtWQM=
-seedetcher.com v1.3.1/go.mod h1:psfZjK64QU9uG546eW9fS4qoF33QgVZQPnjx4SMbMbI=

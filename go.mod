@@ -17,7 +17,6 @@ require (
 	golang.org/x/sys v0.6.0
 	periph.io/x/conn/v3 v3.7.0
 	periph.io/x/host/v3 v3.8.2
-	seedetcher.com v1.3.1
 )
 
 require (
