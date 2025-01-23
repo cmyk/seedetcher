@@ -23,23 +23,15 @@ func main() {
 
 func run() error {
 	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
-	fmt.Println("Inside run() function...")  // New debug point
 	version := os.Getenv("sh_version")
-	fmt.Println("Version detected:", version)
-
-	fmt.Println("Before GUI initialization...")
 	p, err := Init()
 	if err != nil {
 		log.Fatalf("Initialization failed: %v", err)
 		return err
 	}
 
-	fmt.Println("Initialization successful, running GUI...")
-
 	for range gui.Run(p, version) {
-		fmt.Println("GUI running...")
 	}
-	fmt.Println("Exiting run()")
 	return nil
 }
 
