@@ -6,7 +6,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
-	"seedhammer.com/bc/urtypes"
+	"seedetcher.com/bc/urtypes"
 )
 
 func TestOutputDescriptors(t *testing.T) {

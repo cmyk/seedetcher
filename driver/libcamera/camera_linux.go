@@ -20,7 +20,7 @@ import (
 	"runtime/cgo"
 	"syscall"
 
-	"seedhammer.com/gui"
+	"seedetcher.com/gui"
 )
 
 type Camera struct {

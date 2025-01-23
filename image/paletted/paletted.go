@@ -6,7 +6,7 @@ import (
 	"image"
 	"image/color"
 
-	"seedhammer.com/image/rgb565"
+	"seedetcher.com/image/rgb565"
 )
 
 // Image is like [image.Paletted] with a more efficient

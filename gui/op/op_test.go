@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"seedhammer.com/image/rgb565"
+	"seedetcher.com/image/rgb565"
 )
 
 func TestAllocs(t *testing.T) {

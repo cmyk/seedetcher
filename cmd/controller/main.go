@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"seedhammer.com/gui"
+	"seedetcher.com/gui"
 )
 
 func main() {

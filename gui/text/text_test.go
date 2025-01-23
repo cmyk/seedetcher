@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"golang.org/x/image/math/fixed"
-	"seedhammer.com/font/poppins"
+	"seedetcher.com/font/poppins"
 )
 
 func BenchmarkLayout(b *testing.B) {

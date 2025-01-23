@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"seedhammer.com/bip39"
+	"seedetcher.com/bip39"
 )
 
 func Parse(qr []byte) (bip39.Mnemonic, bool) {

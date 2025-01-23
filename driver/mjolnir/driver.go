@@ -10,7 +10,7 @@ import (
 	"image"
 	"io"
 
-	"seedhammer.com/engrave"
+	"seedetcher.com/engrave"
 )
 
 type program struct {

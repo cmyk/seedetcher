@@ -69,7 +69,7 @@
               # For reproducible builds.
               KBUILD_BUILD_TIMESTAMP = timestamp;
               KBUILD_BUILD_USER = "seedhammer";
-              KBUILD_BUILD_HOST = "seedhammer.com";
+              KBUILD_BUILD_HOST = "seedetcher.com";
 
               enableParallelBuilding = true;
 

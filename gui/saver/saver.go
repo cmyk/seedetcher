@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"golang.org/x/image/math/fixed"
-	"seedhammer.com/gui/assets"
-	"seedhammer.com/image/rgb565"
+	"seedetcher.com/gui/assets"
+	"seedetcher.com/image/rgb565"
 )
 
 type State struct {

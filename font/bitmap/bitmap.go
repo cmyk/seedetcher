@@ -7,7 +7,7 @@ import (
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
-	"seedhammer.com/image/alpha4"
+	"seedetcher.com/image/alpha4"
 )
 
 type Face struct {

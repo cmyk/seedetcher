@@ -18,7 +18,7 @@ import (
 	"strings"
 	"unicode"
 
-	"seedhammer.com/font/vector"
+	"seedetcher.com/font/vector"
 )
 
 var packageName = flag.String("package", "main", "package name")
@@ -65,7 +65,7 @@ func generate(fname string, conv *Face) error {
 	fmt.Fprintf(&output, "import (\n")
 	fmt.Fprintf(&output, "    _ \"embed\"\n")
 	fmt.Fprintf(&output, "    \"unsafe\"\n")
-	fmt.Fprintf(&output, "    \"seedhammer.com/font/vector\"\n")
+	fmt.Fprintf(&output, "    \"seedetcher.com/font/vector\"\n")
 	fmt.Fprintf(&output, ")\n\n")
 	fmt.Fprintf(&output, "var Font = vector.NewFace(unsafe.Slice(unsafe.StringData(%sData), len(%[1]sData)))\n\n", name)
 	fmt.Fprintf(&output, "//go:embed %s.bin\n", name)

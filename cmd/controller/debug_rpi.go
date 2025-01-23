@@ -17,7 +17,7 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"seedhammer.com/driver/mjolnir"
+	"seedetcher.com/driver/mjolnir"
 )
 
 const dmesg = false

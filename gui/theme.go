@@ -3,9 +3,9 @@ package gui
 import (
 	"image/color"
 
-	"seedhammer.com/font/comfortaa"
-	"seedhammer.com/font/poppins"
-	"seedhammer.com/gui/text"
+	"seedetcher.com/font/comfortaa"
+	"seedetcher.com/font/poppins"
+	"seedetcher.com/gui/text"
 )
 
 var theme struct {

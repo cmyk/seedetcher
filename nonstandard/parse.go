@@ -16,7 +16,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
-	"seedhammer.com/bc/urtypes"
+	"seedetcher.com/bc/urtypes"
 )
 
 // ElectrumSeed reports whether the seed phrase is a valid Electrum

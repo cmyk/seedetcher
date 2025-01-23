@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"golang.org/x/image/draw"
-	"seedhammer.com/font/bitmap"
-	"seedhammer.com/image/rgb565"
+	"seedetcher.com/font/bitmap"
+	"seedetcher.com/image/rgb565"
 )
 
 type Ops struct {

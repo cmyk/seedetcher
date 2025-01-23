@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"seedhammer.com/bip39"
+	"seedetcher.com/bip39"
 )
 
 var tests = []struct {

@@ -8,7 +8,7 @@ import (
 	"runtime/pprof"
 	"strings"
 
-	"seedhammer.com/gui"
+	"seedetcher.com/gui"
 )
 
 func init() {

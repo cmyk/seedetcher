@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"seedhammer.com/bc/bytewords"
-	"seedhammer.com/bc/fountain"
+	"seedetcher.com/bc/bytewords"
+	"seedetcher.com/bc/fountain"
 )
 
 func Encode(_type string, message []byte, seqNum, seqLen int) string {

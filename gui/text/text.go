@@ -8,7 +8,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/image/math/fixed"
-	"seedhammer.com/font/bitmap"
+	"seedetcher.com/font/bitmap"
 )
 
 type Glyph struct {

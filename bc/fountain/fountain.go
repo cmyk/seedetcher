@@ -16,7 +16,7 @@ import (
 	"strings"
 
 	"github.com/fxamacker/cbor/v2"
-	"seedhammer.com/bc/xoshiro256"
+	"seedetcher.com/bc/xoshiro256"
 )
 
 type Decoder struct {

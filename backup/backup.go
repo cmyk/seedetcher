@@ -11,13 +11,13 @@ import (
 	"strings"
 
 	"github.com/kortschak/qr"
-	"seedhammer.com/bc/fountain"
-	"seedhammer.com/bc/ur"
-	"seedhammer.com/bc/urtypes"
-	"seedhammer.com/bip39"
-	"seedhammer.com/engrave"
-	"seedhammer.com/font/vector"
-	"seedhammer.com/seedqr"
+	"seedetcher.com/bc/fountain"
+	"seedetcher.com/bc/ur"
+	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/bip39"
+	"seedetcher.com/engrave"
+	"seedetcher.com/font/vector"
+	"seedetcher.com/seedqr"
 )
 
 type PlateSize int

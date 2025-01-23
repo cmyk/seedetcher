@@ -3,7 +3,7 @@ package address
 import (
 	"testing"
 
-	"seedhammer.com/nonstandard"
+	"seedetcher.com/nonstandard"
 )
 
 func TestAddresses(t *testing.T) {

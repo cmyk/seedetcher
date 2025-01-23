@@ -5,8 +5,8 @@ import (
 	_ "embed"
 	"unsafe"
 
-	"seedhammer.com/image/ninepatch"
-	"seedhammer.com/image/paletted"
+	"seedetcher.com/image/ninepatch"
+	"seedetcher.com/image/paletted"
 )
 
 var (

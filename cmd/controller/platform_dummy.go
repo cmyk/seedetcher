@@ -8,9 +8,9 @@ import (
 	"image/draw"
 	"time"
 
-	"seedhammer.com/backup"
-	"seedhammer.com/engrave"
-	"seedhammer.com/gui"
+	"seedetcher.com/backup"
+	"seedetcher.com/engrave"
+	"seedetcher.com/gui"
 )
 
 type Platform struct{}

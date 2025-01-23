@@ -17,8 +17,8 @@ import (
 	"strings"
 	"unicode"
 
-	simage "seedhammer.com/image"
-	"seedhammer.com/image/rgb565"
+	simage "seedetcher.com/image"
+	"seedetcher.com/image/rgb565"
 )
 
 func main() {
@@ -34,8 +34,8 @@ func main() {
 	fmt.Fprintf(out, "import (\n")
 	fmt.Fprintf(out, "_ \"embed\"\n")
 	fmt.Fprintf(out, "\"unsafe\"\n\n")
-	fmt.Fprintf(out, "\"seedhammer.com/image/ninepatch\"\n")
-	fmt.Fprintf(out, "\"seedhammer.com/image/paletted\"\n\n")
+	fmt.Fprintf(out, "\"seedetcher.com/image/ninepatch\"\n")
+	fmt.Fprintf(out, "\"seedetcher.com/image/paletted\"\n\n")
 	fmt.Fprintf(out, ")\n\n")
 	fmt.Fprintf(out, "var (\n")
 	for _, p := range pngs {

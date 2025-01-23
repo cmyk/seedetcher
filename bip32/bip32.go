@@ -4,7 +4,7 @@ package bip32
 
 import (
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
-	"seedhammer.com/bc/urtypes"
+	"seedetcher.com/bc/urtypes"
 )
 
 func Derive(mk *hdkeychain.ExtendedKey, path urtypes.Path) (mfp uint32, xpub *hdkeychain.ExtendedKey, err error) {

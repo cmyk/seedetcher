@@ -9,7 +9,7 @@ import (
 	"sort"
 	"testing"
 
-	"seedhammer.com/bc/xoshiro256"
+	"seedetcher.com/bc/xoshiro256"
 )
 
 func TestDecoding(t *testing.T) {

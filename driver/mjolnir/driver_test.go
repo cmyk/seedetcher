@@ -4,7 +4,7 @@ import (
 	"image"
 	"testing"
 
-	"seedhammer.com/engrave"
+	"seedetcher.com/engrave"
 )
 
 func TestEndToEnd(t *testing.T) {

@@ -23,9 +23,9 @@ import (
 	"golang.org/x/image/font/opentype"
 	"golang.org/x/image/math/fixed"
 
-	"seedhammer.com/font/bitmap"
-	simage "seedhammer.com/image"
-	"seedhammer.com/image/alpha4"
+	"seedetcher.com/font/bitmap"
+	simage "seedetcher.com/image"
+	"seedetcher.com/image/alpha4"
 )
 
 var (
@@ -80,7 +80,7 @@ func generate(fname string, conv *Face) error {
 	fmt.Fprintf(&output, "import (\n")
 	fmt.Fprintf(&output, "    _ \"embed\"\n")
 	fmt.Fprintf(&output, "    \"unsafe\"\n")
-	fmt.Fprintf(&output, "    \"seedhammer.com/font/bitmap\"\n")
+	fmt.Fprintf(&output, "    \"seedetcher.com/font/bitmap\"\n")
 	fmt.Fprintf(&output, ")\n\n")
 	fmt.Fprintf(&output, "var %[1]s%[2]d = bitmap.NewFace(unsafe.Slice(unsafe.StringData(data%[3]s%[2]d), len(data%[3]s%[2]d)))\n", name, *ppem, outname)
 	fmt.Fprintf(&output, "//go:embed %s\n", datafile)

@@ -17,14 +17,14 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"seedhammer.com/backup"
-	"seedhammer.com/driver/drm"
-	"seedhammer.com/driver/libcamera"
-	"seedhammer.com/driver/mjolnir"
-	"seedhammer.com/driver/wshat"
-	"seedhammer.com/engrave"
-	"seedhammer.com/gui"
-	"seedhammer.com/zbar"
+	"seedetcher.com/backup"
+	"seedetcher.com/driver/drm"
+	"seedetcher.com/driver/libcamera"
+	"seedetcher.com/driver/mjolnir"
+	"seedetcher.com/driver/wshat"
+	"seedetcher.com/engrave"
+	"seedetcher.com/gui"
+	"seedetcher.com/zbar"
 )
 
 // Debug hooks.

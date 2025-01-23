@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/kortschak/qr"
-	"seedhammer.com/bip39"
-	"seedhammer.com/font/constant"
+	"seedetcher.com/bip39"
+	"seedetcher.com/font/constant"
 )
 
 func TestConstantQR(t *testing.T) {

@@ -14,7 +14,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	"seedhammer.com/bc/urtypes"
+	"seedetcher.com/bc/urtypes"
 )
 
 func Change(desc urtypes.OutputDescriptor, index uint32) (string, error) {

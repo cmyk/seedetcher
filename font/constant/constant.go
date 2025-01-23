@@ -3,7 +3,7 @@ package constant
 
 import (
 	_ "embed"
-	"seedhammer.com/font/vector"
+	"seedetcher.com/font/vector"
 	"unsafe"
 )
 

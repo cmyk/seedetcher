@@ -5,8 +5,8 @@ import (
 	"image/color"
 	"math"
 
-	"seedhammer.com/gui/op"
-	"seedhammer.com/gui/text"
+	"seedetcher.com/gui/op"
+	"seedetcher.com/gui/text"
 )
 
 func Labelf(ops op.Ctx, l text.Style, col color.NRGBA, txt string, args ...any) image.Point {

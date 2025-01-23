@@ -6,7 +6,7 @@ import (
 	"image"
 	"image/color"
 
-	"seedhammer.com/gui/op"
+	"seedetcher.com/gui/op"
 )
 
 type Template struct {

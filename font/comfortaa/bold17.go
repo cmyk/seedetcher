@@ -4,7 +4,7 @@ package comfortaa
 
 import (
 	_ "embed"
-	"seedhammer.com/font/bitmap"
+	"seedetcher.com/font/bitmap"
 	"unsafe"
 )
 

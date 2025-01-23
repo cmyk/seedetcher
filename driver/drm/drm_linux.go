@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"seedhammer.com/image/rgb565"
+	"seedetcher.com/image/rgb565"
 )
 
 /*

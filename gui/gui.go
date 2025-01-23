@@ -15,22 +15,22 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
-	"seedhammer.com/address"
-	"seedhammer.com/backup"
-	"seedhammer.com/bc/ur"
-	"seedhammer.com/bc/urtypes"
-	"seedhammer.com/bip32"
-	"seedhammer.com/bip39"
-	"seedhammer.com/engrave"
-	"seedhammer.com/font/constant"
-	"seedhammer.com/gui/assets"
-	"seedhammer.com/gui/layout"
-	"seedhammer.com/gui/op"
-	"seedhammer.com/gui/saver"
-	"seedhammer.com/gui/text"
-	"seedhammer.com/gui/widget"
-	"seedhammer.com/nonstandard"
-	"seedhammer.com/seedqr"
+	"seedetcher.com/address"
+	"seedetcher.com/backup"
+	"seedetcher.com/bc/ur"
+	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/bip32"
+	"seedetcher.com/bip39"
+	"seedetcher.com/engrave"
+	"seedetcher.com/font/constant"
+	"seedetcher.com/gui/assets"
+	"seedetcher.com/gui/layout"
+	"seedetcher.com/gui/op"
+	"seedetcher.com/gui/saver"
+	"seedetcher.com/gui/text"
+	"seedetcher.com/gui/widget"
+	"seedetcher.com/nonstandard"
+	"seedetcher.com/seedqr"
 )
 
 const nbuttons = 8
@@ -928,41 +928,41 @@ var (
 	EngraveFirstSideA = []Instruction{
 		{
 			Body: "Make sure the fingerprint above represents the intended share.",
-			Lead: "seedhammer.com/tip#1",
+			Lead: "seedetcher.com/tip#1",
 		},
 		{
 			Body: "Turn off the engraver and disconnect it from this device.",
-			Lead: "seedhammer.com/tip#2",
+			Lead: "seedetcher.com/tip#2",
 		},
 		{
 			Body: "Manually move the hammerhead to the far upper left position.",
-			Lead: "seedhammer.com/tip#3",
+			Lead: "seedetcher.com/tip#3",
 		},
 		{
 			Body:  "Place a {{.Name}} on the machine.",
 			Image: assets.Sh02,
-			Lead:  "seedhammer.com/tip#4",
+			Lead:  "seedetcher.com/tip#4",
 		},
 		{
 			Body: "Tighten the nuts firmly.",
-			Lead: "seedhammer.com/tip#4",
+			Lead: "seedetcher.com/tip#4",
 		},
 		{
 			Body: "Loosen the hammerhead finger screw. Adjust needle distance to ~1.5 mm above the plate.",
-			Lead: "seedhammer.com/tip#5",
+			Lead: "seedetcher.com/tip#5",
 		},
 		{
 			Body: "Tighten the hammerhead finger screw and make sure the depth selector is set to \"Strong\".",
-			Lead: "seedhammer.com/tip#6",
+			Lead: "seedetcher.com/tip#6",
 		},
 		{
 			Body: "Turn on the engraving machine and connect this device via the middle port.",
-			Lead: "seedhammer.com/tip#7",
+			Lead: "seedetcher.com/tip#7",
 		},
 		{
 			Body: "Hold button to start the engraving process. The process is loud, use hearing protection.",
 			Type: ConnectInstruction,
-			Lead: "seedhammer.com/tip#8",
+			Lead: "seedetcher.com/tip#8",
 		},
 		{
 			Lead: "Engraving plate",
@@ -974,21 +974,21 @@ var (
 	EngraveSideA = []Instruction{
 		{
 			Body: "Make sure the fingerprint above represents the intended share.",
-			Lead: "seedhammer.com/tip#1",
+			Lead: "seedetcher.com/tip#1",
 		},
 		{
 			Body:  "Place a {{.Name}} on the machine.",
 			Image: assets.Sh02,
-			Lead:  "seedhammer.com/tip#4",
+			Lead:  "seedetcher.com/tip#4",
 		},
 		{
 			Body: "Tighten the nuts firmly.",
-			Lead: "seedhammer.com/tip#4",
+			Lead: "seedetcher.com/tip#4",
 		},
 		{
 			Body: "Hold button to start the engraving process. The process is loud, use hearing protection.",
 			Type: ConnectInstruction,
-			Lead: "seedhammer.com/tip#8",
+			Lead: "seedetcher.com/tip#8",
 		},
 		{
 			Lead: "Engraving plate",

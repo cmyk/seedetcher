@@ -1,7 +1,7 @@
 # SeedHammer controller program
 
 This repository contains the source code to run the controller program for the
-[SeedHammer](https://seedhammer.com) engraving machine. It runs on the same hardware
+[SeedHammer](https://seedetcher.com) engraving machine. It runs on the same hardware
 as the [SeedSigner](https://seedsigner.com/hardware): Raspberry Pi Zero or Zero W, a
 WaveShare 1.3 inch 240x240 LCD hat and a Pi Zero compatible camera with a OV5647
 sensor.

@@ -15,14 +15,14 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
-	"seedhammer.com/backup"
-	"seedhammer.com/bc/urtypes"
-	"seedhammer.com/bip32"
-	"seedhammer.com/bip39"
-	"seedhammer.com/driver/mjolnir"
-	"seedhammer.com/engrave"
-	"seedhammer.com/font/constant"
-	"seedhammer.com/nonstandard"
+	"seedetcher.com/backup"
+	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/bip32"
+	"seedetcher.com/bip39"
+	"seedetcher.com/driver/mjolnir"
+	"seedetcher.com/engrave"
+	"seedetcher.com/font/constant"
+	"seedetcher.com/nonstandard"
 )
 
 var (

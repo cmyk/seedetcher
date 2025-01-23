@@ -9,7 +9,7 @@ import (
 	"periph.io/x/conn/v3/gpio"
 	"periph.io/x/host/v3"
 	"periph.io/x/host/v3/bcm283x"
-	"seedhammer.com/gui"
+	"seedetcher.com/gui"
 )
 
 func Open(ch chan<- gui.Event) error {

@@ -20,7 +20,7 @@ import (
 	"github.com/srwiley/rasterx"
 	"golang.org/x/image/math/f32"
 	"golang.org/x/image/math/fixed"
-	"seedhammer.com/font/vector"
+	"seedetcher.com/font/vector"
 )
 
 // Params decribe the physical characteristics of an
