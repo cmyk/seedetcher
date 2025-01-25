@@ -329,7 +329,6 @@
                 dtoverlay=dwc2
                 dtoverlay=disable-bt
                 dtoverlay=disable-wifi
-                enable_uart=1
               '';
             in
             pkgs.stdenvNoCC.mkDerivation {
