@@ -87,6 +87,7 @@
                 openssl
                 bc
                 perl
+                getty
               ];
 
               patches = [
@@ -297,11 +298,11 @@
               systemConfig = {
                 services.getty = {
                   enable = true;
-                  instance = "ttyGS0";
+                  instance = "serial0";
                 };
 
                 # Alternatively, explicitly define the systemd service
-                systemd.services."serial-getty@ttyGS0" = {
+                systemd.services."serial-getty@serial0" = {
                   enable = true;
                   wantedBy = [ "multi-user.target" ];
                 };
@@ -309,7 +310,8 @@
               
               # cmyk: original cmdlinetxt
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200n8 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
+              # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
               configtxt = pkgs.writeText "config.txt" ''
                 initramfs initramfs.cpio.gz followkernel
                 disable_splash=1
@@ -378,6 +380,14 @@
               '';
 
               installPhase = ''
+
+                mkdir -p $out/etc/systemd/system/getty@tty1.service.d
+                cat <<EOF > $out/etc/systemd/system/getty@tty1.service.d/override.conf
+                [Service]
+                ExecStart=
+                ExecStart=-/sbin/agetty --noclear %I $TERM
+                EOF
+
                 mkdir -p $out
                 cp disk.img $out/${img-name}
               '';
