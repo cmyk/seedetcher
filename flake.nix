@@ -324,13 +324,13 @@
                 dtparam=reset-gpio=27
                 dtparam=dc-gpio=25
                 dtparam=backlight-gpio=24
+                dtparam=write-only
                 dtparam=speed=40000000
                 dtoverlay=dwc2
                 dtoverlay=disable-bt
                 dtoverlay=disable-wifi
                 enable_uart=1
               '';
-              #dtparam=write-only
             in
             pkgs.stdenvNoCC.mkDerivation {
               name = "disk-image";
