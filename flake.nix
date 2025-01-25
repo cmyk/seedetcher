@@ -384,7 +384,7 @@
                 cat <<EOF > $out/etc/systemd/system/getty@tty1.service.d/override.conf
                 [Service]
                 ExecStart=
-                ExecStart=-${pkgs.util-linux}/sbin/agetty --noclear %I $TERM
+                ExecStart=-$(command -v agetty) --noclear %I $TERM
                 EOF
 
                 mkdir -p $out
