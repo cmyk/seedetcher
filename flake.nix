@@ -5,6 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/23.11";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     utils.url = "github:numtide/flake-utils";
+    u-root-cmds.url = "github:u-root/u-root";
   };
 
   outputs = { self, nixpkgs, nixpkgs-unstable, utils }:
@@ -87,7 +88,7 @@
                 openssl
                 bc
                 perl
-                getty
+                u-root-cmds.getty
               ];
 
               patches = [
@@ -295,18 +296,18 @@
               img-name = if debug then "seedetcher-debug.img" else "seedetcher.img";
               
               # cmyk: added getty
-              systemConfig = {
-                services.getty = {
-                  enable = true;
-                  instance = "serial0";
-                };
+              # systemConfig = {
+              #   services.getty = {
+              #     enable = true;
+              #     instance = "serial0";
+              #   };
 
-                # Alternatively, explicitly define the systemd service
-                systemd.services."serial-getty@serial0" = {
-                  enable = true;
-                  wantedBy = [ "multi-user.target" ];
-                };
-              };
+              #   # Alternatively, explicitly define the systemd service
+              #   systemd.services."serial-getty@serial0" = {
+              #     enable = true;
+              #     wantedBy = [ "multi-user.target" ];
+              #   };
+              # };
               
               # cmyk: original cmdlinetxt
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
@@ -380,7 +381,6 @@
               '';
 
               installPhase = ''
-
                 mkdir -p $out/etc/systemd/system/getty@tty1.service.d
                 cat <<EOF > $out/etc/systemd/system/getty@tty1.service.d/override.conf
                 [Service]
