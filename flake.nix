@@ -311,7 +311,9 @@
               # cmyk: original cmdlinetxt
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
+              #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
+              ## Original cmdlineline.txt
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 rdinit=/controller oops=panic quiet";
               configtxt = pkgs.writeText "config.txt" ''
                 initramfs initramfs.cpio.gz followkernel
                 disable_splash=1
