@@ -5,7 +5,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/23.11";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     utils.url = "github:numtide/flake-utils";
-    u-root-cmds.url = "github:u-root/u-root";
   };
 
   outputs = { self, nixpkgs, nixpkgs-unstable, utils }:
@@ -88,7 +87,7 @@
                 openssl
                 bc
                 perl
-                u-root-cmds.getty
+                util-linux
               ];
 
               patches = [
@@ -385,7 +384,7 @@
                 cat <<EOF > $out/etc/systemd/system/getty@tty1.service.d/override.conf
                 [Service]
                 ExecStart=
-                ExecStart=-/sbin/agetty --noclear %I $TERM
+                ExecStart=-${pkgs.util-linux}/sbin/agetty --noclear %I $TERM
                 EOF
 
                 mkdir -p $out
