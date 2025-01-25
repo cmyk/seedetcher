@@ -2791,11 +2791,11 @@ func Run(pl Platform, version string) func(yield func() bool) {
 			}()
 			mainFlow(ctx, a.root.Context())
 		}
-		startTime := time.Now()
+		//startTime := time.Now()
 		var evts []Event
 		for range it {
 			dirty := a.root.Clip(image.Rectangle{Max: a.ctx.Platform.DisplaySize()})
-			layoutTime := time.Now()
+			//layoutTime := time.Now()
 			if err := a.ctx.Platform.Dirty(dirty); err != nil {
 				panic(err)
 			}
@@ -2810,11 +2810,12 @@ func Run(pl Platform, version string) func(yield func() bool) {
 				}
 				a.root.Draw(fb, a.mask)
 			}
-			drawTime := time.Now()
-			if a.ctx.Platform.Debug() {
-				log.Printf("frame: %v layout: %v draw: %v %v",
-					drawTime.Sub(startTime), layoutTime.Sub(startTime), drawTime.Sub(layoutTime), dirty)
-			}
+			// cmyk: disabled this for now
+			// drawTime := time.Now()
+			// if a.ctx.Platform.Debug() {
+			// 	log.Printf("frame: %v layout: %v draw: %v %v",
+			// 		drawTime.Sub(startTime), layoutTime.Sub(startTime), drawTime.Sub(layoutTime), dirty)
+			// }
 			for {
 				if !yield() {
 					return
@@ -2854,7 +2855,7 @@ func Run(pl Platform, version string) func(yield func() bool) {
 				break
 			}
 			a.root.Reset()
-			startTime = time.Now()
+			//startTime = time.Now()
 		}
 	}
 }

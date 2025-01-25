@@ -8,7 +8,7 @@ find_sd_card() {
 
 # Build the SeedEtcher image
 echo "Starting Nix build..."
-nix build .#image-debug --refresh
+nix build .#image-debug --impure
 
 if [ $? -ne 0 ]; then
     echo "Nix build failed. Exiting."
