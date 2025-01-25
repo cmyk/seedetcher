@@ -295,20 +295,21 @@
               
               # cmyk: added getty
               systemConfig = {
-              services.getty = {
-                enable = true;
-                instance = "ttyGS0";
-              };
+                services.getty = {
+                  enable = true;
+                  instance = "ttyGS0";
+                };
 
-              # Alternatively, explicitly define the systemd service
-              systemd.services."serial-getty@ttyGS0" = {
-                enable = true;
-                wantedBy = [ "multi-user.target" ];
+                # Alternatively, explicitly define the systemd service
+                systemd.services."serial-getty@ttyGS0" = {
+                  enable = true;
+                  wantedBy = [ "multi-user.target" ];
+                };
               };
               
               # cmyk: original cmdlinetxt
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
               configtxt = pkgs.writeText "config.txt" ''
                 initramfs initramfs.cpio.gz followkernel
                 disable_splash=1
