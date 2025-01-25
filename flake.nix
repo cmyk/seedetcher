@@ -292,7 +292,23 @@
 
               initramfs = self.lib.${system}.mkinitramfs debug;
               img-name = if debug then "seedetcher-debug.img" else "seedetcher.img";
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 rdinit=/controller oops=panic quiet";
+              
+              # cmyk: added getty
+              systemConfig = {
+              services.getty = {
+                enable = true;
+                instance = "ttyGS0";
+              };
+
+              # Alternatively, explicitly define the systemd service
+              systemd.services."serial-getty@ttyGS0" = {
+                enable = true;
+                wantedBy = [ "multi-user.target" ];
+              };
+              
+              # cmyk: original cmdlinetxt
+              # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
               configtxt = pkgs.writeText "config.txt" ''
                 initramfs initramfs.cpio.gz followkernel
                 disable_splash=1
