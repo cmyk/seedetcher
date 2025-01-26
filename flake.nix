@@ -279,17 +279,17 @@
                 rm -f `find initramfs -type l`
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' `find initramfs`
 
-                ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
-                  | sort \
-                  | ${pkgs.cpio}/bin/cpio -D initramfs --reproducible -H newc -o --owner +0:+0 --quiet \
-                  | ${pkgs.gzip}/bin/gzip > initramfs.cpio.gz
-                
-                # Add busybox for a minimal shell (ensure it's from the cross-compiled pkgs)
+                # Add bash and coreutils
                 mkdir -p initramfs/bin
                 cp -R "${pkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
                 echo "Contents of initramfs/bin after copying:"
                 ls -alh initramfs/bin
+
+                ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
+                  | sort \
+                  | ${pkgs.cpio}/bin/cpio -D initramfs --reproducible -H newc -o --owner +0:+0 --quiet \
+                  | ${pkgs.gzip}/bin/gzip > initramfs.cpio.gz
               '';
 
               installPhase = ''
