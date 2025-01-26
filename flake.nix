@@ -281,12 +281,14 @@
 
                 # Add bash and coreutils
                 mkdir -p initramfs/bin
-                cp -R "${pkgs.bash}/bin/"* initramfs/bin/
-                cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
+               
+                cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/
+                cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/
                 #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
 
-                # Fix ownership and permissions
+                # Fix permissions
                 chmod 0755 initramfs/bin/*
+                chmod +x initramfs/bin/*
                 echo "Final permissions of initramfs/bin:"
                 ls -alh initramfs/bin
                 echo "Contents of initramfs/bin after copying:"
@@ -397,7 +399,7 @@
                 }
 
                 # Create disk image.
-                dd if=/dev/zero of=disk.img bs=1M count=14
+                dd if=/dev/zero of=disk.img bs=1M count=32
                 ${pkgs.util-linux}/bin/sfdisk disk.img <<EOF
                   label: dos
                   label-id: 0xceedb0ad
