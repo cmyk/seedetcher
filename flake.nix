@@ -283,7 +283,7 @@
                 mkdir -p initramfs/bin
                 cp -R "${pkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
-                cp ${pkgs.util-linux}/bin/agetty initramfs/bin/
+                cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
                 echo "Contents of initramfs/bin after copying:"
                 ls -alh initramfs/bin
 
