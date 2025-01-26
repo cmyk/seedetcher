@@ -88,6 +88,7 @@
                 bc
                 perl
                 util-linux
+                bash
               ];
 
               patches = [
@@ -188,6 +189,16 @@
                   CC=$CC OBJCOPY=$OBJCOPY OBJDUMP=$OBJDUMP READELF=$READELF \
                   HOSTCFLAGS="-D_POSIX_C_SOURCE=200809L" \
                   zImage dtbs
+
+                # cmyk: Not needed, since build works without it
+                # export SHELL=${pkgs.bash}/bin/bash
+                # export PATH=${pkgs.coreutils}/bin:${pkgs.findutils}/bin:${pkgs.gnugrep}/bin:$PATH
+
+                # make $makeFlags -j$NIX_BUILD_CORES \
+                #   HOSTCC=$HOSTCC HOSTCXX=$HOSTCXX HOSTAR=$HOSTAR HOSTLD=$HOSTLD \
+                #   CC=$CC OBJCOPY=$OBJCOPY OBJDUMP=$OBJDUMP READELF=$READELF \
+                #   HOSTCFLAGS="-D_POSIX_C_SOURCE=200809L" \
+                #   zImage dtbs
               '';
 
               installPhase = ''
@@ -272,6 +283,10 @@
                   | sort \
                   | ${pkgs.cpio}/bin/cpio -D initramfs --reproducible -H newc -o --owner +0:+0 --quiet \
                   | ${pkgs.gzip}/bin/gzip > initramfs.cpio.gz
+                
+                # Add busybox for a minimal shell (ensure it's from the cross-compiled pkgs)
+                mkdir -p initramfs/bin
+                cp ${pkgs.bash}/bin/bash initramfs/bin/sh
               '';
 
               installPhase = ''
@@ -686,6 +701,7 @@
             shellHook = ''
               echo "🚀 Welcome to the SeedEtcher dev shell!"
               export PS1='\[\e[1;32m\][seedetcher-dev]\[\e[0m\] \w \$ '
+              export SHELL=${localpkgs.bash}/bin/bash
             '';
           };
       });
