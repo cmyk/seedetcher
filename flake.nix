@@ -283,8 +283,18 @@
                 mkdir -p initramfs/bin
                 cp -R "${pkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
+                cp ${pkgs.util-linux}/bin/agetty initramfs/bin/
                 echo "Contents of initramfs/bin after copying:"
                 ls -alh initramfs/bin
+
+                # Add the getty service
+                mkdir -p $out/etc/systemd/system/getty@tty1.service.d
+                cat <<EOF > $out/etc/systemd/system/getty@tty1.service.d/override.conf
+                [Service]
+                ExecStart=
+                ExecStart=-$(command -v agetty) --noclear %I $TERM
+                EOF
+
 
                 ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
                   | sort \
@@ -295,6 +305,7 @@
               installPhase = ''
                 mkdir -p $out
                 cp initramfs.cpio.gz $out/
+
                 ls -alh initramfs/  # Verify initramfs contents before copying
                 ls -alh initramfs/bin/  # Check if binaries are actually copied
               '';
@@ -402,13 +413,6 @@
               '';
 
               installPhase = ''
-                mkdir -p $out/etc/systemd/system/getty@tty1.service.d
-                cat <<EOF > $out/etc/systemd/system/getty@tty1.service.d/override.conf
-                [Service]
-                ExecStart=
-                ExecStart=-$(command -v agetty) --noclear %I $TERM
-                EOF
-
                 mkdir -p $out
                 cp disk.img $out/${img-name}
               '';
