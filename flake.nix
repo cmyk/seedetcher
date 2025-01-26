@@ -680,7 +680,13 @@
             '';
             default = self.packages.${system}.image;
           };
-        # developer shell for running .#reload-fast.
-        devShells.default = self.packages.${system}.controller-debug;
+          # developer shell for running .#reload-fast.
+          devShells.default = localpkgs.mkShell {
+            packages = [ self.packages.${system}.controller-debug ];
+            shellHook = ''
+              echo "🚀 Welcome to the SeedEtcher dev shell!"
+              export PS1='\[\e[1;32m\][seedetcher-dev]\[\e[0m\] \w \$ '
+            '';
+          };
       });
 }

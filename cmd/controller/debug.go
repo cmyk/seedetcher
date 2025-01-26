@@ -75,8 +75,26 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 		}
 	case cmd == "goroutines":
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+	case cmd == "shell":
+		log.Println("Starting interactive shell...")
+		startShell()
 	default:
 		log.Printf("debug: unrecognized command: %s", cmd)
 	}
 	return evts
+}
+
+func startShell() {
+	fmt.Println("Press Ctrl+D to exit the shell.")
+
+	cmd := exec.Command("/bin/sh")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("Error starting shell:", err)
+	}
+	fmt.Println("Shell exited.")
 }
