@@ -283,16 +283,19 @@
                 mkdir -p initramfs/bin
                 cp -R "${pkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
-                cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
+                #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
                 echo "Contents of initramfs/bin after copying:"
                 ls -alh initramfs/bin
 
+                cp ${./scripts/simple-getty.sh} initramfs/bin/getty
+                chmod +x initramfs/bin/getty
+
                 # Add the getty service
                 mkdir -p $out/etc/systemd/system/getty@tty1.service.d
-                cat <<EOF > $out/etc/systemd/system/getty@tty1.service.d/override.conf
+                cat <<EOF > initramfs/etc/systemd/system/getty@tty1.service.d/override.conf
                 [Service]
                 ExecStart=
-                ExecStart=-$(command -v agetty) --noclear %I $TERM
+                ExecStart=-/bin/getty
                 EOF
 
 
