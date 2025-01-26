@@ -89,14 +89,29 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 func startShell() {
 	fmt.Println("Press Ctrl+D to exit the shell.")
 
+	// Check available files in /bin
+	fmt.Println("Checking contents of /bin directory...")
+	cmd := exec.Command("ls", "-alh", "/bin")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Println("Error listing /bin contents:", err)
+	}
+
 	// Find available shell using "which sh"
 	shellPath, err := exec.Command("which", "sh").Output()
-	if err != nil {
-		fmt.Println("Error: shell not found on the system.")
+	if err != nil || len(strings.TrimSpace(string(shellPath))) == 0 {
+		fmt.Println("Error: shell not found or empty path detected.")
 		return
 	}
 
-	cmd := exec.Command(strings.TrimSpace(string(shellPath))) // Trim any trailing newlines
+	// Print the output received from the command
+	fmt.Printf("Shell path found: '%s'\n", strings.TrimSpace(string(shellPath)))
+	
+	cmd = exec.Command(strings.TrimSpace(string(shellPath)))
+	fmt.Printf("Executing command: %s\n", cmd.String())
+
+	cmd = exec.Command(strings.TrimSpace(string(shellPath))) // Trim any trailing newlines
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

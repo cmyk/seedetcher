@@ -286,12 +286,17 @@
                 
                 # Add busybox for a minimal shell (ensure it's from the cross-compiled pkgs)
                 mkdir -p initramfs/bin
-                cp ${pkgs.bash}/bin/bash initramfs/bin/sh
+                cp -R "${pkgs.bash}/bin/"* initramfs/bin/
+                cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
+                echo "Contents of initramfs/bin after copying:"
+                ls -alh initramfs/bin
               '';
 
               installPhase = ''
                 mkdir -p $out
                 cp initramfs.cpio.gz $out/
+                ls -alh initramfs/  # Verify initramfs contents before copying
+                ls -alh initramfs/bin/  # Check if binaries are actually copied
               '';
 
               allowedReferences = [ ];
