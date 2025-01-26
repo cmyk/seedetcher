@@ -287,7 +287,6 @@
 
                 # Fix ownership and permissions
                 chmod 0755 initramfs/bin/*
-                chown -R root:root initramfs/bin
                 echo "Final permissions of initramfs/bin:"
                 ls -alh initramfs/bin
                 echo "Contents of initramfs/bin after copying:"
