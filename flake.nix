@@ -325,6 +325,17 @@
                 mkdir -p $out
                 cp initramfs.cpio.gz $out/
 
+                crosspkgs = import nixpkgs {
+                  inherit system;
+                  crossSystem = {
+                    config = "armv6l-unknown-linux-musleabihf";
+                    gcc = {
+                      arch = "armv6k";
+                      fpu = "vfp";
+                    };
+                  };
+                };
+
                 ls -alh initramfs/  # Verify initramfs contents before copying
                 ls -alh initramfs/bin/  # Check if binaries are actually copied
               '';
