@@ -284,19 +284,34 @@
                 cp -R "${pkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
                 #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
+
+                # Fix ownership and permissions
+                chmod 0755 initramfs/bin/*
+                chown -R root:root initramfs/bin
+                echo "Final permissions of initramfs/bin:"
+                ls -alh initramfs/bin
                 echo "Contents of initramfs/bin after copying:"
                 ls -alh initramfs/bin
 
                 cp ${./scripts/simple-getty.sh} initramfs/bin/getty
                 chmod +x initramfs/bin/getty
 
+                # Ensure the directory exists before creating the file
+                mkdir -p initramfs/etc/systemd/system/getty@tty1.service.d
+
+                echo "Checking if directory exists:"
+                ls -alh initramfs/etc/systemd/system/getty@tty1.service.d || echo "Directory not found!"
+
                 # Add the getty service
-                mkdir -p $out/etc/systemd/system/getty@tty1.service.d
                 cat <<EOF > initramfs/etc/systemd/system/getty@tty1.service.d/override.conf
                 [Service]
                 ExecStart=
                 ExecStart=-/bin/getty
                 EOF
+
+                # Debug output to verify
+                echo "Created override.conf:"
+                ls -l initramfs/etc/systemd/system/getty@tty1.service.d/
 
 
                 ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
