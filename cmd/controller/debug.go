@@ -89,6 +89,10 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 func startShell() {
 	fmt.Println("Press Ctrl+D to exit the shell.")
 
+	// Set PATH manually
+	os.Setenv("PATH", "/bin:/usr/bin:/sbin:/usr/sbin")
+	fmt.Println("PATH set to:", os.Getenv("PATH"))
+
 	// Check available files in /bin
 	fmt.Println("Checking contents of /bin directory...")
 	cmd := exec.Command("ls", "-alh", "/bin")
@@ -107,9 +111,6 @@ func startShell() {
 
 	// Print the output received from the command
 	fmt.Printf("Shell path found: '%s'\n", strings.TrimSpace(string(shellPath)))
-	
-	cmd = exec.Command(strings.TrimSpace(string(shellPath)))
-	fmt.Printf("Executing command: %s\n", cmd.String())
 
 	cmd = exec.Command(strings.TrimSpace(string(shellPath))) // Trim any trailing newlines
 	cmd.Stdin = os.Stdin
