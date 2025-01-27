@@ -2,7 +2,7 @@
   description = "Builds seedetcher disk image for Raspberry Pi";
 
   inputs = {
-    seedetcher.url =  "https://api.github.com/repos/cmyk/seedetcher/commits/main?access_token=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";
+    seedetcher.url =  "git+https://github.com/cmyk/seedetcher.git/";
     nixpkgs.url = "github:NixOS/nixpkgs/23.11";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     utils.url = "github:numtide/flake-utils";
