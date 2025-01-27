@@ -2,6 +2,7 @@
   description = "Builds seedetcher disk image for Raspberry Pi";
 
   inputs = {
+    seedetcher.url = "github:cmyk/seedetcher";
     nixpkgs.url = "github:NixOS/nixpkgs/23.11";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/master";
     utils.url = "github:numtide/flake-utils";
@@ -88,11 +89,12 @@
                 bc
                 perl
                 util-linux
-                bash  
-                acl
-                gmp
-                attr
+                bash
               ];
+
+                #acl
+                #gmp
+                #attr
 
               patches = [
                 ./patches/kernel_missing_includes.patch
@@ -280,9 +282,9 @@
                 #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
 
                 # Copy missing shared libraries
-                cp ${pkgs.acl}/lib/libacl.so.1 initramfs/lib/
-                cp ${pkgs.attr}/lib/libattr.so.1 initramfs/lib/
-                cp ${pkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
+                # cp ${pkgs.acl}/lib/libacl.so.1 initramfs/lib/
+                # cp ${pkgs.attr}/lib/libattr.so.1 initramfs/lib/
+                # cp ${pkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
 
                 # Fix permissions
                 chmod 0755 initramfs/bin/*
