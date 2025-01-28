@@ -88,7 +88,7 @@
                 bc
                 perl
                 util-linux
-                bash
+                #bash
               ];
 
               patches = [
@@ -282,7 +282,7 @@
                 # Add bash and coreutils
                 mkdir -p initramfs/bin
                
-                cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/
+                #cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/
                 #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
 
@@ -729,7 +729,7 @@
             shellHook = ''
               echo "🚀 Welcome to the SeedEtcher dev shell!"
               export PS1='\[\e[1;32m\][seedetcher-dev]\[\e[0m\] \w \$ '
-              export SHELL=${localpkgs.bash}/bin/bash
+              #export SHELL=${localpkgs.bash}/bin/bash
             '';
           };
       });
