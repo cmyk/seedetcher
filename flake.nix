@@ -88,13 +88,14 @@
                 bc
                 perl
                 util-linux
-                bash
-              ];
-
+                #bash
                 #acl
                 #gmp
                 #attr
 
+              ];
+
+                
               patches = [
                 ./patches/kernel_missing_includes.patch
               ];
@@ -276,7 +277,7 @@
                 # Add bash and coreutils
                 mkdir -p initramfs/bin
                
-                cp -R "${pkgs.bash}/bin/"* initramfs/bin/
+                #cp -R "${pkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
                 #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
 
