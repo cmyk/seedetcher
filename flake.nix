@@ -89,8 +89,12 @@
                 perl
                 util-linux
                 #bash
+                #acl
+                #gmp
+                #attr
               ];
 
+                
               patches = [
                 ./patches/kernel_missing_includes.patch
               ];
@@ -189,16 +193,6 @@
                   CC=$CC OBJCOPY=$OBJCOPY OBJDUMP=$OBJDUMP READELF=$READELF \
                   HOSTCFLAGS="-D_POSIX_C_SOURCE=200809L" \
                   zImage dtbs
-
-                # cmyk: Not needed, since build works without it
-                # export SHELL=${pkgs.bash}/bin/bash
-                # export PATH=${pkgs.coreutils}/bin:${pkgs.findutils}/bin:${pkgs.gnugrep}/bin:$PATH
-
-                # make $makeFlags -j$NIX_BUILD_CORES \
-                #   HOSTCC=$HOSTCC HOSTCXX=$HOSTCXX HOSTAR=$HOSTAR HOSTLD=$HOSTLD \
-                #   CC=$CC OBJCOPY=$OBJCOPY OBJDUMP=$OBJDUMP READELF=$READELF \
-                #   HOSTCFLAGS="-D_POSIX_C_SOURCE=200809L" \
-                #   zImage dtbs
               '';
 
               installPhase = ''
@@ -281,10 +275,16 @@
 
                 # Add bash and coreutils
                 mkdir -p initramfs/bin
-               
-                #cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/
-                cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/
+
+                cp -R "${pkgs.bash}/bin/"* initramfs/bin/
+                cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
+
                 #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
+
+                # Copy missing shared libraries
+                # cp ${pkgs.acl}/lib/libacl.so.1 initramfs/lib/
+                # cp ${pkgs.attr}/lib/libattr.so.1 initramfs/lib/
+                # cp ${pkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
 
                 # Fix permissions
                 chmod 0755 initramfs/bin/*
@@ -360,7 +360,9 @@
               
               # cmyk: original cmdlinetxt
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
+              # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 console=ttyGS0,115200 rdinit=/controller rootwait modules-load=dwc2,g_serial";
+              ## doesnt WORK: cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 console=ttyGS0,115200 rdinit=/controller rootwait";
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
               ## Original cmdlineline.txt
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 rdinit=/controller oops=panic quiet";

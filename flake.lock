@@ -18,6 +18,7 @@
     },
     "nixpkgs-unstable": {
       "locked": {
+
         "lastModified": 1738090340,
         "narHash": "sha256-7KYQoUH0eGt87+Xg0LWp+I472k8eAfHgYmf+1C1T1sg=",
         "owner": "NixOS",

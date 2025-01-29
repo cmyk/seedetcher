@@ -31,6 +31,7 @@ func click(btn gui.Button) []gui.ButtonEvent {
 }
 
 func debugCommand(cmd string) []gui.ButtonEvent {
+	log.Printf("DEBUG: Received command: %q\n", cmd)
 	var evts []gui.ButtonEvent
 	switch {
 	case strings.HasPrefix(cmd, "runes "):
@@ -81,9 +82,38 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 		log.Println("Starting interactive shell...")
 		startShell()
 	default:
-		log.Printf("debug: unrecognized command: %s", cmd)
+		fmt.Printf("Passing through command: %s\n", cmd)
+		execCommand(cmd)
 	}
+	// default:
+	// 	log.Printf("debug: unrecognized command: %s", cmd)
+	// }
 	return evts
+}
+
+func execCommand(cmdStr string) {
+    fmt.Printf("DEBUG: Attempting to execute: %q\n", cmdStr)
+
+    parts := strings.Fields(cmdStr)
+    if len(parts) == 0 {
+        fmt.Println("No command received.")
+        return
+    }
+
+    fmt.Printf("DEBUG: Command parsed as: %v\n", parts)
+
+    // Ensure the command runs with the dynamic linker
+    command := exec.Command("/lib/ld-musl-armhf.so.1", append([]string{parts[0]}, parts[1:]...)...)
+    command.Stdout = os.Stdout
+    command.Stderr = os.Stderr
+    command.Env = append(os.Environ(), "PATH=/bin:/usr/bin:/sbin:/usr/sbin")
+
+    err := command.Run()
+    if err != nil {
+        fmt.Printf("Error executing command: %v\n", err)
+    } else {
+        fmt.Println("Command executed successfully.")
+    }
 }
 
 func startShell() {
@@ -106,13 +136,14 @@ func startShell() {
 	shellPath, err := exec.Command("which", "sh").Output()
 	if err != nil || len(strings.TrimSpace(string(shellPath))) == 0 {
 		fmt.Println("Error: shell not found or empty path detected.")
-		return
+		fmt.Println("Attempting to launch directly via musl dynamic linker...")
+		shellPath = []byte("/lib/ld-musl-armhf.so.1 /bin/sh")
 	}
 
 	// Print the output received from the command
 	fmt.Printf("Shell path found: '%s'\n", strings.TrimSpace(string(shellPath)))
 
-	cmd = exec.Command(strings.TrimSpace(string(shellPath))) // Trim any trailing newlines
+	cmd = exec.Command("/lib/ld-musl-armhf.so.1", "/bin/sh")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
