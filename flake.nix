@@ -88,10 +88,10 @@
                 bc
                 perl
                 util-linux
-                #bash
-                #acl
-                #gmp
-                #attr
+                bash
+                acl
+                gmp
+                attr
               ];
 
                 
@@ -282,9 +282,9 @@
                 #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
 
                 # Copy missing shared libraries
-                # cp ${pkgs.acl}/lib/libacl.so.1 initramfs/lib/
-                # cp ${pkgs.attr}/lib/libattr.so.1 initramfs/lib/
-                # cp ${pkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
+                cp ${pkgs.acl}/lib/libacl.so.1 initramfs/lib/
+                cp ${pkgs.attr}/lib/libattr.so.1 initramfs/lib/
+                cp ${pkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
 
                 # Fix permissions
                 chmod 0755 initramfs/bin/*
@@ -731,7 +731,7 @@
             shellHook = ''
               echo "🚀 Welcome to the SeedEtcher dev shell!"
               export PS1='\[\e[1;32m\][seedetcher-dev]\[\e[0m\] \w \$ '
-              #export SHELL=${localpkgs.bash}/bin/bash
+              export SHELL=${localpkgs.bash}/bin/bash
             '';
           };
       });
