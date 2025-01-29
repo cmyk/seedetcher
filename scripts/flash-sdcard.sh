@@ -3,6 +3,7 @@
 # ✔ Commits & pushes code changes from Mac
 # ✔ Pulls latest code on the VM (ensures up-to-date build)
 # ✔ Builds the #debug image on the VM
+# ✔ Commit updated flake.lock to github
 # ✔ Transfers the built image from VM to Mac
 # ✔ Lists available disks and confirms SD card selection
 # ✔ Unmounts, flashes, and ejects the SD card
@@ -49,6 +50,17 @@ cd ~/seedetcher
 echo "🚀 Starting image build..."
 if nix build .#image-debug --impure --print-build-logs; then
     echo "✅ Build completed successfully!"
+
+    # Check if flake.lock changed
+    if git status --porcelain | grep "flake.lock"; then
+        echo "🔄 flake.lock changed, committing changes..."
+        git add flake.lock
+        git commit -m "Auto-update flake.lock after successful build"
+        git push origin main
+        echo "✅ flake.lock committed and pushed."
+    else
+        echo "✅ No changes to flake.lock, skipping commit."
+    fi
 else
     echo "❌ Build failed!" >&2
     exit 1
