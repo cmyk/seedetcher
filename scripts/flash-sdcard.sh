@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 # ✔ Commits & pushes code changes from Mac
 # ✔ Pulls latest code on the VM (ensures up-to-date build)
 # ✔ Builds the #debug image on the VM
