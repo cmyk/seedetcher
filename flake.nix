@@ -88,6 +88,11 @@
                 bc
                 perl
                 util-linux
+                bash
+                #acl
+                gmp
+                attr
+
               ];
 
                 
@@ -272,11 +277,16 @@
                 # Add bash and coreutils
                 mkdir -p initramfs/bin
 
+                cp -R "${pkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
 
                 #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
 
- 
+                # Copy missing shared libraries
+                #cp ${pkgs.acl}/lib/libacl.so.1 initramfs/lib/
+                cp ${pkgs.attr}/lib/libattr.so.1 initramfs/lib/
+                cp ${pkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
+
 
                 # Fix permissions
                 chmod 0755 initramfs/bin/*
