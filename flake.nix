@@ -110,6 +110,10 @@
               name = "Raspberry Pi Linux kernel";
               src = kernel-src;
               
+              # ✅ Skip MacOS
+              meta.platforms = [ "aarch64-linux" "armv6l-linux" ];
+              meta.skipPlatforms = [ "aarch64-darwin" ];  
+              
               # For reproducible builds.
               KBUILD_BUILD_TIMESTAMP = timestamp;
               KBUILD_BUILD_USER = "seedetcher";
