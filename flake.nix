@@ -496,7 +496,7 @@
               allowedReferences = [ ];
             };
         };
-        packages.${system} = rec {
+        packages = rec {
             linux-kernel = self.lib.mkkernel false;
             linux-kernel-debug = self.lib.mkkernel true;
             go-deps = let pkgs = localpkgs; pkgs-unstable = localpkgs-unstable; in pkgs.stdenvNoCC.mkDerivation {
