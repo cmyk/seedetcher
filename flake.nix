@@ -11,12 +11,8 @@
     utils.lib.eachDefaultSystem (system:
       let
         arch = builtins.head (builtins.split "-" system);
-        localpkgs = import nixpkgs {
-          inherit system;
-        };
-        localpkgs-unstable = import nixpkgs-unstable {
-          inherit system;
-        };
+        localpkgs = import nixpkgs { inherit system; };
+        localpkgs-unstable = import nixpkgs-unstable { inherit system; };
         crosspkgs = import nixpkgs {
           inherit system;
           crossSystem = {
@@ -39,33 +35,39 @@
         };
         timestamp = "2009/01/03T12:15:05";
         loader-lib = "ld-musl-armhf.so.1";
+
+
+        # ✅ Define the kernel source globally so it can be reused
+        kernel-src = localpkgs.fetchFromGitHub {
+          owner = "raspberrypi";
+          repo = "linux";
+          rev = "3bb5880ab3dd31f75c07c3c33bf29c5d469b28f3";
+          hash = "sha256-v4ennISbEk0ApnfDRZKCJOHfO8qLdlBNlGjffkOy7LY=";
+          # Remove files that introduce case sensitivity clashes on darwin.
+          postFetch = ''
+            rm $out/include/uapi/linux/netfilter/xt_*.h
+            rm $out/include/uapi/linux/netfilter_ipv4/ipt_*.h
+            rm $out/include/uapi/linux/netfilter_ipv6/ip6t_*.h
+            rm $out/net/netfilter/xt_*.c
+            rm $out/tools/memory-model/litmus-tests/Z6.0+poonce*
+          '';
+        };
+
       in
       {
         formatter = localpkgs.nixpkgs-fmt;
+
+    
         lib = {
           mkkernel =
             let
               pkgs = crosspkgs;
               panel-firmware = self.lib.${system}.panel-firmware;
             in
-            debug: pkgs.stdenv.mkDerivation {
+            debug: let pkgs = crosspkgs; in pkgs.stdenv.mkDerivation {
               name = "Raspberry Pi Linux kernel";
-
-              src = pkgs.fetchFromGitHub {
-                owner = "raspberrypi";
-                repo = "linux";
-                rev = "3bb5880ab3dd31f75c07c3c33bf29c5d469b28f3";
-                hash = "sha256-v4ennISbEk0ApnfDRZKCJOHfO8qLdlBNlGjffkOy7LY=";
-                # Remove files that introduce case sensitivity clashes on darwin.
-                postFetch = ''
-                  rm $out/include/uapi/linux/netfilter/xt_*.h
-                  rm $out/include/uapi/linux/netfilter_ipv4/ipt_*.h
-                  rm $out/include/uapi/linux/netfilter_ipv6/ip6t_*.h
-                  rm $out/net/netfilter/xt_*.c
-                  rm $out/tools/memory-model/litmus-tests/Z6.0+poonce*
-                '';
-              };
-
+              src = kernel-src;
+              
               # For reproducible builds.
               KBUILD_BUILD_TIMESTAMP = timestamp;
               KBUILD_BUILD_USER = "seedetcher";
@@ -89,10 +91,10 @@
                 perl
                 util-linux
                 bash
-                
+                acl
                 gmp
                 attr
-
+                musl
               ];
 
                 
@@ -277,20 +279,22 @@
                 # Add bash and coreutils
                 mkdir -p initramfs/bin
 
-                cp -R "${pkgs.bash}/bin/"* initramfs/bin/
-                cp -R "${pkgs.coreutils}/bin/"* initramfs/bin/
+                cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/
+                cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/
 
                 #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
 
                 # Copy missing shared libraries
-                
-                cp ${pkgs.attr}/lib/libattr.so.1 initramfs/lib/
-                cp ${pkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
-
+                cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/
+                cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/
+                cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
+                cp ${crosspkgs.musl}/lib/ld-musl-armhf.so.1 initramfs/lib/
 
                 # Fix permissions
                 chmod 0755 initramfs/bin/*
+                chmod 0755 initramfs/lib/*
                 chmod +x initramfs/bin/*
+                chmod +x initramfs/lib/*
                 echo "Final permissions of initramfs/bin:"
                 ls -alh initramfs/bin
                 echo "Contents of initramfs/bin after copying:"
@@ -403,7 +407,7 @@
                 }
 
                 # Create disk image.
-                dd if=/dev/zero of=disk.img bs=1M count=32
+                dd if=/dev/zero of=disk.img bs=1M count=64
                 ${pkgs.util-linux}/bin/sfdisk disk.img <<EOF
                   label: dos
                   label-id: 0xceedb0ad
@@ -493,6 +497,8 @@
         };
         packages =
           {
+            armv6l-linux.linux-kernel = self.lib.mkkernel false;
+            armv6l-linux.linux-kernel-debug = self.lib.mkkernel true;
             go-deps = let pkgs = localpkgs; pkgs-unstable = localpkgs-unstable; in pkgs.stdenvNoCC.mkDerivation {
               pname = "go-deps";
               version = "1";
