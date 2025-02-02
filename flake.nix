@@ -58,14 +58,49 @@
 
     
         lib = {
-          panel-firmware = pkgs.stdenvNoCC.mkDerivation {
-            name = "panel-firmware";
-            dontUnpack = true;
-            installPhase = ''
-              mkdir -p $out
-              echo "panel-firmware" > $out/panel.bin
-            '';
-          };
+          panel-firmware =
+            let
+              pkgs = localpkgs;
+              # firmware is the commands required to initialize the st7789 panel.
+              firmware = pkgs.writeText "firmware.txt" ''
+                command 0x11 # exit sleep mode
+                delay 120
+
+                command 0x3A 0x05 # set pixel format 16-bit
+                command 0xB2 0x05 0x05 0x00 0x33 0x33 # PORCTRL
+                command 0xB7 0x75 # GCTRL
+                command 0xC2 0x01 0x0FF # VDVVRHEN
+                command 0xC3 0x13 # VHRS
+                command 0xC4 0x20 # VDVS
+                command 0xBB 0x22 # VCOMS
+                command 0xC5 0x20 # VCMOFSET
+                command 0xD0 0xA4 0xA1 # PWRCTRL1
+
+                # gamma
+                command 0xE0 0xD0 0x05 0x0A 0x09 0x08 0x05 0x2E 0x44 0x45 0x0F 0x17 0x16 0x2B 0x33
+                command 0xE1 0xD0 0x05 0x0A 0x09 0x08 0x05 0x2E 0x43 0x45 0x0F 0x16 0x16 0x2B 0x33
+
+                command 0x29 # display on
+                command 0x21 # invert mode
+
+                command 0x36 0x60 # set address mode
+              '';
+              firmware-converter = pkgs.fetchurl {
+                url = "https://raw.githubusercontent.com/notro/panel-mipi-dbi/374b15f78611c619c381c643c5b3a8b5d23f479b/mipi-dbi-cmd";
+                hash = "sha256-ZOx6l84IFpyooPFdgumCL2WUBqCKi0G36X6H8QjyNEc=";
+              };
+            in
+            pkgs.stdenvNoCC.mkDerivation {
+              name = "panel-firmware";
+
+              dontUnpack = true;
+
+              installPhase = ''
+                mkdir $out
+                ${pkgs.python3}/bin/python3 ${firmware-converter} $out/panel.bin ${firmware}
+              '';
+            };
+
           
           mkkernel =
             let
@@ -216,48 +251,7 @@
 
               allowedReferences = [ ];
             };
-          panel-firmware =
-            let
-              pkgs = localpkgs;
-              # firmware is the commands required to initialize the st7789 panel.
-              firmware = pkgs.writeText "firmware.txt" ''
-                command 0x11 # exit sleep mode
-                delay 120
 
-                command 0x3A 0x05 # set pixel format 16-bit
-                command 0xB2 0x05 0x05 0x00 0x33 0x33 # PORCTRL
-                command 0xB7 0x75 # GCTRL
-                command 0xC2 0x01 0x0FF # VDVVRHEN
-                command 0xC3 0x13 # VHRS
-                command 0xC4 0x20 # VDVS
-                command 0xBB 0x22 # VCOMS
-                command 0xC5 0x20 # VCMOFSET
-                command 0xD0 0xA4 0xA1 # PWRCTRL1
-
-                # gamma
-                command 0xE0 0xD0 0x05 0x0A 0x09 0x08 0x05 0x2E 0x44 0x45 0x0F 0x17 0x16 0x2B 0x33
-                command 0xE1 0xD0 0x05 0x0A 0x09 0x08 0x05 0x2E 0x43 0x45 0x0F 0x16 0x16 0x2B 0x33
-
-                command 0x29 # display on
-                command 0x21 # invert mode
-
-                command 0x36 0x60 # set address mode
-              '';
-              firmware-converter = pkgs.fetchurl {
-                url = "https://raw.githubusercontent.com/notro/panel-mipi-dbi/374b15f78611c619c381c643c5b3a8b5d23f479b/mipi-dbi-cmd";
-                hash = "sha256-ZOx6l84IFpyooPFdgumCL2WUBqCKi0G36X6H8QjyNEc=";
-              };
-            in
-            pkgs.stdenvNoCC.mkDerivation {
-              name = "panel-firmware";
-
-              dontUnpack = true;
-
-              installPhase = ''
-                mkdir $out
-                ${pkgs.python3}/bin/python3 ${firmware-converter} $out/panel.bin ${firmware}
-              '';
-            };
           mkinitramfs = debug:
             let
               pkgs = localpkgs;
