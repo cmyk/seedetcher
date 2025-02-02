@@ -35,7 +35,7 @@
         };
         timestamp = "2009/01/03T12:15:05";
         loader-lib = "ld-musl-armhf.so.1";
-        
+
         # ✅ Define the kernel source globally so it can be reused
         kernel-src = localpkgs.fetchFromGitHub {
           owner = "raspberrypi";
@@ -58,10 +58,18 @@
 
     
         lib = {
+          panel-firmware = pkgs.stdenvNoCC.mkDerivation {
+            name = "panel-firmware";
+            dontUnpack = true;
+            installPhase = ''
+              mkdir -p $out
+              echo "panel-firmware" > $out/panel.bin
+            '';
+          };
+          
           mkkernel =
             let
               pkgs = crosspkgs;
-              panel-firmware = self.lib.${system}.panel-firmware;
             in
             debug: let pkgs = crosspkgs; in pkgs.stdenv.mkDerivation {
               name = "Raspberry Pi Linux kernel";
