@@ -496,10 +496,9 @@
               allowedReferences = [ ];
             };
         };
-        packages =
-          {
-            armv6l-linux.linux-kernel = self.lib.mkkernel false;
-            armv6l-linux.linux-kernel-debug = self.lib.mkkernel true;
+        packages.${system} = rec {
+            linux-kernel = self.lib.mkkernel false;
+            linux-kernel-debug = self.lib.mkkernel true;
             go-deps = let pkgs = localpkgs; pkgs-unstable = localpkgs-unstable; in pkgs.stdenvNoCC.mkDerivation {
               pname = "go-deps";
               version = "1";
