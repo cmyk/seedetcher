@@ -163,7 +163,7 @@
                   bcmrpi_defconfig
 
                 ./scripts/config --set-str EXTRA_FIRMWARE panel.bin
-                ./scripts/config --set-str EXTRA_FIRMWARE_DIR ${panel-firmware}
+                ./scripts/config --set-str EXTRA_FIRMWARE_DIR ${self.lib.${system}.panel-firmware}
                 # Disable networking (including bluetooth).
                 ./scripts/config --disable NET
                 ./scripts/config --disable INET
