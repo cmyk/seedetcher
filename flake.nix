@@ -10,6 +10,21 @@
   outputs = { self, nixpkgs, nixpkgs-unstable, utils }:
     utils.lib.eachDefaultSystem (system:
       let
+        # ✅ Define the kernel source globally so it can be reused
+        kernel-src = localpkgs.fetchFromGitHub {
+          owner = "raspberrypi";
+          repo = "linux";
+          rev = "3bb5880ab3dd31f75c07c3c33bf29c5d469b28f3";
+          hash = "sha256-v4ennISbEk0ApnfDRZKCJOHfO8qLdlBNlGjffkOy7LY=";
+          # Remove files that introduce case sensitivity clashes on darwin.
+          postFetch = ''
+            rm $out/include/uapi/linux/netfilter/xt_*.h
+            rm $out/include/uapi/linux/netfilter_ipv4/ipt_*.h
+            rm $out/include/uapi/linux/netfilter_ipv6/ip6t_*.h
+            rm $out/net/netfilter/xt_*.c
+            rm $out/tools/memory-model/litmus-tests/Z6.0+poonce*
+          '';
+        };
         arch = builtins.head (builtins.split "-" system);
         localpkgs = import nixpkgs { inherit system; };
         localpkgs-unstable = import nixpkgs-unstable { inherit system; };
@@ -35,23 +50,6 @@
         };
         timestamp = "2009/01/03T12:15:05";
         loader-lib = "ld-musl-armhf.so.1";
-
-
-        # ✅ Define the kernel source globally so it can be reused
-        kernel-src = localpkgs.fetchFromGitHub {
-          owner = "raspberrypi";
-          repo = "linux";
-          rev = "3bb5880ab3dd31f75c07c3c33bf29c5d469b28f3";
-          hash = "sha256-v4ennISbEk0ApnfDRZKCJOHfO8qLdlBNlGjffkOy7LY=";
-          # Remove files that introduce case sensitivity clashes on darwin.
-          postFetch = ''
-            rm $out/include/uapi/linux/netfilter/xt_*.h
-            rm $out/include/uapi/linux/netfilter_ipv4/ipt_*.h
-            rm $out/include/uapi/linux/netfilter_ipv6/ip6t_*.h
-            rm $out/net/netfilter/xt_*.c
-            rm $out/tools/memory-model/litmus-tests/Z6.0+poonce*
-          '';
-        };
 
       in
       {
