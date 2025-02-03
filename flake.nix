@@ -273,7 +273,8 @@
                 cp ${controller}/bin/controller initramfs/controller
                 cp -R "${self.packages.${system}.camera-driver}"/* initramfs/
                 # Set constant mtimes and permissions for determinism.
-                chmod 0755 `find initramfs`
+                chmod 0755 `find initramfs`|| true
+                chmod 0755 initramfs/lib/ld-musl-armhf.so.1 || true
                 # Remove symlinks as their permissions are not consistent across platforms.
                 # Fortunately we only need symlinks during linking to libraries, not at runtime.
                 rm -f `find initramfs -type l`
@@ -331,6 +332,8 @@
 
               installPhase = ''
                 mkdir -p $out
+                # cmyk fix permissions
+                chmod 0755 initramfs/lib/ld-musl-armhf.so.1 || true
                 cp initramfs.cpio.gz $out/
 
                 ls -alh initramfs/  # Verify initramfs contents before copying
