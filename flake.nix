@@ -11,8 +11,12 @@
     utils.lib.eachDefaultSystem (system:
       let
         arch = builtins.head (builtins.split "-" system);
-        localpkgs = import nixpkgs { inherit system; };
-        localpkgs-unstable = import nixpkgs-unstable { inherit system; };
+        localpkgs = import nixpkgs {
+          inherit system;
+        };
+        localpkgs-unstable = import nixpkgs-unstable {
+          inherit system;
+        };
         crosspkgs = import nixpkgs {
           inherit system;
           crossSystem = {
@@ -35,85 +39,33 @@
         };
         timestamp = "2009/01/03T12:15:05";
         loader-lib = "ld-musl-armhf.so.1";
-
-        # ✅ Define the kernel source globally so it can be reused
-        kernel-src = localpkgs.fetchFromGitHub {
-          owner = "raspberrypi";
-          repo = "linux";
-          rev = "dc6771425e9604650d1d57f7c69948be405f59a5";
-          hash = "sha256-JFW65iRn/mtVjIh+iVz4/rg5aQhE4J+0M9KGsDPHWJg=";
-          # Remove files that introduce case sensitivity clashes on darwin.
-          postFetch = ''
-            rm $out/include/uapi/linux/netfilter/xt_*.h
-            rm $out/include/uapi/linux/netfilter_ipv4/ipt_*.h
-            rm $out/include/uapi/linux/netfilter_ipv6/ip6t_*.h
-            rm $out/net/netfilter/xt_*.c
-            rm $out/tools/memory-model/litmus-tests/Z6.0+poonce*
-          '';
-        };
-
       in
       {
         formatter = localpkgs.nixpkgs-fmt;
-
-    
         lib = {
-          panel-firmware =
-            let
-              pkgs = localpkgs;
-              # firmware is the commands required to initialize the st7789 panel.
-              firmware = pkgs.writeText "firmware.txt" ''
-                command 0x11 # exit sleep mode
-                delay 120
-
-                command 0x3A 0x05 # set pixel format 16-bit
-                command 0xB2 0x05 0x05 0x00 0x33 0x33 # PORCTRL
-                command 0xB7 0x75 # GCTRL
-                command 0xC2 0x01 0x0FF # VDVVRHEN
-                command 0xC3 0x13 # VHRS
-                command 0xC4 0x20 # VDVS
-                command 0xBB 0x22 # VCOMS
-                command 0xC5 0x20 # VCMOFSET
-                command 0xD0 0xA4 0xA1 # PWRCTRL1
-
-                # gamma
-                command 0xE0 0xD0 0x05 0x0A 0x09 0x08 0x05 0x2E 0x44 0x45 0x0F 0x17 0x16 0x2B 0x33
-                command 0xE1 0xD0 0x05 0x0A 0x09 0x08 0x05 0x2E 0x43 0x45 0x0F 0x16 0x16 0x2B 0x33
-
-                command 0x29 # display on
-                command 0x21 # invert mode
-
-                command 0x36 0x60 # set address mode
-              '';
-              firmware-converter = pkgs.fetchurl {
-                url = "https://raw.githubusercontent.com/notro/panel-mipi-dbi/374b15f78611c619c381c643c5b3a8b5d23f479b/mipi-dbi-cmd";
-                hash = "sha256-ZOx6l84IFpyooPFdgumCL2WUBqCKi0G36X6H8QjyNEc=";
-              };
-            in
-            pkgs.stdenvNoCC.mkDerivation {
-              name = "panel-firmware";
-
-              dontUnpack = true;
-
-              installPhase = ''
-                mkdir $out
-                ${pkgs.python3}/bin/python3 ${firmware-converter} $out/panel.bin ${firmware}
-              '';
-            };
-
-          
           mkkernel =
             let
               pkgs = crosspkgs;
+              panel-firmware = self.lib.${system}.panel-firmware;
             in
-            debug: let pkgs = crosspkgs; in pkgs.stdenv.mkDerivation {
+            debug: pkgs.stdenv.mkDerivation {
               name = "Raspberry Pi Linux kernel";
-              src = kernel-src;
-              
-              # ✅ Skip MacOS
-              meta.platforms = [ "aarch64-linux" "armv6l-linux" ];
-              meta.skipPlatforms = [ "aarch64-darwin" ];  
-              
+
+              src = pkgs.fetchFromGitHub {
+                owner = "raspberrypi";
+                repo = "linux";
+                rev = "3bb5880ab3dd31f75c07c3c33bf29c5d469b28f3";
+                hash = "sha256-v4ennISbEk0ApnfDRZKCJOHfO8qLdlBNlGjffkOy7LY=";
+                # Remove files that introduce case sensitivity clashes on darwin.
+                postFetch = ''
+                  rm $out/include/uapi/linux/netfilter/xt_*.h
+                  rm $out/include/uapi/linux/netfilter_ipv4/ipt_*.h
+                  rm $out/include/uapi/linux/netfilter_ipv6/ip6t_*.h
+                  rm $out/net/netfilter/xt_*.c
+                  rm $out/tools/memory-model/litmus-tests/Z6.0+poonce*
+                '';
+              };
+
               # For reproducible builds.
               KBUILD_BUILD_TIMESTAMP = timestamp;
               KBUILD_BUILD_USER = "seedetcher";
@@ -140,7 +92,7 @@
                 acl
                 gmp
                 attr
-                musl
+                #musl
               ];
 
                 
@@ -167,7 +119,7 @@
                   bcmrpi_defconfig
 
                 ./scripts/config --set-str EXTRA_FIRMWARE panel.bin
-                ./scripts/config --set-str EXTRA_FIRMWARE_DIR ${self.lib.${system}.panel-firmware}
+                ./scripts/config --set-str EXTRA_FIRMWARE_DIR ${panel-firmware}
                 # Disable networking (including bluetooth).
                 ./scripts/config --disable NET
                 ./scripts/config --disable INET
@@ -255,7 +207,48 @@
 
               allowedReferences = [ ];
             };
+          panel-firmware =
+            let
+              pkgs = localpkgs;
+              # firmware is the commands required to initialize the st7789 panel.
+              firmware = pkgs.writeText "firmware.txt" ''
+                command 0x11 # exit sleep mode
+                delay 120
 
+                command 0x3A 0x05 # set pixel format 16-bit
+                command 0xB2 0x05 0x05 0x00 0x33 0x33 # PORCTRL
+                command 0xB7 0x75 # GCTRL
+                command 0xC2 0x01 0x0FF # VDVVRHEN
+                command 0xC3 0x13 # VHRS
+                command 0xC4 0x20 # VDVS
+                command 0xBB 0x22 # VCOMS
+                command 0xC5 0x20 # VCMOFSET
+                command 0xD0 0xA4 0xA1 # PWRCTRL1
+
+                # gamma
+                command 0xE0 0xD0 0x05 0x0A 0x09 0x08 0x05 0x2E 0x44 0x45 0x0F 0x17 0x16 0x2B 0x33
+                command 0xE1 0xD0 0x05 0x0A 0x09 0x08 0x05 0x2E 0x43 0x45 0x0F 0x16 0x16 0x2B 0x33
+
+                command 0x29 # display on
+                command 0x21 # invert mode
+
+                command 0x36 0x60 # set address mode
+              '';
+              firmware-converter = pkgs.fetchurl {
+                url = "https://raw.githubusercontent.com/notro/panel-mipi-dbi/374b15f78611c619c381c643c5b3a8b5d23f479b/mipi-dbi-cmd";
+                hash = "sha256-ZOx6l84IFpyooPFdgumCL2WUBqCKi0G36X6H8QjyNEc=";
+              };
+            in
+            pkgs.stdenvNoCC.mkDerivation {
+              name = "panel-firmware";
+
+              dontUnpack = true;
+
+              installPhase = ''
+                mkdir $out
+                ${pkgs.python3}/bin/python3 ${firmware-converter} $out/panel.bin ${firmware}
+              '';
+            };
           mkinitramfs = debug:
             let
               pkgs = localpkgs;
@@ -293,7 +286,7 @@
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/
                 cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/
                 cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
-                cp ${crosspkgs.musl}/lib/ld-musl-armhf.so.1 initramfs/lib/
+                #cp ${crosspkgs.musl}/lib/ld-musl-armhf.so.1 initramfs/lib/
 
                 # Fix permissions
                 chmod 0755 initramfs/bin/*
@@ -500,9 +493,8 @@
               allowedReferences = [ ];
             };
         };
-        packages = rec {
-            linux-kernel = self.lib.${system}.mkkernel false;
-            linux-kernel-debug = self.lib.${system}.mkkernel true;
+        packages =
+          {
             go-deps = let pkgs = localpkgs; pkgs-unstable = localpkgs-unstable; in pkgs.stdenvNoCC.mkDerivation {
               pname = "go-deps";
               version = "1";
