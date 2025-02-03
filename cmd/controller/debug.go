@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"runtime/pprof"
 	"strings"
-
+	"golang.org/x/sys/unix" // cmyk Correct import for system calls
 	"seedetcher.com/gui"
 )
 
@@ -123,11 +123,11 @@ func startShell() {
 	os.Setenv("PATH", "/bin:/usr/bin:/sbin:/usr/sbin")
 	fmt.Println("PATH set to:", os.Getenv("PATH"))
 
-	// Ensure /dev/tty exists to avoid shell errors
+	// Ensure /dev/tty exists for proper shell execution
 	if _, err := os.Stat("/dev/tty"); os.IsNotExist(err) {
 		fmt.Println("Creating /dev/tty for proper shell execution...")
-		syscall.Mknod("/dev/tty", syscall.S_IFCHR|0666, int(unix.Mkdev(5, 0)))
-		syscall.Chmod("/dev/tty", 0666)
+		unix.Mknod("/dev/tty", unix.S_IFCHR|0666, int(unix.Mkdev(5, 0)))
+		unix.Chmod("/dev/tty", 0666)
 	}
 
 	// Check if /bin directory exists
