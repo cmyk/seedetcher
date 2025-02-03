@@ -55,12 +55,12 @@
                 owner = "raspberrypi";
                 repo = "linux";
               
-                rev = "dc6771425e9604650d1d57f7c69948be405f59a5";
-                hash = "sha256-ymPv/MLqDk9vRyrzEBCis9J5nZyPTti811BgnLoCnTM=";
+                #rev = "dc6771425e9604650d1d57f7c69948be405f59a5";
+                #hash = "sha256-ymPv/MLqDk9vRyrzEBCis9J5nZyPTti811BgnLoCnTM=";
                 
                 #old
-                #rev = "3bb5880ab3dd31f75c07c3c33bf29c5d469b28f3";
-                #hash = "sha256-v4ennISbEk0ApnfDRZKCJOHfO8qLdlBNlGjffkOy7LY=";
+                rev = "3bb5880ab3dd31f75c07c3c33bf29c5d469b28f3";
+                hash = "sha256-v4ennISbEk0ApnfDRZKCJOHfO8qLdlBNlGjffkOy7LY=";
 
                 # Remove files that introduce case sensitivity clashes on darwin.
                 postFetch = ''
