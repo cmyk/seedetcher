@@ -64,8 +64,10 @@ func runSerial(p *Platform, s io.Reader) error {
 		line, err := r.ReadString('\n')
 		line = strings.TrimRight(line, "\r\n") // cmyk Remove both CR and LF cleanly
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "DEBUG: Read error: %v\n", err)  // <== Add this line
 			return err
 		}
+		fmt.Fprintf(os.Stderr, "DEBUG: Received line: %q\n", line)  // <== Add this line
 		var binSize int64
 		line = strings.TrimSpace(line)
 		log.Printf("DEBUG cmyk: Received raw input: [%s]", line)
