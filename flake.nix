@@ -56,7 +56,7 @@
                 repo = "linux";
               
                 rev = "dc6771425e9604650d1d57f7c69948be405f59a5";
-                hash = "sha256-JFW65iRn/mtVjIh+iVz4/rg5aQhE4J+0M9KGsDPHWJg=";
+                hash = "sha256-ymPv/MLqDk9vRyrzEBCis9J5nZyPTti811BgnLoCnTM=";
                 
                 #old
                 #rev = "3bb5880ab3dd31f75c07c3c33bf29c5d469b28f3";
