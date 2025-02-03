@@ -98,7 +98,6 @@
                 acl
                 gmp
                 attr
-                musl
               ];
 
                 
@@ -292,7 +291,7 @@
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/
                 cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/
                 cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
-                cp ${crosspkgs.lib.musl.getLib crosspkgs.musl}/lib/ld-musl-armhf.so.1 initramfs/lib/
+                #cp ${crosspkgs.lib.musl.getLib crosspkgs.musl}/lib/ld-musl-armhf.so.1 initramfs/lib/
 
                 # Fix permissions
                 chmod 0755 initramfs/bin/*
