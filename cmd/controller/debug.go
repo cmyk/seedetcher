@@ -123,7 +123,14 @@ func startShell() {
 	os.Setenv("PATH", "/bin:/usr/bin:/sbin:/usr/sbin")
 	fmt.Println("PATH set to:", os.Getenv("PATH"))
 
-	// Check available files in /bin
+	// Ensure /dev/tty exists to avoid shell errors
+	if _, err := os.Stat("/dev/tty"); os.IsNotExist(err) {
+		fmt.Println("Creating /dev/tty for proper shell execution...")
+		syscall.Mknod("/dev/tty", syscall.S_IFCHR|0666, int(unix.Mkdev(5, 0)))
+		syscall.Chmod("/dev/tty", 0666)
+	}
+
+	// Check if /bin directory exists
 	fmt.Println("Checking contents of /bin directory...")
 	cmd := exec.Command("ls", "-alh", "/bin")
 	cmd.Stdout = os.Stdout
@@ -132,18 +139,25 @@ func startShell() {
 		fmt.Println("Error listing /bin contents:", err)
 	}
 
-	// Find available shell using "which sh"
+	// Try to find a valid shell
 	shellPath, err := exec.Command("which", "sh").Output()
-	if err != nil || len(strings.TrimSpace(string(shellPath))) == 0 {
-		fmt.Println("Error: shell not found or empty path detected.")
-		fmt.Println("Attempting to launch directly via musl dynamic linker...")
-		shellPath = []byte("/lib/ld-musl-armhf.so.1 /bin/sh")
+	shell := strings.TrimSpace(string(shellPath))
+	if err != nil || shell == "" {
+		fmt.Println("Error: shell not found in PATH, trying fallback.")
+		shell = "/bin/sh"
 	}
 
-	// Print the output received from the command
-	fmt.Printf("Shell path found: '%s'\n", strings.TrimSpace(string(shellPath)))
+	// Verify shell exists
+	if _, err := os.Stat(shell); os.IsNotExist(err) {
+		fmt.Printf("Shell '%s' not found, attempting to use musl loader...\n", shell)
+		shell = "/lib/ld-musl-armhf.so.1 /bin/sh"
+	}
 
-	cmd = exec.Command("/lib/ld-musl-armhf.so.1", "/bin/sh")
+	// Print the shell path
+	fmt.Printf("Shell path selected: '%s'\n", shell)
+
+	// Execute the shell
+	cmd = exec.Command(shell, "-i")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

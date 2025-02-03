@@ -323,6 +323,10 @@
                 echo "Created override.conf:"
                 ls -l initramfs/etc/systemd/system/getty@tty1.service.d/
 
+                # Create /dev/tty to avoid shell job control errors
+                mkdir -p initramfs/dev
+                mknod -m 666 initramfs/dev/tty c 5 0
+                chmod 666 initramfs/dev/tty
 
                 ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
                   | sort \
