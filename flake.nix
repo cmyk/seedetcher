@@ -280,6 +280,20 @@
                 rm -f `find initramfs -type l`
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' `find initramfs`
 
+                # Create /dev/tty to avoid shell job control errors
+                mkdir -p initramfs/dev
+                touch initramfs/dev/console
+                touch initramfs/dev/null
+                chmod 622 initramfs/dev/console
+                chmod 666 initramfs/dev/null
+
+                # Use tmpfs instead of mknod
+                echo "Mounting dev tmpfs..."
+                mkdir -p initramfs/dev/pts
+                mkdir -p initramfs/dev/shm
+                mkdir -p initramfs/proc
+                mkdir -p initramfs/sys
+
                 # Add bash and coreutils
                 mkdir -p initramfs/bin
 
@@ -322,11 +336,6 @@
                 # Debug output to verify
                 echo "Created override.conf:"
                 ls -l initramfs/etc/systemd/system/getty@tty1.service.d/
-
-                # Create /dev/tty to avoid shell job control errors
-                mkdir -p initramfs/dev
-                mknod -m 666 initramfs/dev/tty c 5 0
-                chmod 666 initramfs/dev/tty
 
                 ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
                   | sort \
@@ -376,7 +385,7 @@
               # cmyk: original cmdlinetxt
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 console=ttyGS0,115200 rdinit=/controller rootwait modules-load=dwc2,g_serial";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 console=ttyGS0,115200 rdinit=/controller rootwait modules-load=dwc2,g_serial init=/bin/sh";
               ## doesnt WORK: cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 console=ttyGS0,115200 rdinit=/controller rootwait";
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
               ## Original cmdlineline.txt
