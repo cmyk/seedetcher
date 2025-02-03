@@ -62,11 +62,13 @@ func runSerial(p *Platform, s io.Reader) error {
 	r := bufio.NewReader(s)
 	for {
 		line, err := r.ReadString('\n')
+		line = strings.TrimRight(line, "\r\n") // cmyk Remove both CR and LF cleanly
 		if err != nil {
 			return err
 		}
 		var binSize int64
 		line = strings.TrimSpace(line)
+		log.Printf("DEBUG cmyk: Received raw input: [%s]", line)
 		if _, err := fmt.Sscanf(line, "reload %d", &binSize); err == nil {
 			binFile := "/reload-a"
 			if binFile == os.Args[0] {
@@ -76,6 +78,7 @@ func runSerial(p *Platform, s io.Reader) error {
 				return err
 			}
 			if err := syscall.Exec(binFile, []string{binFile}, nil); err != nil {
+				log.Printf("Exec failed: %v", err)
 				return fmt.Errorf("%s: %w", binFile, err)
 			}
 			continue
@@ -173,8 +176,10 @@ func openSerial(path string) (s *os.File, err error) {
 		// Base settings
 		cflagToUse := uint32(unix.CREAD | unix.CLOCAL | unix.CS8)
 		t := unix.Termios{
-			Iflag:  unix.IGNPAR,
+			Iflag:  0, // cmyk Disable input processing
+			Oflag:  0, // Disable output processing (fixes line issues)
 			Cflag:  cflagToUse,
+			Lflag:  0, // Disable local modes (canonical, echo, etc.)
 			Ispeed: 115200,
 			Ospeed: 115200,
 		}
