@@ -300,7 +300,7 @@
                 cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/
 
-                cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
+                cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/
 
                 # Copy missing shared libraries
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/
