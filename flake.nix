@@ -27,6 +27,13 @@
             };
           };
         };
+        # Apply the fix to kbd to avoid malloc/realloc issues
+        crosspkgs.kbd = crosspkgs.kbd.overrideAttrs (old: {
+          configureFlags = (old.configureFlags or []) ++ [
+            "ac_cv_func_malloc_0_nonnull=yes"
+            "ac_cv_func_realloc_0_nonnull=yes"
+          ];
+        });
         crosspkgs-unstable = import nixpkgs-unstable {
           inherit system;
           crossSystem = {
