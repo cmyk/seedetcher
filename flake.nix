@@ -300,7 +300,7 @@
                 cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/
 
-                #cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
+                cp "${pkgs.util-linux}/bin/agetty" initramfs/bin/
 
                 # Copy missing shared libraries
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/
@@ -317,20 +317,18 @@
                 echo "Contents of initramfs/bin after copying:"
                 ls -alh initramfs/bin
 
-                cp ${./scripts/simple-getty.sh} initramfs/bin/getty
-                chmod +x initramfs/bin/getty
 
                 # Ensure the directory exists before creating the file
-                mkdir -p initramfs/etc/systemd/system/getty@tty1.service.d
+                mkdir -p initramfs/etc/systemd/system/getty@ttyGS0.service.d
 
                 echo "Checking if directory exists:"
-                ls -alh initramfs/etc/systemd/system/getty@tty1.service.d || echo "Directory not found!"
+                ls -alh initramfs/etc/systemd/system/getty@ttyGS0.service.d || echo "Directory not found!"
 
                 # Add the getty service
-                cat <<EOF > initramfs/etc/systemd/system/getty@tty1.service.d/override.conf
+                cat <<EOF > initramfs/etc/systemd/system/getty@ttyGS0.service.d/override.conf
                 [Service]
                 ExecStart=
-                ExecStart=-/bin/getty
+                ExecStart=-/bin/agetty -L 115200 ttyGS0 vt102
                 EOF
 
                 # Debug output to verify
@@ -367,20 +365,7 @@
 
               initramfs = self.lib.${system}.mkinitramfs debug;
               img-name = if debug then "seedetcher-debug.img" else "seedetcher.img";
-              
-              # cmyk: added getty
-              # systemConfig = {
-              #   services.getty = {
-              #     enable = true;
-              #     instance = "serial0";
-              #   };
 
-              #   # Alternatively, explicitly define the systemd service
-              #   systemd.services."serial-getty@serial0" = {
-              #     enable = true;
-              #     wantedBy = [ "multi-user.target" ];
-              #   };
-              # };
               
               # cmyk: original cmdlinetxt
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
