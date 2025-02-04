@@ -17,6 +17,7 @@
         localpkgs-unstable = import nixpkgs-unstable {
           inherit system;
         };
+
         crosspkgs = import nixpkgs {
           inherit system;
           crossSystem = {
@@ -26,14 +27,21 @@
               fpu = "vfp";
             };
           };
-        };
-        # Apply the fix to kbd to avoid malloc/realloc issues
-        crosspkgs.kbd = crosspkgs.kbd.overrideAttrs (old: {
-          configureFlags = (old.configureFlags or []) ++ [
-            "ac_cv_func_malloc_0_nonnull=yes"
-            "ac_cv_func_realloc_0_nonnull=yes"
+          overlays = [
+            (final: prev: {
+              kbd = prev.kbd.overrideAttrs (old: {
+                configureFlags = (old.configureFlags or []) ++ [
+                  "ac_cv_func_malloc_0_nonnull=yes"
+                  "ac_cv_func_realloc_0_nonnull=yes"
+                  "gl_cv_func_malloc_0_nonnull=yes"
+                  "gl_cv_func_realloc_0_nonnull=yes"
+                ];
+              });
+            })
           ];
-        });
+        };
+
+        
         crosspkgs-unstable = import nixpkgs-unstable {
           inherit system;
           crossSystem = {
@@ -306,6 +314,14 @@
 
                 cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/
                 cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/
+
+                # Copy systemd and agetty to the initramfs
+                cp -R "${crosspkgs.systemd}/bin/"* initramfs/bin/
+                cp -R "${crosspkgs.systemd}/sbin/"* initramfs/bin/
+                cp -R "${crosspkgs.systemd}/lib/systemd" initramfs/lib/
+
+                cp ${crosspkgs.lib.getLib crosspkgs.pcre2}/lib/libpcre2-8.so.0 initramfs/lib/
+                cp ${crosspkgs.lib.getLib crosspkgs.zlib}/lib/libz.so.1 initramfs/lib/
 
                 cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/
 
