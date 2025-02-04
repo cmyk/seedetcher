@@ -333,7 +333,7 @@
 
                 # Debug output to verify
                 echo "Created override.conf:"
-                ls -l initramfs/etc/systemd/system/getty@tty1.service.d/
+                ls -l initramfs/etc/systemd/system/getty@ttyGS0.service.d/
 
                 ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
                   | sort \
