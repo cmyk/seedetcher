@@ -296,8 +296,7 @@
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' `find initramfs`
 
                 # Create essential initramfs directories
-                # Create essential initramfs directories
-                mkdir -p initramfs/{bin,lib,dev,proc,sys,etc/systemd/system/getty@ttyGS0.service.d}
+                mkdir -p initramfs/{bin,lib,dev,proc,sys,run}
 
                 # Create necessary device nodes
                 touch initramfs/dev/{console,null}
@@ -311,37 +310,40 @@
                 chmod -R u+w initramfs/bin initramfs/lib || true
 
                 # Copy essential binaries
-                cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy bash binaries"
-                cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/ || echo "Failed to copy coreutils binaries"
+                cp "${crosspkgs.bash}/bin/sh" initramfs/bin/ || echo "Failed to copy sh"
                 cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
 
-                # Copy systemd (if required)
-                if [ -d "${crosspkgs.systemd}/bin/" ]; then
-                    cp -R "${crosspkgs.systemd}/bin/"* initramfs/bin/ || echo "Failed to copy systemd/bin"
-                    cp -R "${crosspkgs.systemd}/sbin/"* initramfs/bin/ || echo "Failed to copy systemd/sbin"
-                    cp -R "${crosspkgs.systemd}/lib/systemd" initramfs/lib/ || echo "Failed to copy systemd/lib"
-                fi
-
-                # Copy required shared libraries explicitly (avoiding the broken loop syntax)
+                # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
-                cp ${crosspkgs.lib.getLib crosspkgs.pcre2}/lib/libpcre2-8.so.0 initramfs/lib/ || echo "Failed to copy libpcre2-8.so.0"
-                cp ${crosspkgs.lib.getLib crosspkgs.zlib}/lib/libz.so.1 initramfs/lib/ || echo "Failed to copy libz.so.1"
 
-                # Set proper permissions for execution
+                # Set proper permissions
                 chmod -R 0755 initramfs/bin initramfs/lib || true
 
                 # Debug output
                 echo "Final permissions and contents of initramfs/bin:"
                 ls -alh initramfs/bin
 
-                # Add getty systemd service override
-                cat <<EOF > initramfs/etc/systemd/system/getty@ttyGS0.service.d/override.conf
-                [Service]
-                ExecStart=
-                ExecStart=-/bin/agetty -L 115200 ttyGS0 vt102
+                # ✅ REPLACING SYSTEMD: Create a simple init script
+                cat <<EOF > initramfs/init
+                #!/bin/sh
+                # Minimal init script to start a serial shell on ttyGS0
+
+                # Mount essential filesystems
+                mount -t proc none /proc
+                mount -t sysfs none /sys
+                mount -t tmpfs tmpfs /run
+                mkdir -p /dev/pts
+                mount -t devpts none /dev/pts
+
+                # Redirect console output
+                echo "SeedEtcher: Booting into serial shell on ttyGS0..."
+                exec /bin/agetty -L 115200 ttyGS0 vt102
                 EOF
+
+                # Ensure init is executable
+                chmod +x initramfs/init
                 ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
                   | sort \
                   | ${pkgs.cpio}/bin/cpio -D initramfs --reproducible -H newc -o --owner +0:+0 --quiet \
@@ -378,7 +380,7 @@
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
               
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rdinit=/controller rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rdinit=/controller rootwait modules-load=dwc2,g_serial init=/init";
               
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
               
