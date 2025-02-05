@@ -312,11 +312,8 @@
                 cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy sh"
                 cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
 
-                # Copy coreutils **preserving symlinks**
-                for bin in ${crosspkgs.coreutils}/bin/*; do
-                  ln -s coreutils initramfs/bin/$(basename $bin)
-                done
-                cp "${crosspkgs.coreutils}/bin/coreutils" initramfs/bin/
+                # Copy coreutils **properly**
+                cp -a "${crosspkgs.coreutils}/bin"/* initramfs/bin/ || echo "Failed to copy coreutils"
                 
                 # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
