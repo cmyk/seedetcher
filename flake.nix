@@ -357,16 +357,19 @@
                 mkdir -p /dev/pts
                 mount -t devpts none /dev/pts
 
-                # Create /dev/console at runtime
+                # Re-create /dev/console correctly
                 if [ ! -c /dev/console ]; then
-                    echo "Creating /dev/console..."
-                    mknod /dev/console c 5 1
+                    echo "Fixing /dev/console..."
+                    rm -f /dev/console
+                    mknod /dev/console c 5 1 || echo "failed to mknod console
                     chmod 622 /dev/console
                 fi
 
+
                 # Redirect console output
-                # echo "SeedEtcher: Booting into serial shell on ttyGS0..."
-                # exec /bin/agetty -L 115200 ttyGS0 vt102
+                echo "SeedEtcher: Booting into serial shell on ttyGS0..."
+                exec /bin/agetty -L 115200 ttyGS0 vt102
+                echo "DEBUG: agetty exited with status $?"
                 EOF
 
                 # Ensure init is executable
@@ -407,7 +410,7 @@
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
               
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rdinit=/controller rootwait modules-load=dwc2,g_serial init=/init";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rdinit=/controller rootwait modules-load=dwc2,g_serial init=/init debug ignore_loglevel earlyprintk";
               
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
               
