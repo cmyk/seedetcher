@@ -321,8 +321,6 @@
                 cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
                 cp "${crosspkgs.busybox}/bin/busybox" initramfs/bin/  # Add busybox for a minimal shell
 
-                ln -s /lib/ld-musl-armhf.so.1 /nix/store/85jp60d0jzra4h9qvr8iq6jxscl04adb-musl-armv6l-unknown-linux-musleabihf-1.2.5/lib/ld-musl-armhf.so.1
-
                 # Only create symlinks if they do not already exist
                 for cmd in ls cat echo sh rm mkdir rmdir cp mv touch; do
                   if [ ! -e initramfs/bin/$cmd ]; then
