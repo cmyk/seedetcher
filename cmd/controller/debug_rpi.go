@@ -48,8 +48,7 @@ func dbgInit(p *Platform) error {
 
 	// Start interactive shell **after debug is running**
 	go func() {
-		log.Println("Starting interactive shell...")
-		log.Println("/init")
+		log.Println("Starting interactive shell... in debug_rpi")
 		startShell()
 	}()
 
