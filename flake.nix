@@ -367,7 +367,6 @@
                     chmod 622 /dev/console
                 fi
 
-
                 # Redirect console output
                 echo "SeedEtcher: Booting into serial shell on ttyGS0..."
                 exec /bin/agetty -L 115200 ttyGS0 vt102
