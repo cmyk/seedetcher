@@ -46,13 +46,13 @@ func dbgInit(p *Platform) error {
 		}
 	}()
 
-    // Check if /dev/ttyGS0 exists before starting a shell
-    if _, err := os.Stat("/dev/ttyGS0"); os.IsNotExist(err) {
-        log.Println("Error: /dev/ttyGS0 does not exist. Is g_serial loaded?")
-    } else {
-        log.Println("ttyGS0 detected. Attempting to start shell...")
-        go startShell()
-    }
+    // // Check if /dev/ttyGS0 exists before starting a shell
+    // if _, err := os.Stat("/dev/ttyGS0"); os.IsNotExist(err) {
+    //     log.Println("Error: /dev/ttyGS0 does not exist. Is g_serial loaded?")
+    // } else {
+    //     log.Println("ttyGS0 detected. Attempting to start shell...")
+    //     go startShell()
+    // }
 
 	if dmesg {
 		kmsg, err := os.Open("/dev/kmsg")

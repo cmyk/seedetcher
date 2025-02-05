@@ -116,29 +116,33 @@ func execCommand(cmdStr string) {
     }
 }
 
-func startShell() {
-	fmt.Println("Press Ctrl+D to exit the shell.")
+func StartShell() {
+    log.Println("Starting interactive shell directly...")
 
-	// Set PATH manually
-	os.Setenv("PATH", "/bin:/usr/bin:/sbin:/usr/sbin")
-	fmt.Println("PATH set to:", os.Getenv("PATH"))
+    // Mount essential filesystems (if needed)
+    exec.Command("/bin/mount", "-t", "devtmpfs", "devtmpfs", "/dev").Run()
+    exec.Command("/bin/mount", "-t", "proc", "none", "/proc").Run()
+    exec.Command("/bin/mount", "-t", "sysfs", "none", "/sys").Run()
+    exec.Command("/bin/mount", "-t", "tmpfs", "tmpfs", "/run").Run()
+    exec.Command("/bin/mkdir", "-p", "/dev/pts").Run()
+    exec.Command("/bin/mount", "-t", "devpts", "none", "/dev/pts").Run()
 
-	// Ensure /dev/tty exists for proper shell execution
-	if _, err := os.Stat("/dev/tty"); os.IsNotExist(err) {
-		fmt.Println("Creating /dev/tty for proper shell execution...")
-		unix.Mknod("/dev/tty", unix.S_IFCHR|0666, int(unix.Mkdev(5, 0)))
-		unix.Chmod("/dev/tty", 0666)
-	}
+    // Ensure /dev/console exists
+    if _, err := os.Stat("/dev/console"); os.IsNotExist(err) {
+        log.Println("Creating /dev/console...")
+        exec.Command("/bin/mknod", "/dev/console", "c", "5", "1").Run()
+        exec.Command("/bin/chmod", "622", "/dev/console").Run()
+    }
 
-	// Execute the shell
-	cmd := exec.Command("/bin/sh", "-i")
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+    log.Println("Shell is about to start on ttyGS0...")
 
-	err := cmd.Run()
-	if err != nil {
-		fmt.Println("Error starting shell:", err)
-	}
-	fmt.Println("Shell exited.")
+    // Start a shell directly attached to ttyGS0
+    cmd := exec.Command("/bin/sh", "-i")
+    cmd.Stdin = os.Stdin
+    cmd.Stdout = os.Stdout
+    cmd.Stderr = os.Stderr
+
+    if err := cmd.Run(); err != nil {
+        log.Printf("ERROR: Failed to start shell: %v\n", err)
+    }
 }

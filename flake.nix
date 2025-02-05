@@ -311,15 +311,33 @@
                 chmod -R u+w initramfs/bin initramfs/lib || true
 
                 # Copy essential binaries
-                cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy sh"
-                cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
-                cp -a "${crosspkgs.coreutils}/bin"/* initramfs/bin/ || echo "Failed to copy coreutils"
                 
+                # cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
+                
+                crosspkgs.busybox.override { static = true; }
+                
+                mkdir -p initramfs/bin
+                cp "${crosspkgs.busybox.override { static = true; }}/bin/busybox" initramfs/bin/
+                chmod +x initramfs/bin/busybox
+
+                for cmd in $(initramfs/bin/busybox --list); do
+                  ln -s busybox initramfs/bin/$cmd
+                done
+                
+                
+                # replace busybox's sh with bash's:
+                #cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy sh"
+
+
                 # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
-                cp "${crosspkgs.busybox}/bin/busybox" initramfs/bin/  # Add busybox for a minimal shell
+                # cp "${crosspkgs.busybox}/bin/busybox" initramfs/bin/  # Add busybox for a minimal shell
+
+                # cp "${crosspkgs.busybox}/bin/lsmod" initramfs/bin/ || echo "Failed to copy lsmod"
+                # cp "${crosspkgs.busybox}/bin/modprobe" initramfs/bin/ || echo "Failed to copy modprobe"
+                # cp "${crosspkgs.busybox}/bin/insmod" initramfs/bin/ || echo "Failed to copy insmod"
 
                 # Only create symlinks if they do not already exist
                 for cmd in ls cat echo sh rm mkdir rmdir cp mv touch; do
@@ -335,43 +353,43 @@
                 echo "Final permissions and contents of initramfs/bin:"
                 ls -alh initramfs/bin
 
-                # REPLACING SYSTEMD: Create a simple init script
-                cat <<EOF > initramfs/init
-                #!/bin/sh
+                # # REPLACING SYSTEMD: Create a simple init script
+                # cat <<EOF > initramfs/init
+                # #!/bin/sh
 
-                # Mount /dev so devices like /dev/ttyGS0 can appear
-                mount -t devtmpfs devtmpfs /dev
+                # # Mount /dev so devices like /dev/ttyGS0 can appear
+                # mount -t devtmpfs devtmpfs /dev
 
-                # Ensure /dev/ttyGS0 exists before launching a shell
-                while [ ! -c /dev/ttyGS0 ]; do
-                    echo "Waiting for /dev/ttyGS0..." > /dev/console
-                    sleep 1
-                done
+                # # Ensure /dev/ttyGS0 exists before launching a shell
+                # while [ ! -c /dev/ttyGS0 ]; do
+                #     echo "Waiting for /dev/ttyGS0..." > /dev/console
+                #     sleep 1
+                # done
 
-                echo "SeedEtcher: Booting into serial shell on ttyGS0..." > /dev/console
+                # echo "SeedEtcher: Booting into serial shell on ttyGS0..." > /dev/console
 
-                # Debugging: Check what binaries exist
-                ls -alh /bin > /dev/console
-                ls -alh /lib > /dev/console
+                # # Debugging: Check what binaries exist
+                # ls -alh /bin > /dev/console
+                # ls -alh /lib > /dev/console
 
-                # Mount essential filesystems
-                mount -t proc none /proc
-                mount -t sysfs none /sys
-                mount -t tmpfs tmpfs /run
-                mkdir -p /dev/pts
-                mount -t devpts none /dev/pts
+                # # Mount essential filesystems
+                # mount -t proc none /proc
+                # mount -t sysfs none /sys
+                # mount -t tmpfs tmpfs /run
+                # mkdir -p /dev/pts
+                # mount -t devpts none /dev/pts
 
-                # Re-create /dev/console correctly
-                if [ ! -c /dev/console ]; then
-                    echo "Fixing /dev/console..." > /dev/console
-                    rm -f /dev/console
-                    mknod /dev/console c 5 1 || echo "failed to mknod console"
-                    chmod 622 /dev/console
-                fi
+                # # Re-create /dev/console correctly
+                # if [ ! -c /dev/console ]; then
+                #     echo "Fixing /dev/console..." > /dev/console
+                #     rm -f /dev/console
+                #     mknod /dev/console c 5 1 || echo "failed to mknod console"
+                #     chmod 622 /dev/console
+                # fi
 
-                # Start the interactive shell on ttyGS0
-                exec /bin/sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1
-                EOF
+                # # Start the interactive shell on ttyGS0
+                # exec /bin/sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1
+                # EOF
 
                 # Ensure init is executable
                 chmod +x initramfs/init
