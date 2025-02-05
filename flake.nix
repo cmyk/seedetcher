@@ -340,6 +340,13 @@
                 mkdir -p /dev/pts
                 mount -t devpts none /dev/pts
 
+                # Create /dev/console at runtime
+                if [ ! -c /dev/console ]; then
+                    echo "Creating /dev/console..."
+                    mknod /dev/console c 5 1
+                    chmod 622 /dev/console
+                fi
+
                 # Redirect console output
                 echo "SeedEtcher: Booting into serial shell on ttyGS0..."
                 exec /bin/agetty -L 115200 ttyGS0 vt102
