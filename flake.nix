@@ -338,6 +338,16 @@
                 # REPLACING SYSTEMD: Create a simple init script
                 cat <<EOF > initramfs/init
                 #!/bin/sh
+
+                echo "SeedEtcher: Booting into serial shell on ttyGS0..."
+                # Debugging: Check what binaries exist
+                ls -alh /bin > /dev/console
+                ls -alh /lib > /dev/console
+
+                # Try running a shell manually
+                echo "Trying to start /bin/sh..." > /dev/console
+                exec /bin/sh > /dev/console 2>&1
+
                 # Minimal init script to start a serial shell on ttyGS0
 
                 # Mount essential filesystems
@@ -355,8 +365,8 @@
                 fi
 
                 # Redirect console output
-                echo "SeedEtcher: Booting into serial shell on ttyGS0..."
-                exec /bin/agetty -L 115200 ttyGS0 vt102
+                # echo "SeedEtcher: Booting into serial shell on ttyGS0..."
+                # exec /bin/agetty -L 115200 ttyGS0 vt102
                 EOF
 
                 # Ensure init is executable
