@@ -340,7 +340,8 @@
                 #!/bin/sh
 
                 mount -t devtmpfs devtmpfs /dev
-                exec /bin/sh </dev/ttyGS0 >/dev/ttyGS0 2>&1
+                mknod /dev/console c 5 1
+                exec /bin/sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1
 
                 echo "SeedEtcher: Booting into serial shell on ttyGS0..."
                 # Debugging: Check what binaries exist
@@ -412,7 +413,7 @@
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
               
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial init=/init debug ignore_loglevel earlyprintk";
+              cmdlinetxt = pkgs.writeText "console=ttyGS0,115200 console=tty1 rootwait modules-load=dwc2,g_serial init=/bin/sh ignore_loglevel earlyprintk";
               
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
               
