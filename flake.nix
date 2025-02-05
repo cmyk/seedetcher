@@ -314,7 +314,7 @@
                 
                 # cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
                 
-                crosspkgs.busybox.override { static = true; }
+                crosspkgs.busybox.override { enableStatic = true; }
                 
                 mkdir -p initramfs/bin
                 cp "${crosspkgs.busybox.override { static = true; }}/bin/busybox" initramfs/bin/
