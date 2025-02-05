@@ -27,21 +27,8 @@
               fpu = "vfp";
             };
           };
-          overlays = [
-            (final: prev: {
-              kbd = prev.kbd.overrideAttrs (old: {
-                configureFlags = (old.configureFlags or []) ++ [
-                  "ac_cv_func_malloc_0_nonnull=yes"
-                  "ac_cv_func_realloc_0_nonnull=yes"
-                  "gl_cv_func_malloc_0_nonnull=yes"
-                  "gl_cv_func_realloc_0_nonnull=yes"
-                ];
-              });
-            })
-          ];
         };
 
-        
         crosspkgs-unstable = import nixpkgs-unstable {
           inherit system;
           crossSystem = {
