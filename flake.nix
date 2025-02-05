@@ -295,69 +295,53 @@
                 rm -f `find initramfs -type l`
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' `find initramfs`
 
-                # Create /dev/tty to avoid shell job control errors
-                mkdir -p initramfs/dev
-                touch initramfs/dev/console
-                touch initramfs/dev/null
+                # Create essential initramfs directories
+                # Create essential initramfs directories
+                mkdir -p initramfs/{bin,lib,dev,proc,sys,etc/systemd/system/getty@ttyGS0.service.d}
+
+                # Create necessary device nodes
+                touch initramfs/dev/{console,null}
                 chmod 622 initramfs/dev/console
                 chmod 666 initramfs/dev/null
 
-                # Use tmpfs instead of mknod
-                echo "Mounting dev tmpfs..."
-                mkdir -p initramfs/dev/pts
-                mkdir -p initramfs/dev/shm
-                mkdir -p initramfs/proc
-                mkdir -p initramfs/sys
+                # Create mount points for system services
+                mkdir -p initramfs/dev/{pts,shm}
 
-                # Add bash and coreutils
-                mkdir -p initramfs/bin
+                # Ensure write permissions before copying files
+                chmod -R u+w initramfs/bin initramfs/lib || true
 
-                cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/
-                cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/
+                # Copy essential binaries
+                cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy bash binaries"
+                cp -R "${crosspkgs.coreutils}/bin/"* initramfs/bin/ || echo "Failed to copy coreutils binaries"
+                cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
 
-                # Copy systemd and agetty to the initramfs
-                cp -R "${crosspkgs.systemd}/bin/"* initramfs/bin/
-                cp -R "${crosspkgs.systemd}/sbin/"* initramfs/bin/
-                cp -R "${crosspkgs.systemd}/lib/systemd" initramfs/lib/
+                # Copy systemd (if required)
+                if [ -d "${crosspkgs.systemd}/bin/" ]; then
+                    cp -R "${crosspkgs.systemd}/bin/"* initramfs/bin/ || echo "Failed to copy systemd/bin"
+                    cp -R "${crosspkgs.systemd}/sbin/"* initramfs/bin/ || echo "Failed to copy systemd/sbin"
+                    cp -R "${crosspkgs.systemd}/lib/systemd" initramfs/lib/ || echo "Failed to copy systemd/lib"
+                fi
 
-                cp ${crosspkgs.lib.getLib crosspkgs.pcre2}/lib/libpcre2-8.so.0 initramfs/lib/
-                cp ${crosspkgs.lib.getLib crosspkgs.zlib}/lib/libz.so.1 initramfs/lib/
+                # Copy required shared libraries explicitly (avoiding the broken loop syntax)
+                cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
+                cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
+                cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
+                cp ${crosspkgs.lib.getLib crosspkgs.pcre2}/lib/libpcre2-8.so.0 initramfs/lib/ || echo "Failed to copy libpcre2-8.so.0"
+                cp ${crosspkgs.lib.getLib crosspkgs.zlib}/lib/libz.so.1 initramfs/lib/ || echo "Failed to copy libz.so.1"
 
-                cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/
+                # Set proper permissions for execution
+                chmod -R 0755 initramfs/bin initramfs/lib || true
 
-                # Copy missing shared libraries
-                cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/
-                cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/
-                cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/
-
-                # Fix permissions
-                chmod 0755 initramfs/bin/*
-                chmod 0755 initramfs/lib/*
-                chmod +x initramfs/bin/*
-                chmod +x initramfs/lib/*
-                echo "Final permissions of initramfs/bin:"
-                ls -alh initramfs/bin
-                echo "Contents of initramfs/bin after copying:"
+                # Debug output
+                echo "Final permissions and contents of initramfs/bin:"
                 ls -alh initramfs/bin
 
-
-                # Ensure the directory exists before creating the file
-                mkdir -p initramfs/etc/systemd/system/getty@ttyGS0.service.d
-
-                echo "Checking if directory exists:"
-                ls -alh initramfs/etc/systemd/system/getty@ttyGS0.service.d || echo "Directory not found!"
-
-                # Add the getty service
+                # Add getty systemd service override
                 cat <<EOF > initramfs/etc/systemd/system/getty@ttyGS0.service.d/override.conf
                 [Service]
                 ExecStart=
                 ExecStart=-/bin/agetty -L 115200 ttyGS0 vt102
                 EOF
-
-                # Debug output to verify
-                echo "Created override.conf:"
-                ls -l initramfs/etc/systemd/system/getty@ttyGS0.service.d/
-
                 ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
                   | sort \
                   | ${pkgs.cpio}/bin/cpio -D initramfs --reproducible -H newc -o --owner +0:+0 --quiet \
