@@ -297,9 +297,10 @@
                 # Create essential initramfs directories
                 mkdir -p initramfs/{bin,lib,dev,proc,sys,run}
 
-                # Create necessary device nodes
-                touch initramfs/dev/{console,null}
+                # Create proper device nodes
+                mknod initramfs/dev/console c 5 1
                 chmod 622 initramfs/dev/console
+                mknod initramfs/dev/null c 1 3
                 chmod 666 initramfs/dev/null
 
                 # Create mount points for system services
