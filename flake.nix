@@ -340,7 +340,7 @@
                 #!/bin/sh
 
                 mount -t devtmpfs devtmpfs /dev
-                exec /bin/sh -i
+                exec /bin/sh </dev/ttyGS0 >/dev/ttyGS0 2>&1
 
                 echo "SeedEtcher: Booting into serial shell on ttyGS0..."
                 # Debugging: Check what binaries exist
