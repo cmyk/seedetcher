@@ -320,10 +320,13 @@
                 cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
                 cp "${crosspkgs.busybox}/bin/busybox" initramfs/bin/  # Add busybox for a minimal shell
-                ln -s busybox initramfs/bin/ls
-                ln -s busybox initramfs/bin/cat
-                ln -s busybox initramfs/bin/echo
-                ln -s busybox initramfs/bin/sh  # Ensure /bin/sh exists
+
+                # Only create symlinks if they do not already exist
+                for cmd in ls cat echo sh rm mkdir rmdir cp mv touch; do
+                  if [ ! -e initramfs/bin/$cmd ]; then
+                    ln -s busybox initramfs/bin/$cmd
+                  fi
+                done
 
                 # Set proper permissions
                 chmod -R 0755 initramfs/bin initramfs/lib || true
