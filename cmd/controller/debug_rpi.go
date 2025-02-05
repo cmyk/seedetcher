@@ -46,11 +46,13 @@ func dbgInit(p *Platform) error {
 		}
 	}()
 
-	// Start interactive shell **after debug is running**
-	go func() {
-		log.Println("Starting interactive shell... in debug_rpi")
-		startShell()
-	}()
+    // Check if /dev/ttyGS0 exists before starting a shell
+    if _, err := os.Stat("/dev/ttyGS0"); os.IsNotExist(err) {
+        log.Println("Error: /dev/ttyGS0 does not exist. Is g_serial loaded?")
+    } else {
+        log.Println("ttyGS0 detected. Attempting to start shell...")
+        go startShell()
+    }
 
 	if dmesg {
 		kmsg, err := os.Open("/dev/kmsg")
@@ -205,5 +207,6 @@ func openSerial(path string) (s *os.File, err error) {
 	if errno != 0 {
 		return nil, errno
 	}
+
 	return
 }

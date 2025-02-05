@@ -339,20 +339,20 @@
                 cat <<EOF > initramfs/init
                 #!/bin/sh
 
+                # Mount /dev so devices like /dev/ttyGS0 can appear
                 mount -t devtmpfs devtmpfs /dev
-                mknod /dev/console c 5 1
-                exec /bin/sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1
 
-                echo "SeedEtcher: Booting into serial shell on ttyGS0..."
+                # Ensure /dev/ttyGS0 exists before launching a shell
+                while [ ! -c /dev/ttyGS0 ]; do
+                    echo "Waiting for /dev/ttyGS0..." > /dev/console
+                    sleep 1
+                done
+
+                echo "SeedEtcher: Booting into serial shell on ttyGS0..." > /dev/console
+
                 # Debugging: Check what binaries exist
                 ls -alh /bin > /dev/console
                 ls -alh /lib > /dev/console
-
-                # Try running a shell manually
-                echo "Trying to start /bin/sh..." > /dev/console
-                exec /bin/sh > /dev/console 2>&1
-
-                # Minimal init script to start a serial shell on ttyGS0
 
                 # Mount essential filesystems
                 mount -t proc none /proc
@@ -363,16 +363,14 @@
 
                 # Re-create /dev/console correctly
                 if [ ! -c /dev/console ]; then
-                    echo "Fixing /dev/console..."
+                    echo "Fixing /dev/console..." > /dev/console
                     rm -f /dev/console
-                    mknod /dev/console c 5 1 || echo "failed to mknod console
+                    mknod /dev/console c 5 1 || echo "failed to mknod console"
                     chmod 622 /dev/console
                 fi
 
-                # Redirect console output
-                echo "SeedEtcher: Booting into serial shell on ttyGS0..."
-                exec /bin/agetty -L 115200 ttyGS0 vt102
-                echo "DEBUG: agetty exited with status $?"
+                # Start the interactive shell on ttyGS0
+                exec /bin/sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1
                 EOF
 
                 # Ensure init is executable
@@ -413,7 +411,7 @@
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
               
-              cmdlinetxt = pkgs.writeText "console=ttyGS0,115200 console=tty1 rootwait modules-load=dwc2,g_serial init=/bin/sh ignore_loglevel earlyprintk";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial ignore_loglevel earlyprintk";
               
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
               
