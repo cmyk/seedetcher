@@ -130,39 +130,13 @@ func startShell() {
 		unix.Chmod("/dev/tty", 0666)
 	}
 
-	// Check if /bin directory exists
-	fmt.Println("Checking contents of /bin directory...")
-	cmd := exec.Command("ls", "-alh", "/bin")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Println("Error listing /bin contents:", err)
-	}
-
-	// Try to find a valid shell
-	shellPath, err := exec.Command("which", "sh").Output()
-	shell := strings.TrimSpace(string(shellPath))
-	if err != nil || shell == "" {
-		fmt.Println("Error: shell not found in PATH, trying fallback.")
-		shell = "/bin/sh"
-	}
-
-	// Verify shell exists
-	if _, err := os.Stat(shell); os.IsNotExist(err) {
-		fmt.Printf("Shell '%s' not found, attempting to use musl loader...\n", shell)
-		shell = "/lib/ld-musl-armhf.so.1 /bin/sh"
-	}
-
-	// Print the shell path
-	fmt.Printf("Shell path selected: '%s'\n", shell)
-
 	// Execute the shell
-	cmd = exec.Command(shell, "-i")
+	cmd := exec.Command("/bin/sh", "-i")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	err = cmd.Run()
+	err := cmd.Run()
 	if err != nil {
 		fmt.Println("Error starting shell:", err)
 	}

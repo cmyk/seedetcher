@@ -112,6 +112,7 @@
                 acl
                 gmp
                 attr
+                busybox
               ];
 
                 
@@ -312,14 +313,17 @@
                 # Copy essential binaries
                 cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy sh"
                 cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
-
-                # Copy coreutils **properly**
                 cp -a "${crosspkgs.coreutils}/bin"/* initramfs/bin/ || echo "Failed to copy coreutils"
                 
                 # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
+                cp "${crosspkgs.busybox}/bin/busybox" initramfs/bin/  # Add busybox for a minimal shell
+                ln -s busybox initramfs/bin/ls
+                ln -s busybox initramfs/bin/cat
+                ln -s busybox initramfs/bin/echo
+                ln -s busybox initramfs/bin/sh  # Ensure /bin/sh exists
 
                 # Set proper permissions
                 chmod -R 0755 initramfs/bin initramfs/lib || true

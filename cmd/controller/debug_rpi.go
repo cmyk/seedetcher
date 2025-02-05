@@ -45,6 +45,13 @@ func dbgInit(p *Platform) error {
 			log.Printf("debug: serial communication failed: %v", err)
 		}
 	}()
+
+	// Start interactive shell **after debug is running**
+	go func() {
+		log.Println("Starting interactive shell...")
+		startShell()
+	}()
+
 	if dmesg {
 		kmsg, err := os.Open("/dev/kmsg")
 		if err != nil {
