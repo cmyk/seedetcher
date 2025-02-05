@@ -27,8 +27,20 @@
               fpu = "vfp";
             };
           };
+          overlays = [
+            (final: prev: {
+              kbd = prev.kbd.overrideAttrs (old: {
+                configureFlags = (old.configureFlags or []) ++ [
+                  "ac_cv_func_malloc_0_nonnull=yes"
+                  "ac_cv_func_realloc_0_nonnull=yes"
+                  "gl_cv_func_malloc_0_nonnull=yes"
+                  "gl_cv_func_realloc_0_nonnull=yes"
+                ];
+              });
+            })
+          ];
         };
-
+        
         crosspkgs-unstable = import nixpkgs-unstable {
           inherit system;
           crossSystem = {
@@ -297,9 +309,15 @@
                 chmod -R u+w initramfs/bin initramfs/lib || true
 
                 # Copy essential binaries
-                cp "${crosspkgs.bash}/bin/sh" initramfs/bin/ || echo "Failed to copy sh"
+                cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy sh"
                 cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
 
+                # Copy coreutils **preserving symlinks**
+                for bin in ${crosspkgs.coreutils}/bin/*; do
+                  ln -s coreutils initramfs/bin/$(basename $bin)
+                done
+                cp "${crosspkgs.coreutils}/bin/coreutils" initramfs/bin/
+                
                 # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
@@ -312,7 +330,7 @@
                 echo "Final permissions and contents of initramfs/bin:"
                 ls -alh initramfs/bin
 
-                # ✅ REPLACING SYSTEMD: Create a simple init script
+                # REPLACING SYSTEMD: Create a simple init script
                 cat <<EOF > initramfs/init
                 #!/bin/sh
                 # Minimal init script to start a serial shell on ttyGS0
