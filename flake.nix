@@ -341,6 +341,8 @@
                 cat <<EOF > initramfs/init
                 #!/bin/sh
 
+                exec /bin/sh -i
+
                 echo "SeedEtcher: Booting into serial shell on ttyGS0..."
                 # Debugging: Check what binaries exist
                 ls -alh /bin > /dev/console
