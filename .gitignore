@@ -6,3 +6,4 @@ output.log
 verbose.log
 seedetcher.code-workspace
 reload.log
+.vscode/settings.json

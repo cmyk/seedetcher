@@ -200,6 +200,11 @@
                 # Linux and macOS that the resulting kernel image differs.
                 ./scripts/config --disable VDSO
               '' + (if debug then ''
+                ./scripts/config --enable SERIAL_8250
+                ./scripts/config --enable SERIAL_8250_CONSOLE
+                ./scripts/config --enable TTY
+                ./scripts/config --enable VT
+                ./scripts/config --enable VT_CONSOLE
                 ./scripts/config --enable USB_G_SERIAL
               '' else "");
 
@@ -272,6 +277,9 @@
           mkinitramfs = debug:
             let
               pkgs = localpkgs;
+              
+              busyboxStatic = crosspkgs.busybox.override { enableStatic = true; };
+
               controller =
                 if debug then
                   self.packages.${system}.controller-debug
@@ -314,30 +322,16 @@
                 
                 # cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
                 
-                crosspkgs.busybox.override { enableStatic = true; }
-                
-                mkdir -p initramfs/bin
-                cp "${crosspkgs.busybox.override { static = true; }}/bin/busybox" initramfs/bin/
-                chmod +x initramfs/bin/busybox
-
-                for cmd in $(initramfs/bin/busybox --list); do
-                  ln -s busybox initramfs/bin/$cmd
-                done
-                
+                cp -a "${busyboxStatic}/bin/"* initramfs/bin/ 
                 
                 # replace busybox's sh with bash's:
-                #cp -R "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy sh"
+                #cp -a "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy sh"
 
 
                 # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
                 cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
-                # cp "${crosspkgs.busybox}/bin/busybox" initramfs/bin/  # Add busybox for a minimal shell
-
-                # cp "${crosspkgs.busybox}/bin/lsmod" initramfs/bin/ || echo "Failed to copy lsmod"
-                # cp "${crosspkgs.busybox}/bin/modprobe" initramfs/bin/ || echo "Failed to copy modprobe"
-                # cp "${crosspkgs.busybox}/bin/insmod" initramfs/bin/ || echo "Failed to copy insmod"
 
                 # Only create symlinks if they do not already exist
                 for cmd in ls cat echo sh rm mkdir rmdir cp mv touch; do
@@ -392,7 +386,9 @@
                 # EOF
 
                 # Ensure init is executable
-                chmod +x initramfs/init
+                # chmod +x initramfs/init
+
+            
                 ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
                   | sort \
                   | ${pkgs.cpio}/bin/cpio -D initramfs --reproducible -H newc -o --owner +0:+0 --quiet \

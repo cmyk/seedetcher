@@ -9,7 +9,7 @@ import (
 	"os/exec"
 	"runtime/pprof"
 	"strings"
-	"golang.org/x/sys/unix" // cmyk Correct import for system calls
+	// "golang.org/x/sys/unix" // cmyk Correct import for system calls
 	"seedetcher.com/gui"
 )
 
@@ -103,7 +103,9 @@ func execCommand(cmdStr string) {
     fmt.Printf("DEBUG: Command parsed as: %v\n", parts)
 
     // Ensure the command runs with the dynamic linker
-    command := exec.Command("/lib/ld-musl-armhf.so.1", append([]string{parts[0]}, parts[1:]...)...)
+    // command := exec.Command("/lib/ld-musl-armhf.so.1", append([]string{parts[0]}, parts[1:]...)...)
+	// Let's NOT ;)
+	command := exec.Command(parts[0], parts[1:]...)
     command.Stdout = os.Stdout
     command.Stderr = os.Stderr
     command.Env = append(os.Environ(), "PATH=/bin:/usr/bin:/sbin:/usr/sbin")
@@ -116,7 +118,7 @@ func execCommand(cmdStr string) {
     }
 }
 
-func StartShell() {
+func startShell() {
     log.Println("Starting interactive shell directly...")
 
     // Mount essential filesystems (if needed)
