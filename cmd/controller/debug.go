@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"runtime/pprof"
 	"strings"
-	// "golang.org/x/sys/unix" // cmyk Correct import for system calls
+	"time"
+	"golang.org/x/sys/unix" // cmyk Correct import for system calls
+	//"syscall"
 	"seedetcher.com/gui"
 )
 
@@ -102,6 +104,13 @@ func execCommand(cmdStr string) {
 
     fmt.Printf("DEBUG: Command parsed as: %v\n", parts)
 
+
+    // Manually prepend "/bin" if command isn't an absolute path
+    if !strings.HasPrefix(parts[0], "/") {
+        parts[0] = "/bin/" + parts[0]
+    }
+
+
     // Ensure the command runs with the dynamic linker
     // command := exec.Command("/lib/ld-musl-armhf.so.1", append([]string{parts[0]}, parts[1:]...)...)
 	// Let's NOT ;)
@@ -129,20 +138,53 @@ func startShell() {
     exec.Command("/bin/mkdir", "-p", "/dev/pts").Run()
     exec.Command("/bin/mount", "-t", "devpts", "none", "/dev/pts").Run()
 
+    // Ensure /dev/ttyGS0 exists before launching a shell
+    for i := 0; i < 10; i++ {
+        if _, err := os.Stat("/dev/ttyGS0"); err == nil {
+            break
+        }
+        log.Println("Waiting for /dev/ttyGS0...")
+        time.Sleep(1 * time.Second)
+    }
+
     // Ensure /dev/console exists
     if _, err := os.Stat("/dev/console"); os.IsNotExist(err) {
         log.Println("Creating /dev/console...")
-        exec.Command("/bin/mknod", "/dev/console", "c", "5", "1").Run()
+        exec.Command("/bin/mknod", "/dev/console", "c", fmt.Sprintf("%d", 5), fmt.Sprintf("%d", 1)).Run()
         exec.Command("/bin/chmod", "622", "/dev/console").Run()
     }
 
+    // Force $PATH for all shell commands
+    os.Setenv("PATH", "/bin:/usr/bin:/sbin:/usr/sbin")
+
     log.Println("Shell is about to start on ttyGS0...")
 
-    // Start a shell directly attached to ttyGS0
+    // Open /dev/ttyGS0 as the shell input/output
+    tty, err := os.OpenFile("/dev/ttyGS0", os.O_RDWR, 0666)
+    if err != nil {
+        log.Printf("ERROR: Failed to open /dev/ttyGS0: %v\n", err)
+        return
+    }
+    defer tty.Close()
+
+    // **🔧 Fix: Create a new session first**
+    if _, err := unix.Setsid(); err != nil {
+        log.Printf("ERROR: Failed to create new session: %v\n", err)
+        return
+    }
+
+    // **🔧 Fix: Set ttyGS0 as controlling terminal**
+    if err := unix.IoctlSetInt(int(tty.Fd()), unix.TIOCSCTTY, 0); err != nil {
+        log.Printf("ERROR: Failed to set ttyGS0 as controlling terminal: %v\n", err)
+        return
+    }
+
+    // **Start the shell using ttyGS0 explicitly as its terminal**
     cmd := exec.Command("/bin/sh", "-i")
-    cmd.Stdin = os.Stdin
-    cmd.Stdout = os.Stdout
-    cmd.Stderr = os.Stderr
+    cmd.Stdin = tty
+    cmd.Stdout = tty
+    cmd.Stderr = tty
+    cmd.Env = append(os.Environ(), "PATH=/bin:/usr/bin:/sbin:/usr/sbin")
 
     if err := cmd.Run(); err != nil {
         log.Printf("ERROR: Failed to start shell: %v\n", err)
