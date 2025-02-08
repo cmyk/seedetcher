@@ -169,6 +169,7 @@ func dumpFile(path string, r io.Reader) (ferr error) {
 }
 
 func openSerial(path string) (s *os.File, err error) {
+	log.Printf("DEBUG cmyk: inside openSerial [%s]", path)
 	s, err = os.OpenFile(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK, 0666)
 	if err != nil {
 		return nil, err
