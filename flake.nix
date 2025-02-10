@@ -380,34 +380,26 @@
                     sleep 1
                 done
 
-                echo "DEBUG: USB gadget detected!"
-
-                # **Ensure controller input FIFO exists**
-                if [ ! -p /dev/controller_input ]; then
-                    echo "DEBUG: Creating /dev/controller_input FIFO..."
-                    mkfifo /dev/controller_input
-                    chmod 666 /dev/controller_input
-                fi
-
-
-
-                echo "DEBUG: ttyGS0 available. Starting controller..."
-
-                echo "DEBUG: Pre-filling FIFO to unblock controller..."
-                echo "" > /dev/controller_input &
-
-                echo "DEBUG: Starting FIFO listener..."
-                cat /dev/controller_input > /log/fifo_debug.log &
-                
-                /controller < /dev/controller_input > /log/controller.log 2>&1 &
-                echo "DEBUG: Controller started with PID: $!"
-
-                # Set shell prompt
-                export PS1="\w # "
-                export PS2=""
-
-                # Apply terminal settings
+                echo "DEBUG: ttyGS0 available for shell..."
                 stty -F /dev/ttyGS0 sane
+
+                # Ensure /dev/ttyGS1 is available for controller input
+                while [ ! -c /dev/ttyGS1 ]; do
+                    echo "DEBUG: Waiting for /dev/ttyGS1..."
+                    sleep 1
+                done
+
+                echo "DEBUG: ttyGS1 available for controller input"
+
+                # echo "DEBUG: Pre-filling FIFO to unblock controller..."
+                # echo "" > /dev/controller_input &
+                
+                # setting correct permissions
+                chmod 666 /dev/ttyGS*
+
+                # Start the controller using ttyGS1 for input
+                /controller < /dev/ttyGS1 | tee /log/controller.log > /dev/ttyGS1 &
+                echo "DEBUG: Controller started with PID: $!"
 
                 echo "DEBUG: Init finished. Starting shell..."
                 exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1
@@ -452,7 +444,7 @@
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
               
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 init=/init rootwait modules-load=dwc2,g_serial debug ignore_loglevel earlyprintk";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 init=/init rootwait modules-load=dwc2,g_serial g_serial.use_acm=1 g_serial.n_ports=2 debug ignore_loglevel earlyprintk";
               
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
               
@@ -740,9 +732,16 @@
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = localpkgs; in pkgs.writeShellScriptBin "reload" ''
               set -x  # Enable debug mode
-              USBDEV=$1
+              
+              # Set default USB device if not provided
               if [ -z "$1" ]; then
-                  echo "error: specify USB device"
+                  USBDEV="/dev/ttyACM1"
+              else
+                  USBDEV="$1"
+              fi
+              
+              if [ ! -e "$USBDEV" ]; then
+                  echo "error: USB device $USBDEV not found"
                   exit 1
               fi
 

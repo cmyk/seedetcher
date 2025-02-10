@@ -32,7 +32,7 @@ func init() {
 }
 
 func dbgInit(p *Platform) error {
-	s, err := openSerial("/dev/controller_input")
+	s, err := openSerial("/dev/ttyGS1")
 	if err != nil {
 		return err
 	}
@@ -165,6 +165,7 @@ func openSerial(path string) (s *os.File, err error) {
 	log.Printf("DEBUG: Attempting to open serial input at [%s]", path)
 
 	s, err = os.OpenFile(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK, 0666)
+	//s, err = os.OpenFile(path, unix.O_RDWR|unix.O_NOCTTY, 0666)
 	if err != nil {
 		log.Printf("ERROR: Failed to open [%s]: %v", path, err)
 		return nil, err
@@ -175,7 +176,7 @@ func openSerial(path string) (s *os.File, err error) {
 		}
 	}()
 
-    // Check if this is a real serial device (not FIFO)
+    // Check if this is a real serial device (not FIFO) 
     var stat unix.Stat_t
     if err := unix.Stat(path, &stat); err == nil {
         if stat.Mode&unix.S_IFMT == unix.S_IFIFO {
