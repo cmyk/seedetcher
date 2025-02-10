@@ -20,7 +20,10 @@ import (
 	"seedetcher.com/driver/mjolnir"
 )
 
-const dmesg = false
+const (
+	dmesgEnabled = false
+	serialPath   = "/dev/ttyGS1"
+)
 
 var screenshotCounter int
 
@@ -31,24 +34,28 @@ func init() {
 	}
 }
 
+// dbgInit initializes serial communication.
 func dbgInit(p *Platform) error {
-	s, err := openSerial("/dev/ttyGS1")
+	serial, err := openSerial(serialPath)
 	if err != nil {
-		log.Printf("ERROR: Failed to open /dev/ttyGS1: %v", err)
+		log.Printf("ERROR: Failed to open %s: %v", serialPath, err)
 		return err
 	}
-	log.Println("DEBUG: Successfully opened /dev/ttyGS1")
+	log.Printf("DEBUG: Successfully opened %s", serialPath)
+
 	// Redirect stderr and stdout
-	unix.Dup2(int(s.Fd()), syscall.Stderr)
-	unix.Dup2(int(s.Fd()), syscall.Stdout)
+	unix.Dup2(int(serial.Fd()), syscall.Stderr)
+	unix.Dup2(int(serial.Fd()), syscall.Stdout)
+
 	go func() {
-		defer s.Close()
-		if err := runSerial(p, s); err != nil {
-			log.Printf("DEBUG: serial communication failed: %v", err)
+		defer serial.Close()
+		if err := runSerial(p, serial); err != nil {
+			log.Printf("DEBUG: Serial communication failed: %v", err)
 		}
 	}()
 
-	if dmesg {
+	// Optional kernel message logging
+	if dmesgEnabled {
 		kmsg, err := os.Open("/dev/kmsg")
 		if err != nil {
 			return err
@@ -58,46 +65,28 @@ func dbgInit(p *Platform) error {
 			io.Copy(os.Stderr, kmsg)
 		}()
 	}
+
 	return nil
 }
 
+// runSerial listens for incoming serial commands and processes them.
 func runSerial(p *Platform, s io.Reader) error {
-	r := bufio.NewReader(s)
+	reader := bufio.NewReader(s)
 	for {
-		line, err := r.ReadString('\n')
-		line = strings.TrimRight(line, "\r\n") // cmyk Remove both CR and LF cleanly
+		line, err := reader.ReadString('\n')
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "DEBUG: Read error: %v\n", err)  // <== Add this line
+			log.Printf("DEBUG: Serial read error: %v", err)
 			return err
 		}
-		
-		fmt.Fprintf(os.Stderr, "DEBUG: Received line: [%s]\n", line)  // <- Add this to debug
 
-		var binSize int64
 		line = strings.TrimSpace(line)
-		
-		if _, err := fmt.Sscanf(line, "reload %d", &binSize); err == nil {
-			binFile := "/reload-a"
-			if binFile == os.Args[0] {
-				binFile = "/reload-b"
-			}
-			if err := writeReloader(r, binFile, binSize); err != nil {
-				return err
-			}
-			if err := syscall.Exec(binFile, []string{binFile}, nil); err != nil {
-				log.Printf("Exec failed: %v", err)
-				return fmt.Errorf("%s: %w", binFile, err)
-			}
-			continue
-		}
-		switch line {
-		case "screenshot":
-			if p.display == nil {
-				break
-			}
-			screenshotCounter++
-			name := fmt.Sprintf("screenshot%d.png", screenshotCounter)
-			dumpImage(name, p.display.Framebuffer())
+		log.Printf("DEBUG: Received input [%s]", line)
+
+		switch {
+		case strings.HasPrefix(line, "reload "):
+			handleReload(reader, line)
+		case line == "screenshot":
+			takeScreenshot(p)
 		default:
 			for _, e := range debugCommand(line) {
 				p.events <- e.Event()
@@ -106,34 +95,118 @@ func runSerial(p *Platform, s io.Reader) error {
 	}
 }
 
-func writeReloader(s io.Reader, binFile string, size int64) (ferr error) {
+// handleReload processes the reload command.
+func handleReload(reader *bufio.Reader, line string) {
+	var binSize int64
+	if _, err := fmt.Sscanf(line, "reload %d", &binSize); err == nil {
+		binFile := "/reload-a"
+		if binFile == os.Args[0] {
+			binFile = "/reload-b"
+		}
+		if err := writeReloader(reader, binFile, binSize); err == nil {
+			syscall.Exec(binFile, []string{binFile}, nil)
+		} else {
+			log.Printf("ERROR: Reload failed: %v", err)
+		}
+	}
+}
+
+// takeScreenshot captures the screen.
+func takeScreenshot(p *Platform) {
+	if p.display == nil {
+		return
+	}
+	screenshotCounter++
+	filename := fmt.Sprintf("screenshot%d.png", screenshotCounter)
+	dumpImage(filename, p.display.Framebuffer())
+	log.Printf("DEBUG: Screenshot saved as %s", filename)
+}
+
+// openSerial opens and configures the serial port.
+func openSerial(path string) (*os.File, error) {
+	log.Printf("DEBUG: Attempting to open serial [%s]", path)
+
+	serial, err := os.OpenFile(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK, 0666)
+	if err != nil {
+		log.Printf("ERROR: Failed to open [%s]: %v", path, err)
+		return nil, err
+	}
+
+	// Skip termios settings for ttyGS1
+	if strings.Contains(path, "GS1") {
+		log.Printf("WARNING: Skipping termios settings for [%s]", path)
+		return serial, nil
+	}
+
+	if err := configureSerial(serial); err != nil {
+		serial.Close()
+		return nil, err
+	}
+
+	return serial, nil
+}
+
+// configureSerial applies termios settings.
+func configureSerial(serial *os.File) error {
+	conn, err := serial.SyscallConn()
+	if err != nil {
+		log.Printf("ERROR: SyscallConn failed: %v", err)
+		return err
+	}
+
+	var errno syscall.Errno
+	err = conn.Control(func(fd uintptr) {
+		// Check ioctl support
+		if _, _, errno = unix.Syscall6(unix.SYS_IOCTL, fd, uintptr(unix.TCGETS), 0, 0, 0, 0); errno != 0 {
+			log.Printf("WARNING: ioctl not supported, skipping termios settings.")
+			return
+		}
+
+		// Apply termios settings
+		t := unix.Termios{
+			Iflag:  0, // Disable input processing
+			Oflag:  0, // Disable output processing
+			Cflag:  unix.CREAD | unix.CLOCAL | unix.CS8,
+			Lflag:  0, // Disable local modes
+			Ispeed: 115200,
+			Ospeed: 115200,
+		}
+		t.Cc[unix.VMIN] = 1
+		t.Cc[unix.VTIME] = 0
+
+		if _, _, errno = unix.Syscall6(unix.SYS_IOCTL, fd, uintptr(unix.TCSETS), uintptr(unsafe.Pointer(&t)), 0, 0, 0); errno != 0 {
+			log.Printf("WARNING: Failed to apply termios settings: %v", errno)
+		}
+	})
+
+	return err
+}
+
+// writeReloader writes the new binary.
+func writeReloader(reader io.Reader, binFile string, size int64) error {
 	bin, err := os.OpenFile(binFile, os.O_CREATE|os.O_WRONLY, 0o700)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := bin.Close(); ferr == nil {
-			ferr = err
-		}
-	}()
-	_, err = io.CopyN(bin, s, size)
+	defer bin.Close()
+	_, err = io.CopyN(bin, reader, size)
 	return err
 }
 
+// dumpImage saves an image to disk.
 func dumpImage(name string, img image.Image) {
 	buf := new(bytes.Buffer)
 	if err := png.Encode(buf, img); err != nil {
-		log.Printf("screenshot: failed to encode: %v", err)
+		log.Printf("ERROR: Screenshot encode failed: %v", err)
 		return
 	}
 	if err := dumpFile(name, buf); err != nil {
-		log.Printf("screenshot: %s: %v", name, err)
-		return
+		log.Printf("ERROR: Screenshot save failed: %v", err)
 	}
-	log.Printf("screenshot: dumped %s", name)
 }
 
-func dumpFile(path string, r io.Reader) (ferr error) {
+// dumpFile writes a file to disk.
+func dumpFile(path string, r io.Reader) error {
 	const mntDir = "/mnt"
 	if err := os.MkdirAll(mntDir, 0o644); err != nil {
 		return fmt.Errorf("mkdir %s: %w", mntDir, err)
@@ -141,87 +214,14 @@ func dumpFile(path string, r io.Reader) (ferr error) {
 	if err := syscall.Mount("/dev/mmcblk0p1", mntDir, "vfat", 0, ""); err != nil {
 		return fmt.Errorf("mount /dev/mmcblk0p1: %w", err)
 	}
-	defer func() {
-		if err := syscall.Unmount(mntDir, 0); ferr == nil {
-			ferr = err
-		}
-	}()
-	path = filepath.Join(mntDir, path)
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o644); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
-	}
-	f, err := os.Create(path)
+	defer syscall.Unmount(mntDir, 0)
+
+	fullPath := filepath.Join(mntDir, path)
+	file, err := os.Create(fullPath)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := f.Close(); ferr == nil {
-			ferr = err
-		}
-	}()
-	_, err = io.Copy(f, r)
+	defer file.Close()
+	_, err = io.Copy(file, r)
 	return err
-}
-
-func openSerial(path string) (s *os.File, err error) {
-	
-	log.Printf("DEBUG: Attempting to open serial input at [%s]", path)
-
-	s, err = os.OpenFile(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK, 0666)
-	if err != nil {
-		log.Printf("ERROR: Failed to open [%s]: %v", path, err)
-		return nil, err
-	}
-	defer func() {
-		if err != nil && s != nil {
-			s.Close()
-		}
-	}()
-
-	
-    // Skip termios settings for GS1
-    if strings.Contains(path, "GS1") {
-        log.Printf("WARNING: Skipping termios settings for [%s]", path)
-        return s, nil
-    }
-
-	c, err := s.SyscallConn()
-	if err != nil {
-		log.Printf("ERROR: SyscallConn failed for [%s]: %v", path, err)
-		return nil, err
-	}
-	var errno syscall.Errno
-	err = c.Control(func(fd uintptr) {
-		// Check if this device supports `ioctl`
-		if _, _, errno = unix.Syscall6(unix.SYS_IOCTL, fd, uintptr(unix.TCGETS), 0, 0, 0, 0); errno != 0 {
-			log.Printf("WARNING: ioctl not supported on [%s], skipping termios settings.", path)
-			return
-		}
-		// Base settings
-		cflagToUse := uint32(unix.CREAD | unix.CLOCAL | unix.CS8)
-		t := unix.Termios{
-			Iflag:  0, // cmyk Disable input processing
-			Oflag:  0, // Disable output processing (fixes line issues)
-			Cflag:  cflagToUse,
-			Lflag:  0, // Disable local modes (canonical, echo, etc.)
-			Ispeed: 115200,
-			Ospeed: 115200,
-		}
-		t.Cc[unix.VMIN] = 1
-		t.Cc[unix.VTIME] = 0
-
-		if _, _, errno := unix.Syscall6(unix.SYS_IOCTL, fd, uintptr(unix.TCSETS), uintptr(unsafe.Pointer(&t)), 0, 0, 0); errno != 0 {
-			log.Printf("WARNING: Failed to apply termios settings on [%s]: %v", path, errno)
-			panic(errno)
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	if errno != 0 {
-		return nil, errno
-	}
-
-	return
 }
