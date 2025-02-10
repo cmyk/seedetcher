@@ -1,5 +1,5 @@
 .DS_Store
-result
+/result
 debug.log
 output.log
 verbose.log
@@ -7,3 +7,4 @@ seedetcher.code-workspace
 reload.log
 .vscode/settings.json
 tmux-client-14578.log
+/log

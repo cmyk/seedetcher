@@ -69,47 +69,58 @@ func dbgInit(p *Platform) error {
 	return nil
 }
 
-// runSerial listens for incoming serial commands and processes them.
 func runSerial(p *Platform, s io.Reader) error {
-	reader := bufio.NewReader(s)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			log.Printf("DEBUG: Serial read error: %v", err)
-			return err
-		}
+    r := bufio.NewReader(s)
 
-		line = strings.TrimSpace(line)
-		log.Printf("DEBUG: Received input [%s]", line)
+    for {
+        line, err := r.ReadString('\n')
+        if err != nil {
+            return err
+        }
+        line = strings.TrimSpace(line)
 
-		switch {
-		case strings.HasPrefix(line, "reload "):
-			handleReload(reader, line)
-		case line == "screenshot":
-			takeScreenshot(p)
-		default:
-			for _, e := range debugCommand(line) {
-				p.events <- e.Event()
-			}
-		}
-	}
+        var binSize int64
+        if _, err := fmt.Sscanf(line, "reload %d", &binSize); err == nil {
+            binFile := "/reload-a"
+            if binFile == os.Args[0] {
+                binFile = "/reload-b"
+            }
+
+            // ✅ Correctly read binary data
+            binaryReader := io.LimitReader(s, binSize)
+            if err := writeReloader(binaryReader, binFile, binSize); err != nil {
+                return err
+            }
+
+            // ✅ Ensure we execute the new binary
+            if err := syscall.Exec(binFile, []string{binFile}, nil); err != nil {
+                log.Printf("Exec failed: %v", err)
+                return fmt.Errorf("%s: %w", binFile, err)
+            }
+            continue
+        }
+
+        // ✅ Only print if it’s text (avoids printing binary junk)
+        log.Printf("DEBUG: Received command: [%s]", line)
+
+        // ✅ Handle known commands
+        switch line {
+        case "screenshot":
+            if p.display == nil {
+                break
+            }
+            screenshotCounter++
+            name := fmt.Sprintf("screenshot%d.png", screenshotCounter)
+            dumpImage(name, p.display.Framebuffer())
+        default:
+            for _, e := range debugCommand(line) {
+                p.events <- e.Event()
+            }
+        }
+    }
 }
 
-// handleReload processes the reload command.
-func handleReload(reader *bufio.Reader, line string) {
-	var binSize int64
-	if _, err := fmt.Sscanf(line, "reload %d", &binSize); err == nil {
-		binFile := "/reload-a"
-		if binFile == os.Args[0] {
-			binFile = "/reload-b"
-		}
-		if err := writeReloader(reader, binFile, binSize); err == nil {
-			syscall.Exec(binFile, []string{binFile}, nil)
-		} else {
-			log.Printf("ERROR: Reload failed: %v", err)
-		}
-	}
-}
+
 
 // takeScreenshot captures the screen.
 func takeScreenshot(p *Platform) {
