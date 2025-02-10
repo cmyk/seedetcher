@@ -34,15 +34,17 @@ func init() {
 func dbgInit(p *Platform) error {
 	s, err := openSerial("/dev/ttyGS1")
 	if err != nil {
+		log.Printf("ERROR: Failed to open /dev/ttyGS1: %v", err)
 		return err
 	}
+	log.Println("DEBUG: Successfully opened /dev/ttyGS1")
 	// Redirect stderr and stdout
 	unix.Dup2(int(s.Fd()), syscall.Stderr)
 	unix.Dup2(int(s.Fd()), syscall.Stdout)
 	go func() {
 		defer s.Close()
 		if err := runSerial(p, s); err != nil {
-			log.Printf("debug: serial communication failed: %v", err)
+			log.Printf("DEBUG: serial communication failed: %v", err)
 		}
 	}()
 
@@ -69,6 +71,8 @@ func runSerial(p *Platform, s io.Reader) error {
 			return err
 		}
 		
+		fmt.Fprintf(os.Stderr, "DEBUG: Received line: [%s]\n", line)  // <- Add this to debug
+
 		var binSize int64
 		line = strings.TrimSpace(line)
 		
@@ -165,7 +169,6 @@ func openSerial(path string) (s *os.File, err error) {
 	log.Printf("DEBUG: Attempting to open serial input at [%s]", path)
 
 	s, err = os.OpenFile(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK, 0666)
-	//s, err = os.OpenFile(path, unix.O_RDWR|unix.O_NOCTTY, 0666)
 	if err != nil {
 		log.Printf("ERROR: Failed to open [%s]: %v", path, err)
 		return nil, err
@@ -176,13 +179,11 @@ func openSerial(path string) (s *os.File, err error) {
 		}
 	}()
 
-    // Check if this is a real serial device (not FIFO) 
-    var stat unix.Stat_t
-    if err := unix.Stat(path, &stat); err == nil {
-        if stat.Mode&unix.S_IFMT == unix.S_IFIFO {
-            log.Printf("WARNING: [%s] is a FIFO, skipping ioctl setup.", path)
-            return s, nil
-        }
+	
+    // Skip termios settings for GS1
+    if strings.Contains(path, "GS1") {
+        log.Printf("WARNING: Skipping termios settings for [%s]", path)
+        return s, nil
     }
 
 	c, err := s.SyscallConn()

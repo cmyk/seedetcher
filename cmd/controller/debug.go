@@ -145,7 +145,7 @@ func startShell() {
     exec.Command("/bin/mkdir", "-p", "/dev/pts").Run()
     exec.Command("/bin/mount", "-t", "devpts", "none", "/dev/pts").Run()
 
-    // Ensure /dev/ttyGS0 exists before launching a shell
+    // Ensure /dev/ttyGS0 exists before launching a shell 
     for i := 0; i < 10; i++ {
         if _, err := os.Stat("/dev/ttyGS0"); err == nil {
             break

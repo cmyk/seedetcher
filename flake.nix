@@ -113,6 +113,7 @@
                 gmp     # For OpenSSL/crypto
                 attr    # For extended attributes
                 busybox
+                strace
               ];
 
                 
@@ -281,6 +282,7 @@
               
               busyboxStatic = crosspkgs.pkgsStatic.busybox;
               bashStatic = crosspkgs.pkgsStatic.bash;
+              straceStatic = crosspkgs.pkgsStatic.strace;
 
               controller =
                 if debug then
@@ -323,6 +325,7 @@
                 # Copy essential binaries
                                 
                 cp -a ${busyboxStatic}/bin/* initramfs/bin/ 
+                cp -a ${straceStatic}/bin/strace initramfs/bin/
 
                 # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
@@ -348,15 +351,14 @@
                 cat <<EOF > initramfs/init
                 #!/bin/sh
 
-
-                sleep 10  # Ensures USB gadget mode is fully initialized
-
-                echo "Slept for 10s ..."
+                sleep 10
 
                 set -m  # Enable job control
 
-                # Ensure output goes to the correct serial console (tio)
-                exec > /dev/ttyGS0 2>&1
+                # Send debug messages to ttyGS0 but avoid affecting exec shell output
+                debug_echo() {
+                    echo "DEBUG: $1" > /dev/ttyGS0
+                }
 
                 echo "DEBUG: Mounting filesystems..."
                 mount -t devtmpfs devtmpfs /dev
@@ -367,39 +369,48 @@
                 mkdir -p /log
                 chmod 777 /log
 
-
                 +# Fix DRM framebuffer permissions
                 +echo "DEBUG: Fixing /dev/dri permissions..."
                 +mkdir -p /dev/dri
                 +chmod 777 /dev/dri
                 +chmod 777 /dev/dri/* 2>/dev/null || true
 
-                # Ensure /dev/ttyGS0 is available before proceeding
-                while [ ! -c /dev/ttyGS0 ]; do
+                timeout=30  # Max wait time in seconds
+
+                # Ensure /dev/ttyGS0 is available for shell
+                while [ ! -c /dev/ttyGS0 ] && [ $timeout -gt 0 ]; do
                     echo "DEBUG: Waiting for /dev/ttyGS0..."
                     sleep 1
+                    timeout=$((timeout - 1))
                 done
 
-                echo "DEBUG: ttyGS0 available for shell..."
-                stty -F /dev/ttyGS0 sane
+                # Reset timeout
+                timeout=30
 
                 # Ensure /dev/ttyGS1 is available for controller input
-                while [ ! -c /dev/ttyGS1 ]; do
+                while [ ! -c /dev/ttyGS1 ] && [ $timeout -gt 0 ]; do
                     echo "DEBUG: Waiting for /dev/ttyGS1..."
                     sleep 1
+                    timeout=$((timeout - 1))
                 done
+                
+                echo "DEBUG: USB serial devices detected!"
 
-                echo "DEBUG: ttyGS1 available for controller input"
-
-                # echo "DEBUG: Pre-filling FIFO to unblock controller..."
-                # echo "" > /dev/controller_input &
+                stty -F /dev/ttyGS0 sane
+                stty -F /dev/ttyGS1 sane
                 
                 # setting correct permissions
                 chmod 666 /dev/ttyGS*
+                
+                # Pre-fill FIFO before starting the controller
+                echo "DEBUG: Pre-filling FIFO to unblock controller..."
+                echo "" > /dev/ttyGS1 &
 
-                # Start the controller using ttyGS1 for input
-                /controller < /dev/ttyGS1 | tee /log/controller.log > /dev/ttyGS1 &
+                echo "DEBUG: Starting controller..."
+                /controller < /dev/ttyGS1 > /dev/ttyGS1 2>&1 &  # RUN IN BACKGROUND!
                 echo "DEBUG: Controller started with PID: $!"
+
+                sleep 5
 
                 echo "DEBUG: Init finished. Starting shell..."
                 exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1
@@ -444,7 +455,7 @@
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
               
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 init=/init rootwait modules-load=dwc2,g_serial g_serial.use_acm=1 g_serial.n_ports=2 debug ignore_loglevel earlyprintk";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 init=/init rootwait modules-load=dwc2,g_serial g_serial.use_acm=1 g_serial.n_ports=2 debug ignore_loglevel earlyprintk";              
               
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
               
