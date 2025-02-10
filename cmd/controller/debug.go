@@ -33,7 +33,14 @@ func click(btn gui.Button) []gui.ButtonEvent {
 }
 
 func debugCommand(cmd string) []gui.ButtonEvent {
-	log.Printf("DEBUG: Received command: %q\n", cmd)
+	//log.Printf("DEBUG: Received command: %q\n", cmd)
+
+	// Ignore Ctrl+C (SIGINT) so shell handles it
+	if cmd == "\x03" {
+		fmt.Println("Ignoring Ctrl+C")
+		return nil
+	}
+
 	var evts []gui.ButtonEvent
 	switch {
 	case strings.HasPrefix(cmd, "runes "):
@@ -83,13 +90,13 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 	case cmd == "shell":
 		log.Println("Starting interactive shell...")
 		startShell()
-	default:
-		fmt.Printf("Passing through command: %s\n", cmd)
-		execCommand(cmd)
-	}
 	// default:
-	// 	log.Printf("debug: unrecognized command: %s", cmd)
+	// 	fmt.Printf("Passing through command: %s\n", cmd)
+	// 	execCommand(cmd)
 	// }
+	default:
+		log.Printf("debug: unrecognized command: %s", cmd)
+	}
 	return evts
 }
 

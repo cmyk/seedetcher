@@ -109,9 +109,9 @@
                 perl
                 util-linux
                 bash
-                acl
-                gmp
-                attr
+                acl     # For filesystem ACLs
+                gmp     # For OpenSSL/crypto
+                attr    # For extended attributes
                 busybox
               ];
 
@@ -206,6 +206,7 @@
                 ./scripts/config --enable VT
                 ./scripts/config --enable VT_CONSOLE
                 ./scripts/config --enable USB_G_SERIAL
+                ./scripts/config --enable VFP
               '' else "");
 
               buildPhase = ''
@@ -278,7 +279,8 @@
             let
               pkgs = localpkgs;
               
-              busyboxStatic = crosspkgs.busybox.override { enableStatic = true; };
+              busyboxStatic = crosspkgs.pkgsStatic.busybox;
+              bashStatic = crosspkgs.pkgsStatic.bash;
 
               controller =
                 if debug then
@@ -319,14 +321,8 @@
                 chmod -R u+w initramfs/bin initramfs/lib || true
 
                 # Copy essential binaries
-                
-                # cp "${crosspkgs.util-linux}/bin/agetty" initramfs/bin/ || echo "Failed to copy agetty"
-                
-                cp -a "${busyboxStatic}/bin/"* initramfs/bin/ 
-                
-                # replace busybox's sh with bash's:
-                #cp -a "${crosspkgs.bash}/bin/"* initramfs/bin/ || echo "Failed to copy sh"
-
+                                
+                cp -a ${busyboxStatic}/bin/* initramfs/bin/ 
 
                 # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
@@ -347,47 +343,78 @@
                 echo "Final permissions and contents of initramfs/bin:"
                 ls -alh initramfs/bin
 
-                # # REPLACING SYSTEMD: Create a simple init script
-                # cat <<EOF > initramfs/init
-                # #!/bin/sh
+                # Create a simple init script to launch the shell
 
-                # # Mount /dev so devices like /dev/ttyGS0 can appear
-                # mount -t devtmpfs devtmpfs /dev
+                cat <<EOF > initramfs/init
+                #!/bin/sh
 
-                # # Ensure /dev/ttyGS0 exists before launching a shell
-                # while [ ! -c /dev/ttyGS0 ]; do
-                #     echo "Waiting for /dev/ttyGS0..." > /dev/console
-                #     sleep 1
-                # done
 
-                # echo "SeedEtcher: Booting into serial shell on ttyGS0..." > /dev/console
+                sleep 10  # Ensures USB gadget mode is fully initialized
 
-                # # Debugging: Check what binaries exist
-                # ls -alh /bin > /dev/console
-                # ls -alh /lib > /dev/console
+                echo "Slept for 10s ..."
 
-                # # Mount essential filesystems
-                # mount -t proc none /proc
-                # mount -t sysfs none /sys
-                # mount -t tmpfs tmpfs /run
-                # mkdir -p /dev/pts
-                # mount -t devpts none /dev/pts
+                set -m  # Enable job control
 
-                # # Re-create /dev/console correctly
-                # if [ ! -c /dev/console ]; then
-                #     echo "Fixing /dev/console..." > /dev/console
-                #     rm -f /dev/console
-                #     mknod /dev/console c 5 1 || echo "failed to mknod console"
-                #     chmod 622 /dev/console
-                # fi
+                # Ensure output goes to the correct serial console (tio)
+                exec > /dev/ttyGS0 2>&1
 
-                # # Start the interactive shell on ttyGS0
-                # exec /bin/sh -i </dev/ttyGS0 >/dev/ttyGS0 2>&1
-                # EOF
+                echo "DEBUG: Mounting filesystems..."
+                mount -t devtmpfs devtmpfs /dev
+                mount -t proc none /proc
+                mkdir -p /dev/pts
+                mount -t sysfs none /sys
+                mount -t devpts none /dev/pts
+                mkdir -p /log
+                chmod 777 /log
 
-                # Ensure init is executable
-                # chmod +x initramfs/init
 
+                +# Fix DRM framebuffer permissions
+                +echo "DEBUG: Fixing /dev/dri permissions..."
+                +mkdir -p /dev/dri
+                +chmod 777 /dev/dri
+                +chmod 777 /dev/dri/* 2>/dev/null || true
+
+                # Ensure /dev/ttyGS0 is available before proceeding
+                while [ ! -c /dev/ttyGS0 ]; do
+                    echo "DEBUG: Waiting for /dev/ttyGS0..."
+                    sleep 1
+                done
+
+                echo "DEBUG: USB gadget detected!"
+
+                # **Ensure controller input FIFO exists**
+                if [ ! -p /dev/controller_input ]; then
+                    echo "DEBUG: Creating /dev/controller_input FIFO..."
+                    mkfifo /dev/controller_input
+                    chmod 666 /dev/controller_input
+                fi
+
+
+
+                echo "DEBUG: ttyGS0 available. Starting controller..."
+
+                echo "DEBUG: Pre-filling FIFO to unblock controller..."
+                echo "" > /dev/controller_input &
+
+                echo "DEBUG: Starting FIFO listener..."
+                cat /dev/controller_input > /log/fifo_debug.log &
+                
+                /controller < /dev/controller_input > /log/controller.log 2>&1 &
+                echo "DEBUG: Controller started with PID: $!"
+
+                # Set shell prompt
+                export PS1="\w # "
+                export PS2=""
+
+                # Apply terminal settings
+                stty -F /dev/ttyGS0 sane
+
+                echo "DEBUG: Init finished. Starting shell..."
+                exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1
+
+                EOF
+                # Make init executable
+                chmod +x initramfs/init
             
                 ${pkgs.findutils}/bin/find initramfs -mindepth 1 -printf '%P\n'\
                   | sort \
@@ -425,7 +452,7 @@
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
               
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial init=/init ignore_loglevel earlyprintk";
+              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 init=/init rootwait modules-load=dwc2,g_serial debug ignore_loglevel earlyprintk";
               
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
               

@@ -32,7 +32,7 @@ func init() {
 }
 
 func dbgInit(p *Platform) error {
-	s, err := openSerial("/dev/ttyGS0")
+	s, err := openSerial("/dev/controller_input")
 	if err != nil {
 		return err
 	}
@@ -45,14 +45,6 @@ func dbgInit(p *Platform) error {
 			log.Printf("debug: serial communication failed: %v", err)
 		}
 	}()
-
-    // // Check if /dev/ttyGS0 exists before starting a shell
-    // if _, err := os.Stat("/dev/ttyGS0"); os.IsNotExist(err) {
-    //     log.Println("Error: /dev/ttyGS0 does not exist. Is g_serial loaded?")
-    // } else {
-    //     log.Println("ttyGS0 detected. Attempting to start shell...")
-    //     go startShell()
-    // }
 
 	if dmesg {
 		kmsg, err := os.Open("/dev/kmsg")
@@ -76,10 +68,10 @@ func runSerial(p *Platform, s io.Reader) error {
 			fmt.Fprintf(os.Stderr, "DEBUG: Read error: %v\n", err)  // <== Add this line
 			return err
 		}
-		fmt.Fprintf(os.Stderr, "DEBUG: Received line: %q\n", line)  // <== Add this line
+		
 		var binSize int64
 		line = strings.TrimSpace(line)
-		log.Printf("DEBUG cmyk: Received raw input: [%s]", line)
+		
 		if _, err := fmt.Sscanf(line, "reload %d", &binSize); err == nil {
 			binFile := "/reload-a"
 			if binFile == os.Args[0] {
@@ -169,9 +161,12 @@ func dumpFile(path string, r io.Reader) (ferr error) {
 }
 
 func openSerial(path string) (s *os.File, err error) {
-	log.Printf("DEBUG cmyk: inside openSerial [%s]", path)
+	
+	log.Printf("DEBUG: Attempting to open serial input at [%s]", path)
+
 	s, err = os.OpenFile(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK, 0666)
 	if err != nil {
+		log.Printf("ERROR: Failed to open [%s]: %v", path, err)
 		return nil, err
 	}
 	defer func() {
@@ -179,12 +174,28 @@ func openSerial(path string) (s *os.File, err error) {
 			s.Close()
 		}
 	}()
+
+    // Check if this is a real serial device (not FIFO)
+    var stat unix.Stat_t
+    if err := unix.Stat(path, &stat); err == nil {
+        if stat.Mode&unix.S_IFMT == unix.S_IFIFO {
+            log.Printf("WARNING: [%s] is a FIFO, skipping ioctl setup.", path)
+            return s, nil
+        }
+    }
+
 	c, err := s.SyscallConn()
 	if err != nil {
+		log.Printf("ERROR: SyscallConn failed for [%s]: %v", path, err)
 		return nil, err
 	}
 	var errno syscall.Errno
 	err = c.Control(func(fd uintptr) {
+		// Check if this device supports `ioctl`
+		if _, _, errno = unix.Syscall6(unix.SYS_IOCTL, fd, uintptr(unix.TCGETS), 0, 0, 0, 0); errno != 0 {
+			log.Printf("WARNING: ioctl not supported on [%s], skipping termios settings.", path)
+			return
+		}
 		// Base settings
 		cflagToUse := uint32(unix.CREAD | unix.CLOCAL | unix.CS8)
 		t := unix.Termios{
@@ -199,6 +210,7 @@ func openSerial(path string) (s *os.File, err error) {
 		t.Cc[unix.VTIME] = 0
 
 		if _, _, errno := unix.Syscall6(unix.SYS_IOCTL, fd, uintptr(unix.TCSETS), uintptr(unsafe.Pointer(&t)), 0, 0, 0); errno != 0 {
+			log.Printf("WARNING: Failed to apply termios settings on [%s]: %v", path, errno)
 			panic(errno)
 		}
 	})
