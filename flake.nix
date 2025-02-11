@@ -750,6 +750,8 @@
               else
                   USBDEV="$1"
               fi
+
+              echo "USBDEVICE: $USBDEV"
               
               if [ ! -e "$USBDEV" ]; then
                   echo "error: USB device $USBDEV not found"
@@ -758,6 +760,9 @@
 
               PROG="${self.packages.${system}.controller-debug}/bin/controller"
 
+              # Ensure the device is in a sane state
+              stty -F "$USBDEV" sane
+              
               echo "reload $(wc -c < "$PROG")" > "$USBDEV"
               cat "$PROG" > "$USBDEV"
               exec cat "$USBDEV"

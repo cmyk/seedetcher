@@ -1,114 +1,91 @@
-#!/bin/bash
+#!/bin/zsh
 
-# ✔ Commits & pushes code changes from Mac
-# ✔ Pulls latest code on the VM (ensures up-to-date build)
-# ✔ Builds the #debug image on the VM
-# ✔ Commit updated flake.lock to github
-# ✔ Transfers the built image from VM to Mac
-# ✔ Lists available disks and confirms SD card selection
-# ✔ Unmounts, flashes, and ejects the SD card
 
-# Exit on error
-set -e
+# **************************************
 
-# Variables
-VM_USER="cmyk"          
-VM_HOST="ubuntu"        
-VM_IMG_PATH="~/seedetcher/result/seedetcher-debug.img"
-LOCAL_IMG_PATH="/tmp/seedetcher-debug.img"
+# DO NOT EDIT THIS SCRIPT ON UPBUNTU!
+# THIS IS RUN IN THE MAC TERMINAL!
 
-# Step 1: Commit & Push Changes from Mac
-echo "🛠️ Checking for changes..."
-cd ~/Documents/GitHub/seedetcher || exit 1
+# **************************************
 
-if [[ -n $(git status --porcelain) ]]; then
-  echo "🔄 Changes detected, committing..."
-  git add -A
-  git commit -m "Auto-build: $(date '+%Y-%m-%d %H:%M:%S')"
-  git push origin main
+
+# Define variables
+REMOTE_HOST="ubuntu"
+REMOTE_PATH="~/seedetcher/result/seedetcher-debug.img"
+LOCAL_PATH="$HOME/Downloads/seedetcher-debug.img"
+
+
+echo "Waiting for SD card to be mounted..."
+
+# Try detecting SD card immediately
+SD_CARD=$(system_profiler SPStorageDataType SPUSBDataType | grep -A10 -B12 SDXC | awk '/BSD Name:/{print $3}' | sed 's/s[0-9]*$//')
+
+if [[ -n "$SD_CARD" ]]; then
+    echo "SD card was already mounted: /dev/$SD_CARD"
 else
-  echo "✅ No changes to commit."
+    # Wait for SD card using fswatch
+    fswatch -1 /Volumes | while read change; do
+        SD_CARD=$(system_profiler SPStorageDataType SPUSBDataType | grep -A10 -B12 SDXC | awk '/BSD Name:/{print $3}' | sed 's/s[0-9]*$//')
+        
+        if [[ -n "$SD_CARD" ]]; then
+            echo "SD card detected: /dev/$SD_CARD"
+            break
+        fi
+    done
 fi
 
-# Step 2: Pull Changes on VM & Wait for Completion
-echo "🔄 Pulling latest changes on VM..."
-ssh "${VM_USER}@${VM_HOST}" << 'EOF'
-cd ~/seedetcher
-for attempt in {1..5}; do
-    git pull origin main && echo "✅ Git pull successful" && exit 0
-    echo "⚠️  Git pull failed. Retrying in 5 seconds..."
-    sleep 5
-done
-echo "❌ Git pull failed after multiple attempts."
-exit 1
-EOF
 
-# Step 3: Build Debug Image on VM (Wait for Completion)
-echo "🛠️ Building debug image on VM..."
-ssh "${VM_USER}@${VM_HOST}" << 'EOF'
-cd ~/seedetcher
-echo "🚀 Starting image build..."
-if nix build .#image-debug --impure --print-build-logs; then
-    echo "✅ Build completed successfully!"
+# Step 1: Copy the image from Ubuntu
+echo "Copying image from Ubuntu..."
+scp ${REMOTE_HOST}:${REMOTE_PATH} ${LOCAL_PATH}
 
-    # Check if flake.lock changed
-    if git status --porcelain | grep "flake.lock"; then
-        echo "🔄 flake.lock changed, committing changes..."
-        git add flake.lock
-        git commit -m "Auto-update flake.lock after successful build"
-        git push origin main
-        echo "✅ flake.lock committed and pushed."
-    else
-        echo "✅ No changes to flake.lock, skipping commit."
-    fi
-else
-    echo "❌ Build failed!" >&2
+if [[ $? -ne 0 ]]; then
+    echo "Error: SCP failed."
     exit 1
 fi
-EOF
 
-# Step 4: Fetch the .img file from the VM
-echo "📦 Fetching image from VM..."
-scp "${VM_USER}@${VM_HOST}:${VM_IMG_PATH}" "${LOCAL_IMG_PATH}"
+# Step 2: Identify the SD card **safely**
+echo "Identifying SD card..."
+DISK_DEVICE=$(system_profiler SPStorageDataType SPUSBDataType | grep -A10 -B12 SDXC | awk '/BSD Name:/{print $3}' | sed 's/s[0-9]*$//')
 
-if [[ ! -f "${LOCAL_IMG_PATH}" ]]; then
-  echo "❌ Error: Failed to fetch the image from the VM." >&2
-  exit 1
+# Security check: Ensure disk number is 4 or higher
+DISK_NUMBER=$(echo $DISK_DEVICE | sed 's/disk//')
+
+if [[ -z "$DISK_DEVICE" ]]; then
+    echo "Error: No SD card found!"
+    exit 1
+elif [[ $DISK_NUMBER -lt 4 ]]; then
+    echo "SECURITY WARNING: Detected disk$DISK_NUMBER, which is below 4. Aborting to prevent system damage!"
+    exit 1
 fi
 
-echo "✅ Image fetched successfully to ${LOCAL_IMG_PATH}."
+echo "SD card identified as: /dev/$DISK_DEVICE"
 
-# Step 5: List available disks
-echo "📝 Available disks on your Mac:"
-diskutil list
+# Step 3: Unmount the SD card
+echo "Unmounting /dev/$DISK_DEVICE..."
+diskutil unmountDisk /dev/$DISK_DEVICE
 
-# Prompt for the disk identifier
-echo "💾 Enter the disk identifier for your SD card (e.g., disk2):"
-read -r DISK
-
-# Confirm the disk path
-DISK_PATH="/dev/${DISK}"
-echo "⚠️  You selected ${DISK_PATH}. Are you sure? This will erase all data on the SD card! (yes/no)"
-read -r CONFIRM
-if [[ "${CONFIRM}" != "yes" ]]; then
-  echo "❌ Aborted."
-  exit 0
+if [[ $? -ne 0 ]]; then
+    echo "Error: Failed to unmount $DISK_DEVICE."
+    exit 1
 fi
 
-# Step 6: Request sudo access
-echo "🔑 Requesting sudo access to flash the SD card..."
-sudo -v
+# Step 4: Flash the image
+echo "Flashing the image to /dev/$DISK_DEVICE..."
+sudo dd if=$LOCAL_PATH of=/dev/$DISK_DEVICE bs=4M status=progress
 
-# Step 7: Unmount the disk
-echo "📤 Unmounting ${DISK_PATH}..."
-sudo diskutil unmountDisk "${DISK_PATH}"
+if [[ $? -ne 0 ]]; then
+    echo "Error: Flashing failed."
+    exit 1
+fi
 
-# Step 8: Flash the image
-echo "⚡ Flashing ${LOCAL_IMG_PATH} to ${DISK_PATH}..."
-sudo dd if="${LOCAL_IMG_PATH}" of="/dev/r${DISK}" bs=1m status=progress
+# Step 5: Eject the SD card
+echo "Ejecting the SD card..."
+diskutil eject /dev/$DISK_DEVICE
 
-# Step 9: Eject the disk
-echo "💨 Ejecting ${DISK_PATH}..."
-sudo diskutil eject "${DISK_PATH}"
+if [[ $? -ne 0 ]]; then
+    echo "Error: Failed to eject SD card."
+    exit 1
+fi
 
-echo "✅ SD card flashed and ejected successfully!"
+echo "Flashing complete. You may remove the SD card."
