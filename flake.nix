@@ -114,6 +114,7 @@
                 attr    # For extended attributes
                 busybox
                 strace
+                file
               ];
 
                 
@@ -283,6 +284,7 @@
               busyboxStatic = crosspkgs.pkgsStatic.busybox;
               bashStatic = crosspkgs.pkgsStatic.bash;
               straceStatic = crosspkgs.pkgsStatic.strace;
+              fileStatic = crosspkgs.pkgsStatic.file;
 
               controller =
                 if debug then
@@ -295,7 +297,7 @@
                 name = "init";
                 text = builtins.readFile ./init.sh;
               };
-              
+
             in
             pkgs.stdenvNoCC.mkDerivation {
               name = "initramfs";
@@ -315,7 +317,7 @@
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' `find initramfs`
 
                 # Create essential initramfs directories
-                mkdir -p initramfs/{bin,lib,dev,proc,sys,run}
+                mkdir -p initramfs/{bin,lib,share,dev,proc,sys,run}
 
                 # Create /dev/console as an empty file (kernel will handle it)
                 touch initramfs/dev/console
@@ -333,6 +335,9 @@
                                 
                 cp -a ${busyboxStatic}/bin/* initramfs/bin/ 
                 cp -a ${straceStatic}/bin/strace initramfs/bin/
+                cp -a ${fileStatic}/bin/* initramfs/bin/
+                cp -a ${fileStatic}/lib/* initramfs/lib/ 2>/dev/null || true
+                cp -a ${fileStatic}/share/* initramfs/share/ 2>/dev/null || true
 
                 # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
@@ -681,7 +686,7 @@
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = localpkgs; in pkgs.writeShellScriptBin "reload" ''
               #!/bin/sh
-              set -x  # Enable debug mode
+              set -e  # Enable debug mode
               
               # Set default USB device if not provided
               if [ -z "$1" ]; then
@@ -690,7 +695,7 @@
                   USBDEV="$1"
               fi
 
-              echo "USBDEVICE: $USBDEV"
+              #echo "USBDEVICE: $USBDEV"
               
               if [ ! -e "$USBDEV" ]; then
                   echo "error: USB device $USBDEV not found"
@@ -700,7 +705,7 @@
               PROG="${self.packages.${system}.controller-debug}/bin/controller"
 
               # Ensure the device is in a sane state
-              stty -F "$USBDEV" sane
+              #stty -F "$USBDEV1" raw -echo
               
               echo "reload $(wc -c < "$PROG")" > "$USBDEV"
               cat "$PROG" > "$USBDEV"

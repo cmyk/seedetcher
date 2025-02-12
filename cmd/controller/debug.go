@@ -33,7 +33,12 @@ func click(btn gui.Button) []gui.ButtonEvent {
 }
 
 func debugCommand(cmd string) []gui.ButtonEvent {
-	log.Printf("DEBUG: Received command: %q\n", cmd)
+	f, err := os.OpenFile("/log/init_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err == nil {
+		log.SetOutput(f)
+		log.Printf("DEBUG: Received command: %q\n", cmd)
+		f.Close()
+	}
 
 	// Ignore Ctrl+C (SIGINT) so shell handles it
 	if cmd == "\x03" {
@@ -91,14 +96,14 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 		log.Println("Starting interactive shell...")
 		startShell()
 	case cmd == "reload":
-		fmt.Println("debug: received reload command")
+		//fmt.Println("debug: received reload command")
 		go reloadController()
 	// default:
 	// 	fmt.Printf("Passing through command: %s\n", cmd)
 	// 	execCommand(cmd)
 	// }
 	default:
-		log.Printf("debug: unrecognized command: %s", cmd)
+		log.Printf("debug: unrecognized command: %q\n", cmd)
 	}
 	return evts
 }

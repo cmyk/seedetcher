@@ -50,6 +50,9 @@ debug_echo "USB serial devices detected!"
 stty -F /dev/ttyGS0 sane
 stty -F /dev/ttyGS1 sane
 
+debug_echo "stty ttyGS0: $(stty -a /dev/ttyGS0)"
+debug_echo "stty ttyGS1: $(stty -a /dev/ttyGS1)"
+
 # setting correct permissions
 chmod 666 /dev/ttyGS*
 
@@ -58,7 +61,7 @@ debug_echo "Pre-filling FIFO to unblock controller..."
 echo "" > /dev/ttyGS1 &
 
 debug_echo "Starting controller..."
-/controller < /dev/ttyGS1 > /dev/ttyGS1 2>&1 &  # RUN IN BACKGROUND!
+/controller < /dev/ttyGS1 > /log/controller.log 2>&1 &  # RUN IN BACKGROUND!
 
 # Wait until the controller process is fully running
 while ! pidof controller > /dev/null; do
@@ -73,16 +76,15 @@ echo "ping" > /dev/ttyGS1 &
 
 touch ~/.shrc
 chmod 644 ~/.shrc
-touch ~/.profile
-chmod 644 ~/.profile
 
 echo 'alias cat="timeout 10 cat"' >> ~/.shrc
 echo 'alias cattty0="timeout 10 cat /dev/ttyGS0"' >> ~/.shrc
 echo 'alias cattty1="timeout 10 cat /dev/ttyGS1"' >> ~/.shrc
-echo 'export ENV=~/.shrc' >> ~/.profile
 
+export ENV=~/.shrc
 
 debug_echo "Init finished. Starting shell..."
 exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1
+
 
 
