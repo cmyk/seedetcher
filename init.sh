@@ -70,11 +70,19 @@ trap "echo 'Caught SIGINT! Exiting...'; exit 1" SIGINT
 #again sending controller input to make it available on ttyACM1
 echo "ping" > /dev/ttyGS1 &
 
+
+touch ~/.shrc
+chmod 644 ~/.shrc
+touch ~/.profile
+chmod 644 ~/.profile
+
+echo 'alias cat="timeout 10 cat"' >> ~/.shrc
+echo 'alias cattty0="timeout 10 cat /dev/ttyGS0"' >> ~/.shrc
+echo 'alias cattty1="timeout 10 cat /dev/ttyGS1"' >> ~/.shrc
+echo 'export ENV=~/.shrc' >> ~/.profile
+
+
 debug_echo "Init finished. Starting shell..."
 exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1
 
-# Prevent getting stuck in `cat`
-alias cat="timeout 10 cat"
-alias cattty0="timeout 10 cat /dev/ttyGS0"
-alias cattty1="timeout 10 cat /dev/ttyGS1"
 
