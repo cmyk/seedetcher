@@ -33,7 +33,7 @@ func click(btn gui.Button) []gui.ButtonEvent {
 }
 
 func debugCommand(cmd string) []gui.ButtonEvent {
-	//log.Printf("DEBUG: Received command: %q\n", cmd)
+	log.Printf("DEBUG: Received command: %q\n", cmd)
 
 	// Ignore Ctrl+C (SIGINT) so shell handles it
 	if cmd == "\x03" {
