@@ -90,6 +90,9 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 	case cmd == "shell":
 		log.Println("Starting interactive shell...")
 		startShell()
+	case cmd == "reload":
+		fmt.Println("debug: received reload command")
+		go reloadController()
 	// default:
 	// 	fmt.Printf("Passing through command: %s\n", cmd)
 	// 	execCommand(cmd)
@@ -98,6 +101,27 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 		log.Printf("debug: unrecognized command: %s", cmd)
 	}
 	return evts
+}
+
+func reloadController() error {
+    fmt.Println("debug: stopping controller process...")
+
+    // Kill the current controller process
+    cmd := exec.Command("killall", "controller")
+    if err := cmd.Run(); err != nil {
+        fmt.Fprintf(os.Stderr, "debug: failed to stop controller: %v\n", err)
+    }
+
+    // Wait for it to fully stop
+    time.Sleep(1 * time.Second)
+
+    // Start new controller
+    fmt.Println("debug: restarting controller process...")
+    cmd = exec.Command("/bin/controller")
+    if err := cmd.Start(); err != nil {
+        return fmt.Errorf("failed to restart controller: %w", err)
+    }
+    return nil
 }
 
 func execCommand(cmdStr string) {

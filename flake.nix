@@ -351,7 +351,9 @@
                 cat <<EOF > initramfs/init
                 #!/bin/sh
 
-                sleep 10
+                set -x  # Enable debug mode
+                
+                #sleep 10
 
                 set -m  # Enable job control
 
@@ -360,7 +362,7 @@
                     echo "DEBUG: $1" > /dev/ttyGS0
                 }
 
-                echo "DEBUG: Mounting filesystems..."
+                debug_echo "Mounting filesystems..."
                 mount -t devtmpfs devtmpfs /dev
                 mount -t proc none /proc
                 mkdir -p /dev/pts
@@ -369,17 +371,17 @@
                 mkdir -p /log
                 chmod 777 /log
 
-                +# Fix DRM framebuffer permissions
-                +echo "DEBUG: Fixing /dev/dri permissions..."
-                +mkdir -p /dev/dri
-                +chmod 777 /dev/dri
-                +chmod 777 /dev/dri/* 2>/dev/null || true
+                # Fix DRM framebuffer permissions
+                debug_echo "Fixing /dev/dri permissions..."
+                mkdir -p /dev/dri
+                chmod 777 /dev/dri
+                chmod 777 /dev/dri/* 2>/dev/null || true
 
                 timeout=30  # Max wait time in seconds
 
                 # Ensure /dev/ttyGS0 is available for shell
                 while [ ! -c /dev/ttyGS0 ] && [ $timeout -gt 0 ]; do
-                    echo "DEBUG: Waiting for /dev/ttyGS0..."
+                    debug_echo "Waiting for /dev/ttyGS0..."
                     sleep 1
                     timeout=$((timeout - 1))
                 done
@@ -389,12 +391,12 @@
 
                 # Ensure /dev/ttyGS1 is available for controller input
                 while [ ! -c /dev/ttyGS1 ] && [ $timeout -gt 0 ]; do
-                    echo "DEBUG: Waiting for /dev/ttyGS1..."
+                    debug_echo "Waiting for /dev/ttyGS1..."
                     sleep 1
                     timeout=$((timeout - 1))
                 done
                 
-                echo "DEBUG: USB serial devices detected!"
+                debug_echo "USB serial devices detected!"
 
                 stty -F /dev/ttyGS0 sane
                 stty -F /dev/ttyGS1 sane
@@ -403,16 +405,21 @@
                 chmod 666 /dev/ttyGS*
                 
                 # Pre-fill FIFO before starting the controller
-                echo "DEBUG: Pre-filling FIFO to unblock controller..."
+                debug_echo "Pre-filling FIFO to unblock controller..."
                 echo "" > /dev/ttyGS1 &
 
-                echo "DEBUG: Starting controller..."
+                debug_echo "Starting controller..."
                 /controller < /dev/ttyGS1 > /dev/ttyGS1 2>&1 &  # RUN IN BACKGROUND!
-                echo "DEBUG: Controller started with PID: $!"
 
-                sleep 5
+                # Wait until the controller process is fully running
+                while ! pidof controller > /dev/null; do
+                    sleep 1
+                done
 
-                echo "DEBUG: Init finished. Starting shell..."
+                #again sending controller input to make it available on ttyACM1
+                echo "ping" > /dev/ttyGS1 &
+
+                debug_echo "Init finished. Starting shell..."
                 exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1
 
                 EOF
@@ -742,6 +749,7 @@
             image-debug = self.lib.${system}.mkimage true;
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = localpkgs; in pkgs.writeShellScriptBin "reload" ''
+              #!/bin/sh
               set -x  # Enable debug mode
               
               # Set default USB device if not provided
