@@ -42,7 +42,7 @@ func dbgInit(p *Platform) error {
 	go func() {
 		defer s.Close()
 		if err := runSerial(p, s); err != nil {
-			log.Printf("debug: serial communication failed: %v", err)
+			debugLog("debug: serial communication failed: %v", err)
 		}
 	}()
 	if dmesg {

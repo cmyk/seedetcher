@@ -61,7 +61,8 @@ debug_echo "Pre-filling FIFO to unblock controller..."
 echo "" > /dev/ttyGS1 &
 
 debug_echo "Starting controller..."
-/controller < /dev/ttyGS1 > /log/controller.log 2>&1 &  # RUN IN BACKGROUND!
+/controller < /dev/ttyGS1 > /log/debug.log 2>&1 &  # RUN IN BACKGROUND!
+
 
 # Wait until the controller process is fully running
 while ! pidof controller > /dev/null; do

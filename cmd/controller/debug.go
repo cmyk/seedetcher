@@ -36,7 +36,7 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 	f, err := os.OpenFile("/log/init_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		log.SetOutput(f)
-		log.Printf("DEBUG: Received command: %q\n", cmd)
+		debugLog("DEBUG: Received command: %q\n", cmd)
 		f.Close()
 	}
 
@@ -93,35 +93,35 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 	case cmd == "goroutines":
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 	case cmd == "shell":
-		log.Println("Starting interactive shell...")
+		debugLog("Starting interactive shell...")
 		startShell()
 	case cmd == "reload":
-		//fmt.Println("debug: received reload command")
+		debugLog("debug: received reload command")
 		go reloadController()
 	// default:
 	// 	fmt.Printf("Passing through command: %s\n", cmd)
 	// 	execCommand(cmd)
 	// }
 	default:
-		log.Printf("debug: unrecognized command: %q\n", cmd)
+		debugLog("debug: unrecognized command: %q", cmd)
 	}
 	return evts
 }
 
 func reloadController() error {
-    fmt.Println("debug: stopping controller process...")
+    debugLog("debug: stopping controller process...")
 
     // Kill the current controller process
     cmd := exec.Command("killall", "controller")
     if err := cmd.Run(); err != nil {
-        fmt.Fprintf(os.Stderr, "debug: failed to stop controller: %v\n", err)
+        debugLog("debug: failed to stop controller: %v", err)
     }
 
     // Wait for it to fully stop
     time.Sleep(1 * time.Second)
 
     // Start new controller
-    fmt.Println("debug: restarting controller process...")
+    debugLog("debug: restarting controller process...")
     cmd = exec.Command("/bin/controller")
     if err := cmd.Start(); err != nil {
         return fmt.Errorf("failed to restart controller: %w", err)
@@ -130,7 +130,7 @@ func reloadController() error {
 }
 
 func execCommand(cmdStr string) {
-    fmt.Printf("DEBUG: Attempting to execute: %q\n", cmdStr)
+    debugLog("DEBUG: Attempting to execute: %q", cmdStr)
 
     parts := strings.Fields(cmdStr)
     if len(parts) == 0 {
@@ -138,7 +138,7 @@ func execCommand(cmdStr string) {
         return
     }
 
-    fmt.Printf("DEBUG: Command parsed as: %v\n", parts)
+    debugLog("DEBUG: Command parsed as: %v", parts)
 
 
     // Manually prepend "/bin" if command isn't an absolute path
@@ -157,9 +157,9 @@ func execCommand(cmdStr string) {
 
     err := command.Run()
     if err != nil {
-        fmt.Printf("Error executing command: %v\n", err)
+        debugLog("Error executing command: %v\n", err)
     } else {
-        fmt.Println("Command executed successfully.")
+        debugLog("Command executed successfully.")
     }
 }
 

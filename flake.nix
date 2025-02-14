@@ -694,22 +694,19 @@
               else
                   USBDEV="$1"
               fi
-
-              #echo "USBDEVICE: $USBDEV"
               
               if [ ! -e "$USBDEV" ]; then
                   echo "error: USB device $USBDEV not found"
                   exit 1
               fi
+              
+              fuser -k $USBDEV 2>/dev/null
+              echo "" > $USBDEV
 
               PROG="${self.packages.${system}.controller-debug}/bin/controller"
-
-              # Ensure the device is in a sane state
-              #stty -F "$USBDEV1" raw -echo
-              
               echo "reload $(wc -c < "$PROG")" > "$USBDEV"
-              cat "$PROG" > "$USBDEV"
-              exec cat "$USBDEV"
+              pv -L 64k "$PROG" > "$USBDEV"
+              #exec cat "$USBDEV"
             '';
             # reload-fast is a faster, but impure, way of reloading the controller binary
             # from a developer shell.
