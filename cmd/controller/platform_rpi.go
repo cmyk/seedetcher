@@ -195,8 +195,14 @@ func (e *engraver) Close() {
 	e.dev.Close()
 }
 
+var frameCounter int
 func (p *Platform) ScanQR(img *image.Gray) ([][]byte, error) {
-	return zbar.Scan(img)
+    frameCounter++
+    if frameCounter%10 != 0 {
+        return nil, nil
+    }
+    return zbar.Scan(img) 
+	//return zbar.Scan(img)
 }
 
 func (p *Platform) CameraFrame(dims image.Point) {

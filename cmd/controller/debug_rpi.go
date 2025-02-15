@@ -81,8 +81,6 @@ func runSerial(p *Platform, s io.Reader) error {
 				debugLog("ERROR: %s: %v", binFile, err)
 				return fmt.Errorf("%s: %w", binFile, err)
 			}
-
-	
 			continue
 		}
 		switch line {
