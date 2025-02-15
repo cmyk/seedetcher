@@ -702,16 +702,12 @@
                   exit 1
               fi
               
-              #fuser -k $USBDEV 2>/dev/null
-              
-
               PROG="${self.packages.${system}.controller-debug}/bin/controller"
-              stty -F $USBDEV -a
-              stty -F $USBDEV sane -b 115200
-              stty -F $USBDEV -a
 
-  
-              echo "" > "$USBDEV"
+              # Ensure USB serial is in raw mode before reloading
+              stty -F $USBDEV1 raw -echo
+              echo "" > $USBDEV1
+
               echo "reload $(wc -c < "$PROG")" > "$USBDEV"
               cat "$PROG" > "$USBDEV"
               exec cat "$USBDEV"

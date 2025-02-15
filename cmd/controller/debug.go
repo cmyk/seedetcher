@@ -3,15 +3,11 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"runtime/pprof"
 	"strings"
-	"time"
-	"golang.org/x/sys/unix" // cmyk Correct import for system calls
-	//"syscall"
+
 	"seedetcher.com/gui"
 )
 
@@ -34,18 +30,6 @@ func click(btn gui.Button) []gui.ButtonEvent {
 }
 
 func debugCommand(cmd string) []gui.ButtonEvent {
-	f, err := os.OpenFile("/log/init_debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		log.SetOutput(f)
-		debugLog("DEBUG: Received command: %q\n", cmd)
-		f.Close()
-	}
-
-	// Ignore Ctrl+C (SIGINT) so shell handles it
-	if cmd == "\x03" {
-		fmt.Println("Ignoring Ctrl+C")
-		return nil
-	}
 
 	var evts []gui.ButtonEvent
 	switch {
@@ -93,139 +77,8 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 		}
 	case cmd == "goroutines":
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
-	case cmd == "shell":
-		debugLog("Starting interactive shell...")
-		startShell()
-	// case strings.HasPrefix(cmd, "reload "):
-	// 	debugLog("debug: received reload command with file size")
-	// 	go reloadController()
-	// default:
-	// 	fmt.Printf("Passing through command: %s\n", cmd)
-	// 	execCommand(cmd)
-	// }
 	default:
 		debugLog("debug: unrecognized command: %q", cmd)
 	}
 	return evts
-}
-
-func reloadController() error {
-    debugLog("debug: stopping controller process...")
-
-    // Kill the current controller process
-    cmd := exec.Command("/bin/killall", "controller")
-    if err := cmd.Run(); err != nil {
-        debugLog("debug: failed to stop controller: %v", err)
-		return err
-    }
-
-    // Wait for it to fully stop
-    time.Sleep(1 * time.Second)
-
-    // Start new controller
-    debugLog("debug: restarting controller process...")
-    cmd = exec.Command("/bin/controller")
-    if err := cmd.Start(); err != nil {
-        debugLog("ERROR: failed to restart controller: %w", err)
-		return err
-    }
-    return nil
-}
-
-func execCommand(cmdStr string) {
-    debugLog("DEBUG: Attempting to execute: %q", cmdStr)
-
-    parts := strings.Fields(cmdStr)
-    if len(parts) == 0 {
-        debugLog("No command received.")
-        return
-    }
-
-    debugLog("DEBUG: Command parsed as: %v", parts)
-
-
-    // Manually prepend "/bin" if command isn't an absolute path
-    if !strings.HasPrefix(parts[0], "/") {
-        parts[0] = "/bin/" + parts[0]
-    }
-
-
-    // Ensure the command runs with the dynamic linker
-    // command := exec.Command("/lib/ld-musl-armhf.so.1", append([]string{parts[0]}, parts[1:]...)...)
-	// Let's NOT ;)
-	command := exec.Command(parts[0], parts[1:]...)
-    command.Stdout = os.Stdout
-    command.Stderr = os.Stderr
-    command.Env = append(os.Environ(), "PATH=/bin:/usr/bin:/sbin:/usr/sbin")
-
-    err := command.Run()
-    if err != nil {
-        debugLog("Error executing command: %v\n", err)
-    } else {
-        debugLog("Command executed successfully.")
-    }
-}
-
-func startShell() {
-    log.Println("Starting interactive shell directly...")
-
-    // Mount essential filesystems (if needed)
-    exec.Command("/bin/mount", "-t", "devtmpfs", "devtmpfs", "/dev").Run()
-    exec.Command("/bin/mount", "-t", "proc", "none", "/proc").Run()
-    exec.Command("/bin/mount", "-t", "sysfs", "none", "/sys").Run()
-    exec.Command("/bin/mount", "-t", "tmpfs", "tmpfs", "/run").Run()
-    exec.Command("/bin/mkdir", "-p", "/dev/pts").Run()
-    exec.Command("/bin/mount", "-t", "devpts", "none", "/dev/pts").Run()
-
-    // Ensure /dev/ttyGS0 exists before launching a shell 
-    for i := 0; i < 10; i++ {
-        if _, err := os.Stat("/dev/ttyGS0"); err == nil {
-            break
-        }
-        log.Println("Waiting for /dev/ttyGS0...")
-        time.Sleep(1 * time.Second)
-    }
-
-    // Ensure /dev/console exists
-    if _, err := os.Stat("/dev/console"); os.IsNotExist(err) {
-        log.Println("Creating /dev/console...")
-        exec.Command("/bin/mknod", "/dev/console", "c", fmt.Sprintf("%d", 5), fmt.Sprintf("%d", 1)).Run()
-        exec.Command("/bin/chmod", "622", "/dev/console").Run()
-    }
-
-    // Force $PATH for all shell commands
-    os.Setenv("PATH", "/bin:/usr/bin:/sbin:/usr/sbin")
-
-    log.Println("Shell is about to start on ttyGS0...")
-
-    // Open /dev/ttyGS0 as the shell input/output
-    tty, err := os.OpenFile("/dev/ttyGS0", os.O_RDWR, 0666)
-    if err != nil {
-        log.Printf("ERROR: Failed to open /dev/ttyGS0: %v\n", err)
-        return
-    }
-    defer tty.Close()
-
-    // **🔧 Fix: Create a new session first**
-    if _, err := unix.Setsid(); err != nil {
-        log.Printf("ERROR: Failed to create new session: %v\n", err)
-        return
-    }
-
-    // **🔧 Fix: Set ttyGS0 as controlling terminal**
-    if err := unix.IoctlSetInt(int(tty.Fd()), unix.TIOCSCTTY, 0); err != nil {
-        log.Printf("ERROR: Failed to set ttyGS0 as controlling terminal: %v\n", err)
-        return
-    }
-
-    // **Start the shell using ttyGS0 explicitly as its terminal**
-    cmd := exec.Command("/bin/sh", "-i")
-    cmd.Stdin = tty
-    cmd.Stdout = tty
-    cmd.Stderr = tty
-    cmd.Env = append(os.Environ(), "PATH=/bin:/usr/bin:/sbin:/usr/sbin")
-
-    if err := cmd.Run(); err != nil {
-        log.Printf("ERROR: Failed to start shell: %v\n", err)
-    }
 }

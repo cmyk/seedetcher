@@ -1,6 +1,6 @@
 #!/bin/sh
 
-set -x  # Enable debug mode
+#set -x  # Enable debug mode
 
 mkdir -p /log
 chmod 777 /log
@@ -17,7 +17,7 @@ mount -t devpts none /dev/pts
 
 # Send debug messages to ttyGS0 but avoid affecting exec shell output
 debug_echo() {
-    echo "DEBUG: $1" | tee -a /log/init_debug.log > /dev/ttyGS0
+    echo "DEBUG: $1" >> /log/init_debug.log
 }
 
 # Fix DRM framebuffer permissions
@@ -47,21 +47,12 @@ done
 
 debug_echo "USB serial devices detected!"
 
-#debug_echo "stty ttyGS0 before: $(stty -a -F /dev/ttyGS0)"
-#debug_echo "stty ttyGS1 brefore: $(stty -a -F /dev/ttyGS1)"
-
-stty -F /dev/ttyGS0 sane
-stty -F /dev/ttyGS1 sane
-
-#debug_echo "stty ttyGS0: $(stty -a -F /dev/ttyGS0)"
-#debug_echo "stty ttyGS1: $(stty -a -F /dev/ttyGS1)"
-
 # setting correct permissions
 chmod 666 /dev/ttyGS*
 
-# Pre-fill FIFO before starting the controller
-debug_echo "Pre-filling FIFO to unblock controller..."
-echo "" > /dev/ttyGS1 &
+debug_echo "Setting USBDEV1 to raw mode..."
+stty -F /dev/ttyGS1 raw -echo
+echo "" > /dev/ttyGS1
 
 debug_echo "Starting controller..."
 /controller < /dev/ttyGS1 >> /log/debug.log 2>&1 &  # RUN IN BACKGROUND!
@@ -88,7 +79,17 @@ echo 'alias cattty1="timeout 10 cat /dev/ttyGS1"' >> ~/.shrc
 export ENV=~/.shrc
 
 debug_echo "Init finished. Starting shell..."
+
+cat /dev/ttyGS0 > /log/serial_dump.log 2>&1 &
+sleep 2
+killall cat
+
+stty -F /dev/ttyGS0 sane
+echo "" > /dev/ttyGS0
+
+# Flush any junk input before starting the shell
+while read -t 0.1 junk; do :; done < /dev/ttyGS0
+echo "reset" > /dev/ttyGS0
+sleep 0.1
+
 exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1
-
-
-
