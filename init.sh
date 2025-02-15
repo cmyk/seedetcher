@@ -47,11 +47,14 @@ done
 
 debug_echo "USB serial devices detected!"
 
+#debug_echo "stty ttyGS0 before: $(stty -a -F /dev/ttyGS0)"
+#debug_echo "stty ttyGS1 brefore: $(stty -a -F /dev/ttyGS1)"
+
 stty -F /dev/ttyGS0 sane
 stty -F /dev/ttyGS1 sane
 
-debug_echo "stty ttyGS0: $(stty -a /dev/ttyGS0)"
-debug_echo "stty ttyGS1: $(stty -a /dev/ttyGS1)"
+#debug_echo "stty ttyGS0: $(stty -a -F /dev/ttyGS0)"
+#debug_echo "stty ttyGS1: $(stty -a -F /dev/ttyGS1)"
 
 # setting correct permissions
 chmod 666 /dev/ttyGS*
@@ -61,7 +64,7 @@ debug_echo "Pre-filling FIFO to unblock controller..."
 echo "" > /dev/ttyGS1 &
 
 debug_echo "Starting controller..."
-/controller < /dev/ttyGS1 > /log/debug.log 2>&1 &  # RUN IN BACKGROUND!
+/controller < /dev/ttyGS1 >> /log/debug.log 2>&1 &  # RUN IN BACKGROUND!
 
 
 # Wait until the controller process is fully running
@@ -72,7 +75,7 @@ done
 trap "echo 'Caught SIGINT! Exiting...'; exit 1" SIGINT
 
 #again sending controller input to make it available on ttyACM1
-echo "ping" > /dev/ttyGS1 &
+#echo "ping" > /dev/ttyGS1 &
 
 
 touch ~/.shrc

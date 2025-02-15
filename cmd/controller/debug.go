@@ -16,6 +16,7 @@ import (
 )
 
 func init() {
+	debugLog("DEBUG: Init function executed, debug mode enabled")
 	debug = true
 }
 
@@ -95,9 +96,9 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 	case cmd == "shell":
 		debugLog("Starting interactive shell...")
 		startShell()
-	case cmd == "reload":
-		debugLog("debug: received reload command")
-		go reloadController()
+	// case strings.HasPrefix(cmd, "reload "):
+	// 	debugLog("debug: received reload command with file size")
+	// 	go reloadController()
 	// default:
 	// 	fmt.Printf("Passing through command: %s\n", cmd)
 	// 	execCommand(cmd)
@@ -112,9 +113,10 @@ func reloadController() error {
     debugLog("debug: stopping controller process...")
 
     // Kill the current controller process
-    cmd := exec.Command("killall", "controller")
+    cmd := exec.Command("/bin/killall", "controller")
     if err := cmd.Run(); err != nil {
         debugLog("debug: failed to stop controller: %v", err)
+		return err
     }
 
     // Wait for it to fully stop
@@ -124,7 +126,8 @@ func reloadController() error {
     debugLog("debug: restarting controller process...")
     cmd = exec.Command("/bin/controller")
     if err := cmd.Start(); err != nil {
-        return fmt.Errorf("failed to restart controller: %w", err)
+        debugLog("ERROR: failed to restart controller: %w", err)
+		return err
     }
     return nil
 }
@@ -134,7 +137,7 @@ func execCommand(cmdStr string) {
 
     parts := strings.Fields(cmdStr)
     if len(parts) == 0 {
-        fmt.Println("No command received.")
+        debugLog("No command received.")
         return
     }
 

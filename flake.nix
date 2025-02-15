@@ -398,6 +398,8 @@
               # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
               # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
               
+              #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 init=/init rootwait modules-load=dwc2,g_serial g_serial.use_acm=1 g_serial.n_ports=2 debug ignore_loglevel earlyprintk";              
+
               cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 rootwait modules-load=dwc2,g_serial g_serial.n_ports=2";              
               
               #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
@@ -686,7 +688,7 @@
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = localpkgs; in pkgs.writeShellScriptBin "reload" ''
               #!/bin/sh
-              set -e  # Enable debug mode
+              set -x  # Enable debug mode
               
               # Set default USB device if not provided
               if [ -z "$1" ]; then
@@ -700,13 +702,19 @@
                   exit 1
               fi
               
-              fuser -k $USBDEV 2>/dev/null
-              echo "" > $USBDEV
+              #fuser -k $USBDEV 2>/dev/null
+              
 
               PROG="${self.packages.${system}.controller-debug}/bin/controller"
+              stty -F $USBDEV -a
+              stty -F $USBDEV sane -b 115200
+              stty -F $USBDEV -a
+
+  
+              echo "" > "$USBDEV"
               echo "reload $(wc -c < "$PROG")" > "$USBDEV"
-              pv -L 64k "$PROG" > "$USBDEV"
-              #exec cat "$USBDEV"
+              cat "$PROG" > "$USBDEV"
+              exec cat "$USBDEV"
             '';
             # reload-fast is a faster, but impure, way of reloading the controller binary
             # from a developer shell.

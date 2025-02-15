@@ -67,17 +67,22 @@ func runSerial(p *Platform, s io.Reader) error {
 		}
 		var binSize int64
 		line = strings.TrimSpace(line)
+		debugLog("DEBUG: Raw received command: %q", line)
 		if _, err := fmt.Sscanf(line, "reload %d", &binSize); err == nil {
 			binFile := "/reload-a"
 			if binFile == os.Args[0] {
 				binFile = "/reload-b"
 			}
 			if err := writeReloader(r, binFile, binSize); err != nil {
+				debugLog("ERROR: %v", err)
 				return err
 			}
 			if err := syscall.Exec(binFile, []string{binFile}, nil); err != nil {
+				debugLog("ERROR: %s: %v", binFile, err)
 				return fmt.Errorf("%s: %w", binFile, err)
 			}
+
+	
 			continue
 		}
 		switch line {
