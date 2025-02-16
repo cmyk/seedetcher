@@ -44,7 +44,7 @@ var (
 const leadingSize = 44
 
 func init() {
-	prim := rgb(0x02427d)
+	prim := rgb(0xff6600)
 	descriptorTheme = Colors{
 		Background: rgb(0x267f26),
 		Text:       rgb(0xe9f2ea),
@@ -56,7 +56,7 @@ func init() {
 		Primary:    prim,
 	}
 	engraveTheme = Colors{
-		Background: rgb(0xd1e83cb),
+		Background: rgb(0xffa000),
 		Text:       rgb(0xdffffff),
 		Primary:    prim,
 	}

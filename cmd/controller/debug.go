@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime/pprof"
 	"strings"
+	"time"
 
 	"seedetcher.com/gui"
 )
@@ -18,6 +19,10 @@ func init() {
 
 func click(btn gui.Button) []gui.ButtonEvent {
 	return []gui.ButtonEvent{
+		{
+			Button:  btn,
+			Pressed: true,
+		},
 		{
 			Button:  btn,
 			Pressed: true,
@@ -47,11 +52,13 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 			})
 		}
 		evts = append(evts, click(gui.Button2)...)
+
 	case strings.HasPrefix(cmd, "input "):
 		cmd = cmd[len("input "):]
 		for _, name := range strings.Split(cmd, " ") {
 			name = strings.TrimSpace(name)
 			var btn gui.Button
+
 			switch name {
 			case "up":
 				btn = gui.Up
@@ -69,12 +76,38 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 				btn = gui.Button2
 			case "b3":
 				btn = gui.Button3
+			case "b3long":
+				debugLog("DEBUG: Initiating long press event for Button3")
+
+				// Send press event immediately
+				evts = append(evts, gui.ButtonEvent{Button: gui.Button3, Pressed: true})
+				gui.SendEvents(evts)
+
+				start := time.Now()
+				for time.Since(start) < 3*time.Second {
+					time.Sleep(100 * time.Millisecond)
+				}
+
+				// Send release event and process it
+				evts = append(evts, gui.ButtonEvent{Button: gui.Button3, Pressed: false})
+				gui.SendEvents(evts)
+
+				debugLog("DEBUG: Button3 long press completed")
+			case "ccw":
+				btn = gui.CCW
+			case "cw":
+				btn = gui.CW
+			case "rune":
+				btn = gui.Rune
 			default:
 				log.Printf("debug: unknown button: %s", name)
 				continue
 			}
-			evts = append(evts, click(btn)...)
+
+			evts = append(evts, gui.ButtonEvent{Button: btn, Pressed: true})
+			evts = append(evts, gui.ButtonEvent{Button: btn, Pressed: false})
 		}
+
 	case cmd == "goroutines":
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 	default:

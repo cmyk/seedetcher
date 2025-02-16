@@ -1,4 +1,4 @@
-// package markers is the tools for marking the top plate of the SeedHammer
+// package markers is the tools for marking the top plate of the SeedEtcher
 // machine.
 package main
 

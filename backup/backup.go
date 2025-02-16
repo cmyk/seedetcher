@@ -1,4 +1,4 @@
-// package backup implements the SeedHammer backup scheme.
+// package backup implements the SeedEtcher backup scheme.
 package backup
 
 import (

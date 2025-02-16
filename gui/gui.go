@@ -1,4 +1,4 @@
-// package gui implements the SeedHammer controller user interface.
+// package gui implements the SeedEtcher controller user interface.
 package gui
 
 import (
@@ -694,8 +694,10 @@ func (s *ConfirmWarningScreen) Layout(ctx *Context, ops op.Ctx, th *Colors, dims
 			}
 		case Button3:
 			if e.Pressed {
+				fmt.Println("pressed!")
 				s.confirm.Start(ctx, confirmDelay)
 			} else {
+				fmt.Println("ConfirmDelay")
 				s.confirm = ConfirmDelay{}
 			}
 		}
@@ -1623,7 +1625,7 @@ func drawMainScreen(ctx *Context, ops op.Ctx, dims image.Point, page program) {
 	th = mainScreenTheme(page)
 	switch page {
 	case backupWallet:
-		title = "Backup Wallet"
+		title = "SeedEtcher Backup"
 	}
 	op.ColorOp(ops, th.Background)
 
@@ -1639,7 +1641,7 @@ func drawMainScreen(ctx *Context, ops op.Ctx, dims image.Point, page program) {
 
 	versz := widget.Labelwf(ops.Begin(), ctx.Styles.debug, 100, th.Text, ctx.Version)
 	op.Position(ops, ops.End(), r.SE(versz.Add(image.Pt(4, 0))))
-	shsz := widget.Labelwf(ops.Begin(), ctx.Styles.debug, 100, th.Text, "SeedHammer")
+	shsz := widget.Labelwf(ops.Begin(), ctx.Styles.debug, 100, th.Text, "SeedEtcher")
 	op.Position(ops, ops.End(), r.SW(shsz).Add(image.Pt(3, 0)))
 }
 

@@ -1,4 +1,4 @@
-// command cli is the internal tool for testing the SeedHammer engraver.
+// command cli is the internal tool for testing the SeedEtcher engraver.
 package main
 
 import (
