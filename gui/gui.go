@@ -694,10 +694,8 @@ func (s *ConfirmWarningScreen) Layout(ctx *Context, ops op.Ctx, th *Colors, dims
 			}
 		case Button3:
 			if e.Pressed {
-				fmt.Println("pressed!")
 				s.confirm.Start(ctx, confirmDelay)
 			} else {
-				fmt.Println("ConfirmDelay")
 				s.confirm = ConfirmDelay{}
 			}
 		}
@@ -2590,6 +2588,50 @@ func (s *EngraveScreen) Engrave(ctx *Context, ops op.Ctx, th *Colors) bool {
 		ctx.Frame()
 	}
 }
+
+// type PrintSeedScreen struct {
+// 	inp InputTracker
+// }
+
+// func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic) bool {
+// 	inp := &s.inp
+
+// 	for {
+// 		for {
+// 			e, ok := inp.Next(ctx, Button1, Button3)
+// 			if !ok {
+// 				break
+// 			}
+// 			switch e.Button {
+// 			case Button1: // Cancel
+// 				if inp.Clicked(e.Button) {
+// 					return false
+// 				}
+// 			case Button3: // Print
+// 				if inp.Clicked(e.Button) {
+// 					// Trigger the print command
+// 					printSeed(mnemonic)
+// 					return true
+// 				}
+// 			}
+// 		}
+
+// 		dims := ctx.Platform.DisplaySize()
+// 		op.ColorOp(ops, th.Background)
+// 		layoutTitle(ctx, ops, dims.X, th.Text, "Print Seed")
+
+// 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text,
+// 			"Ensure your printer is connected before printing the seed.\n\nPress Print to continue.")
+// 		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
+
+// 		layoutNavigation(inp, ops, th, dims, []NavButton{
+// 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
+// 			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
+// 		}...)
+
+// 		ctx.Frame()
+// 	}
+// }
 
 func (s *EngraveScreen) draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Point) {
 	op.ColorOp(ops, th.Background)

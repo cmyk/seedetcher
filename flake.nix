@@ -114,9 +114,10 @@
                 attr    # For extended attributes
                 busybox
                 strace
-                file
+                # cups
+                # libevent
+                # avahi
               ];
-
                 
               patches = [
                 ./patches/kernel_missing_includes.patch
@@ -280,11 +281,19 @@
           mkinitramfs = debug:
             let
               pkgs = localpkgs;
-              
               busyboxStatic = crosspkgs.pkgsStatic.busybox;
               bashStatic = crosspkgs.pkgsStatic.bash;
               straceStatic = crosspkgs.pkgsStatic.strace;
-              fileStatic = crosspkgs.pkgsStatic.file;
+              # cupsStatic = crosspkgs.pkgsStatic.cups.overrideAttrs (old: {
+              #   configureFlags = (old.configureFlags or []) ++ [
+              #     "--disable-openssl"
+              #   ];
+              # });  # This ensures CUPS does NOT require OpenSSL
+              # libeventStatic = crosspkgs.pkgsStatic.libevent.overrideAttrs (old: {
+              #   configureFlags = (old.configureFlags or []) ++ [
+              #     "--disable-openssl"
+              #   ];
+              # });
 
               controller =
                 if debug then
@@ -335,9 +344,7 @@
                                 
                 cp -a ${busyboxStatic}/bin/* initramfs/bin/ 
                 cp -a ${straceStatic}/bin/strace initramfs/bin/
-                cp -a ${fileStatic}/bin/* initramfs/bin/
-                cp -a ${fileStatic}/lib/* initramfs/lib/ 2>/dev/null || true
-                cp -a ${fileStatic}/share/* initramfs/share/ 2>/dev/null || true
+                
 
                 # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
                 cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
