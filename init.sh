@@ -9,6 +9,10 @@ echo "DEBUG MARKER: Init script has started" | tee -a /log/init_debug.log > /dev
 
 set -m  # Enable job control
 
+#redirecting libcamera logs
+export LIBCAMERA_LOG_LEVEL=ERROR
+export LIBCAMERA_LOG_OUTPUT=/log/libcamera.log
+
 mount -t devtmpfs devtmpfs /dev
 mount -t proc none /proc
 mkdir -p /dev/pts

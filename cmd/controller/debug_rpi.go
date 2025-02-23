@@ -58,6 +58,31 @@ func dbgInit(p *Platform) error {
 	return nil
 }
 
+func (p *Platform) Printer() io.Writer {
+	// Open /dev/ttyGS1 for PCL output only
+	printer, err := os.OpenFile("/dev/ttyGS1", os.O_WRONLY, 0)
+	if err != nil {
+		// Fallback to os.Stdout, but redirect debug elsewhere
+		logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+			return os.Stdout
+		}
+		os.Stderr = logFile // Redirect stderr to log file
+		os.Stdout = logFile // Redirect stdout to log file, not ttyGS1
+		return os.Stdout    // Fallback, but ideally use printer
+	}
+	// Redirect stderr and stdout to avoid mixing with PCL
+	logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+	} else {
+		os.Stderr = logFile
+		os.Stdout = logFile // Ensure stdout also goes to log, not ttyGS1
+	}
+	return printer
+}
+
 func runSerial(p *Platform, s io.Reader) error {
 	r := bufio.NewReader(s)
 	for {

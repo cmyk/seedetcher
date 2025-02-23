@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"io"
 	"log"
 	"math"
 	"strings"
@@ -791,7 +792,7 @@ func validateDescriptor(params engrave.Params, desc urtypes.OutputDescriptor) er
 	// descriptor. Note that this is impossible by construction and by exhaustive
 	// tests, but it's good to be paranoid.
 	if !backup.Recoverable(desc) {
-		return errors.New("Descriptor is not recoverable. This is a bug in the program; please report it.")
+		return errors.New("descriptor is not recoverable this is a bug in the program please report it")
 	}
 	return nil
 }
@@ -1797,25 +1798,42 @@ func backupWalletFlow(ctx *Context, ops op.Ctx, th *Colors) {
 			continue
 		}
 		if desc == nil {
-			plate, err := engraveSeed(ctx.Platform.PlateSizes(), ctx.Platform.EngraverParams(), mnemonic)
-			if err != nil {
-				errScr := NewErrorScreen(err)
-				for {
-					dims := ctx.Platform.DisplaySize()
-					dismissed := errScr.Layout(ctx, ops.Begin(), th, dims)
-					d := ops.End()
-					if dismissed {
-						break
-					}
-					ss.Draw(ctx, ops, th, dims, mnemonic)
-					d.Add(ops)
-					ctx.Frame()
-				}
+			// Offer choice between engraving and printing
+			cs := &ChoiceScreen{
+				Title:   "Backup Option",
+				Lead:    "Choose how to back up your seed",
+				Choices: []string{"Engrave Plate", "Print Seed"},
+			}
+			choice, ok := cs.Choose(ctx, ops, th)
+			if !ok {
 				continue
 			}
-			completed := NewEngraveScreen(ctx, plate).Engrave(ctx, ops, &engraveTheme)
-			if completed {
-				return
+			switch choice {
+			case 0: // Engrave Plate
+				plate, err := engraveSeed(ctx.Platform.PlateSizes(), ctx.Platform.EngraverParams(), mnemonic)
+				if err != nil {
+					errScr := NewErrorScreen(err)
+					for {
+						dims := ctx.Platform.DisplaySize()
+						dismissed := errScr.Layout(ctx, ops, th, dims)
+						if dismissed {
+							break
+						}
+						ss.Draw(ctx, ops, th, dims, mnemonic)
+						ops.End().Add(ops) // Use ops.End().Add(ops) instead of ops.Add(ops.End())
+						ctx.Frame()
+					}
+					continue
+				}
+				completed := NewEngraveScreen(ctx, plate).Engrave(ctx, ops, &engraveTheme)
+				if completed {
+					return
+				}
+			case 1: // Print Seed
+				printScreen := &PrintSeedScreen{}
+				if printScreen.Print(ctx, ops, th, mnemonic) {
+					return
+				}
 			}
 			continue
 		}
@@ -1834,13 +1852,12 @@ func backupWalletFlow(ctx *Context, ops op.Ctx, th *Colors) {
 				errScr := NewErrorScreen(err)
 				for {
 					dims := ctx.Platform.DisplaySize()
-					dismissed := errScr.Layout(ctx, ops.Begin(), th, dims)
-					d := ops.End()
+					dismissed := errScr.Layout(ctx, ops, th, dims)
 					if dismissed {
 						break
 					}
 					ss.Draw(ctx, ops, th, dims, mnemonic)
-					d.Add(ops)
+					ops.End().Add(ops) // Use ops.End().Add(ops)
 					ctx.Frame()
 				}
 				continue
@@ -2589,49 +2606,55 @@ func (s *EngraveScreen) Engrave(ctx *Context, ops op.Ctx, th *Colors) bool {
 	}
 }
 
-// type PrintSeedScreen struct {
-// 	inp InputTracker
-// }
+type PrintSeedScreen struct {
+	inp InputTracker
+}
 
-// func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic) bool {
-// 	inp := &s.inp
-
-// 	for {
-// 		for {
-// 			e, ok := inp.Next(ctx, Button1, Button3)
-// 			if !ok {
-// 				break
-// 			}
-// 			switch e.Button {
-// 			case Button1: // Cancel
-// 				if inp.Clicked(e.Button) {
-// 					return false
-// 				}
-// 			case Button3: // Print
-// 				if inp.Clicked(e.Button) {
-// 					// Trigger the print command
-// 					printSeed(mnemonic)
-// 					return true
-// 				}
-// 			}
-// 		}
-
-// 		dims := ctx.Platform.DisplaySize()
-// 		op.ColorOp(ops, th.Background)
-// 		layoutTitle(ctx, ops, dims.X, th.Text, "Print Seed")
-
-// 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text,
-// 			"Ensure your printer is connected before printing the seed.\n\nPress Print to continue.")
-// 		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
-
-// 		layoutNavigation(inp, ops, th, dims, []NavButton{
-// 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
-// 			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
-// 		}...)
-
-// 		ctx.Frame()
-// 	}
-// }
+func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic) bool {
+	inp := &s.inp
+	for {
+		for {
+			e, ok := inp.Next(ctx, Button1, Button3)
+			if !ok {
+				break
+			}
+			switch e.Button {
+			case Button1: // Cancel
+				if inp.Clicked(e.Button) {
+					return false
+				}
+			case Button3: // Print
+				if inp.Clicked(e.Button) {
+					// Collect words into a slice
+					var words []string
+					for _, w := range mnemonic { // Use range over mnemonic to get bip39.Word values
+						words = append(words, strings.ToUpper(bip39.LabelFor(w)))
+					}
+					// Join words with a space
+					seed := strings.Join(words, " ")
+					qrData := seedqr.QR(mnemonic)
+					w := ctx.Platform.Printer()
+					if err := engrave.PrintPCL(w, nil, seed, qrData); err != nil {
+						log.Printf("Print failed: %v", err)
+						return false
+					}
+					return true
+				}
+			}
+		}
+		dims := ctx.Platform.DisplaySize()
+		op.ColorOp(ops, th.Background)
+		layoutTitle(ctx, ops, dims.X, th.Text, "Print Seed")
+		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text,
+			"Ensure your printer is connected before printing the seed.\n\nPress Print to continue.")
+		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
+		layoutNavigation(inp, ops, th, dims, []NavButton{
+			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
+			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
+		}...)
+		ctx.Frame()
+	}
+}
 
 func (s *EngraveScreen) draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Point) {
 	op.ColorOp(ops, th.Background)
@@ -2720,6 +2743,7 @@ type Platform interface {
 	NextChunk() (draw.RGBA64Image, bool)
 	ScanQR(qr *image.Gray) ([][]byte, error)
 	Debug() bool
+	Printer() io.Writer // Add this method for printer output
 }
 
 type Engraver interface {
@@ -2835,11 +2859,9 @@ func Run(pl Platform, version string) func(yield func() bool) {
 			}()
 			mainFlow(ctx, a.root.Context())
 		}
-		//startTime := time.Now()
 		var evts []Event
 		for range it {
 			dirty := a.root.Clip(image.Rectangle{Max: a.ctx.Platform.DisplaySize()})
-			//layoutTime := time.Now()
 			if err := a.ctx.Platform.Dirty(dirty); err != nil {
 				panic(err)
 			}
@@ -2854,12 +2876,6 @@ func Run(pl Platform, version string) func(yield func() bool) {
 				}
 				a.root.Draw(fb, a.mask)
 			}
-			// cmyk: disabled this for now
-			// drawTime := time.Now()
-			// if a.ctx.Platform.Debug() {
-			// 	log.Printf("frame: %v layout: %v draw: %v %v",
-			// 		drawTime.Sub(startTime), layoutTime.Sub(startTime), drawTime.Sub(layoutTime), dirty)
-			// }
 			for {
 				if !yield() {
 					return
@@ -2873,7 +2889,6 @@ func Run(pl Platform, version string) func(yield func() bool) {
 					} else {
 						a.ctx.Events(e)
 					}
-					wakeup = time.Time{}
 				}
 				idleWakeup := a.idle.start.Add(idleTimeout)
 				now := a.ctx.Platform.Now()
@@ -2899,7 +2914,6 @@ func Run(pl Platform, version string) func(yield func() bool) {
 				break
 			}
 			a.root.Reset()
-			//startTime = time.Now()
 		}
 	}
 }

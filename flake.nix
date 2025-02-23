@@ -184,6 +184,8 @@
                 # Enable FTDI USB serial driver.
                 ./scripts/config --enable USB_SERIAL
                 ./scripts/config --enable USB_SERIAL_FTDI_SIO
+                # Enable USB printer support
+                ./scripts/config --enable USB_PRINTER
                 # Disable HDMI framebuffer device.
                 ./scripts/config --disable FB_BCM2708
                 # Enable display driver.
