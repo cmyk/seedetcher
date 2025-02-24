@@ -92,7 +92,7 @@ func PrintPCL(w io.Writer, plan Plan, seed string, qrData []byte) error {
 	}
 	io.WriteString(w, "\033*rB\x0C") // \x1b*rB\x0C (end raster, form feed)
 	return nil
-	// test
+	// test2
 }
 
 // Params decribe the physical characteristics of an
