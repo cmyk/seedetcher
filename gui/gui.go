@@ -31,6 +31,7 @@ import (
 	"seedetcher.com/gui/text"
 	"seedetcher.com/gui/widget"
 	"seedetcher.com/nonstandard"
+	"seedetcher.com/print"
 	"seedetcher.com/seedqr"
 )
 
@@ -2612,6 +2613,7 @@ type PrintSeedScreen struct {
 
 func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic) bool {
 	inp := &s.inp
+	var _ = print.PrintPCL // Dummy use to prevent import removal (remove after fixing)
 	for {
 		for {
 			e, ok := inp.Next(ctx, Button1, Button3)
@@ -2625,16 +2627,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				}
 			case Button3: // Print
 				if inp.Clicked(e.Button) {
-					// Collect words into a slice
-					var words []string
-					for _, w := range mnemonic { // Use range over mnemonic to get bip39.Word values
-						words = append(words, strings.ToUpper(bip39.LabelFor(w)))
-					}
-					// Join words with a space
-					seed := strings.Join(words, " ")
+					// Use mnemonic directly as bip39.Mnemonic
 					qrData := seedqr.QR(mnemonic)
-					w := ctx.Platform.Printer()
-					if err := engrave.PrintPCL(w, nil, seed, qrData); err != nil {
+					if err := ctx.Platform.PrintPCL(mnemonic, qrData); err != nil {
 						log.Printf("Print failed: %v", err)
 						return false
 					}
@@ -2653,6 +2648,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
 		}...)
 		ctx.Frame()
+		return false // Ensure a return value to fix "missing return" error
 	}
 }
 
@@ -2743,7 +2739,8 @@ type Platform interface {
 	NextChunk() (draw.RGBA64Image, bool)
 	ScanQR(qr *image.Gray) ([][]byte, error)
 	Debug() bool
-	Printer() io.Writer // Add this method for printer output
+	Printer() io.Writer                                    // Add this method for printer output
+	PrintPCL(mnemonic bip39.Mnemonic, qrData []byte) error // Add this method
 }
 
 type Engraver interface {

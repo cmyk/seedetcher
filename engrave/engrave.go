@@ -11,13 +11,10 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
-	"io"
 	"iter"
 	"math"
 	"math/rand"
-	"os"
 	"slices"
-	"strings"
 
 	"github.com/kortschak/qr"
 	"github.com/srwiley/rasterx"
@@ -25,75 +22,6 @@ import (
 	"golang.org/x/image/math/fixed"
 	"seedetcher.com/font/vector"
 )
-
-func PrintPCL(w io.Writer, plan Plan, seed string, qrData []byte) error {
-	// Reset printer, set A4, use 1/10mm units
-	io.WriteString(w, "\033E")     // \x1bE (reset)
-	io.WriteString(w, "\033&l26A") // \x1b&l26A (A4)
-	io.WriteString(w, "\033&f3")   // \x1b&f3 (1/10mm units)
-
-	// Seed phrase at 50mm x 50mm (500h, 500V in 1/10mm)
-	words := strings.Split(seed, " ")
-	y := 500         // Start at 50mm
-	x := 500         // Start at 50mm
-	lineHeight := 50 // ~5mm per line, adjust for font size
-
-	for i, word := range words {
-		if i > 0 && i%12 == 0 { // Start new column after 12 words
-			x = 1000 // Second column at 100mm
-			y = 500  // Reset Y for second column
-		}
-		if i > 0 && i%24 == 0 { // Handle more than 24 words (if needed)
-			y += lineHeight // Move down for additional lines
-		}
-		// Format x and y as three digits (e.g., 500 -> "500", 1000 -> "1000")
-		xStr := fmt.Sprintf("%03d", x) // Ensures "1000", not ":00"
-		yStr := fmt.Sprintf("%03d", y) // Ensures "500", not ":00"
-		// Debug: Print raw strings to verify (optional, remove for production)
-		fmt.Fprintf(os.Stderr, "xStr: %q, yStr: %q\n", xStr, yStr)
-		io.WriteString(w, "\033&a")  // \x1b&a
-		io.WriteString(w, xStr)      // Write x as ASCII digits (e.g., "1000")
-		io.WriteString(w, "h")       // 'h' for horizontal position
-		io.WriteString(w, "\033&a")  // \x1b&a
-		io.WriteString(w, yStr)      // Write y as ASCII digits (e.g., "500")
-		io.WriteString(w, "V")       // 'V' for vertical position
-		fmt.Fprintf(w, "%s\n", word) // Write word directly
-		y += lineHeight              // Move down for next word
-	}
-
-	// QR code at 50mm x 70mm (500h, 700V), 50mm size
-	qr, err := qr.Encode(string(qrData), qr.M)
-	if err != nil {
-		return err
-	}
-	dim := qr.Size
-	io.WriteString(w, "\033&a500h700V\033*r1A") // \x1b&a500h700V\x1b*r1A
-	for y := 0; y < dim; y++ {
-		var row []byte
-		for x := 0; x < dim; x += 8 {
-			byteVal := byte(0)
-			for bit := 0; bit < 8 && x+bit < dim; bit++ {
-				if qr.Black(x+bit, y) {
-					byteVal |= 1 << (7 - bit)
-				}
-			}
-			row = append(row, byteVal)
-		}
-		length := len(row)
-		lengthBytes := []byte(fmt.Sprintf("%03d", length)) // e.g., "004"
-		io.WriteString(w, "\033*b")                        // \x1b*b
-		w.Write(lengthBytes)                               // Write length
-		io.WriteString(w, "W")                             // 'W'
-		for _, b := range row {                            // Write raw bytes
-			w.Write([]byte{b})
-			// Debug (remove for production)
-			fmt.Fprintf(os.Stderr, "QR byte: %x\n", b)
-		}
-	}
-	io.WriteString(w, "\033*rB\x0C") // \x1b*rB\x0C (end raster, form feed)
-	return nil
-	// test2
-}
 
 // Params decribe the physical characteristics of an
 // engraver.

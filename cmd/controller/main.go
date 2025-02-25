@@ -2,13 +2,10 @@
 // It runs on a Raspberry Pi Zero, in the same configuration as SeedSigner.
 package main
 
-
-
 import (
 	"fmt"
 	"log"
 	"os"
-	"time"
 
 	"seedetcher.com/gui"
 )
@@ -37,10 +34,4 @@ func run() error {
 
 var debug = false
 
-func (p *Platform) Debug() bool {
-	return debug
-}
-
-func (p *Platform) Now() time.Time {
-	return time.Now()
-}
+// Remove Platform struct and methods here; delegate to debug_rpi.go or platform_rpi.go

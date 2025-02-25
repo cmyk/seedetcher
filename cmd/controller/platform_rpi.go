@@ -1,4 +1,5 @@
-//go:build linux && arm
+//go:build linux && arm && !debug
+// +build linux,arm,!debug
 
 package main
 
@@ -18,16 +19,18 @@ import (
 
 	"golang.org/x/sys/unix"
 	"seedetcher.com/backup"
+	"seedetcher.com/bip39"
 	"seedetcher.com/driver/drm"
 	"seedetcher.com/driver/libcamera"
 	"seedetcher.com/driver/mjolnir"
 	"seedetcher.com/driver/wshat"
 	"seedetcher.com/engrave"
 	"seedetcher.com/gui"
+	"seedetcher.com/print"
 	"seedetcher.com/zbar"
 )
 
-// Debug hooks.
+// Debug hooks (keep but ensure unique per build tag if needed).
 var (
 	engraverHook func() io.ReadWriteCloser
 	initHook     func(p *Platform) error
@@ -48,7 +51,6 @@ type Platform struct {
 }
 
 func Init() (*Platform, error) {
-	// Ignore errors from setting up filesystems; they may already have been.
 	_ = mountFS()
 	p := &Platform{
 		events:  make(chan gui.Event, 10),
@@ -97,8 +99,6 @@ func (p *Platform) AppendEvents(deadline time.Time, evts []gui.Event) []gui.Even
 		c.active = false
 	}
 	for {
-		// Give the input go routines a chance to process
-		// incoming events.
 		runtime.Gosched()
 		select {
 		case e := <-p.events:
@@ -113,12 +113,10 @@ func (p *Platform) AppendEvents(deadline time.Time, evts []gui.Event) []gui.Even
 			d := time.Until(deadline)
 			if p.timer == nil {
 				p.timer = time.NewTimer(d)
-			} else {
-				if !p.timer.Stop() {
-					select {
-					case <-p.timer.C:
-					default:
-					}
+			} else if !p.timer.Stop() {
+				select {
+				case <-p.timer.C:
+				default:
 				}
 			}
 			if d <= 0 {
@@ -196,13 +194,13 @@ func (e *engraver) Close() {
 }
 
 var frameCounter int
+
 func (p *Platform) ScanQR(img *image.Gray) ([][]byte, error) {
-    frameCounter++
-    if frameCounter%10 != 0 {
-        return nil, nil
-    }
-    return zbar.Scan(img) 
-	//return zbar.Scan(img)
+	frameCounter++
+	if frameCounter%10 != 0 {
+		return nil, nil
+	}
+	return zbar.Scan(img)
 }
 
 func (p *Platform) CameraFrame(dims image.Point) {
@@ -211,6 +209,43 @@ func (p *Platform) CameraFrame(dims image.Point) {
 		c.close = libcamera.Open(dims, p.camera.frames, p.camera.out)
 	}
 	c.active = true
+}
+
+func (p *Platform) PrintPCL(mnemonic bip39.Mnemonic, qrData []byte) error {
+	printer, err := os.OpenFile("/dev/usb/lp0", os.O_WRONLY, 0)
+	if err != nil {
+		log.Printf("Failed to open /dev/usb/lp0 for printer: %v", err)
+		logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Printf("Error opening log file: %v", err)
+			return fmt.Errorf("printer unavailable: %v", err)
+		}
+		return print.PrintPCL(logFile, mnemonic, qrData)
+	}
+	defer printer.Close()
+	return print.PrintPCL(printer, mnemonic, qrData)
+}
+
+func (p *Platform) Printer() io.Writer {
+	printer, err := os.OpenFile("/dev/usb/lp0", os.O_WRONLY, 0)
+	if err != nil {
+		log.Printf("Failed to open /dev/usb/lp0 for printer: %v", err)
+		logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Printf("Error opening log file: %v", err)
+			return os.Stderr
+		}
+		return logFile
+	}
+	return printer
+}
+
+func (p *Platform) Debug() bool {
+	return false
+}
+
+func (p *Platform) Now() time.Time {
+	return time.Now()
 }
 
 func (p *Platform) initSDCardNotifier() error {
@@ -235,7 +270,6 @@ func (p *Platform) initSDCardNotifier() error {
 		p.events <- gui.SDCardEvent{
 			Inserted: inserted,
 		}.Event()
-		// Make room for 100 events plus paths and their NUL terminator.
 		var buf [(unix.SizeofInotifyEvent + unix.PathMax + 1) * 100]byte
 		for {
 			n, err := f.Read(buf[:])
@@ -248,10 +282,8 @@ func (p *Platform) initSDCardNotifier() error {
 				evts = evts[unix.SizeofInotifyEvent:]
 				var name string
 				if evt.Len > 0 {
-					// Extract name, without NUL terminator.
 					nameb := evts[:evt.Len-1]
 					evts = evts[evt.Len:]
-					// Kernel pads name with NULs. Trim them.
 					nameb = bytes.TrimRight(nameb, "\000")
 					name = string(nameb)
 				}

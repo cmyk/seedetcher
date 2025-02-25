@@ -9,9 +9,11 @@ echo "DEBUG MARKER: Init script has started" | tee -a /log/init_debug.log > /dev
 
 set -m  # Enable job control
 
-#redirecting libcamera logs
+# Redirect libcamera logs explicitly and suppress stdout/stderr
 export LIBCAMERA_LOG_LEVEL=ERROR
-export LIBCAMERA_LOG_OUTPUT=/log/libcamera.log
+export LIBCAMERA_LOG_FILE=/log/libcamera.log  # Use LIBCAMERA_LOG_FILE instead of LOG_OUTPUT
+export LIBCAMERA_LOG_OUTPUT=""  # Clear any default output to terminal
+export LIBCAMERA_PROVIDER_LOG=0  # Disable provider logs if supported
 
 mount -t devtmpfs devtmpfs /dev
 mount -t proc none /proc
@@ -59,8 +61,8 @@ stty -F /dev/ttyGS1 raw -echo
 echo "" > /dev/ttyGS1
 
 debug_echo "Starting controller..."
-/controller < /dev/ttyGS1 >> /log/debug.log 2>&1 &  # RUN IN BACKGROUND!
-
+# Ensure controller’s stdout/stderr go to log, not ttyGS1
+/controller < /dev/ttyGS1 >> /log/debug.log 2>> /log/debug.log &
 
 # Wait until the controller process is fully running
 while ! pidof controller > /dev/null; do

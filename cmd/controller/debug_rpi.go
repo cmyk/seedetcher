@@ -1,223 +1,324 @@
 //go:build debug && linux && arm
+// +build debug,linux,arm
 
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"image"
-	"image/png"
+	"image/draw"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
+	"runtime"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"seedetcher.com/backup"
+	"seedetcher.com/bip39"
+	"seedetcher.com/driver/drm"
+	"seedetcher.com/driver/libcamera"
 	"seedetcher.com/driver/mjolnir"
+	"seedetcher.com/driver/wshat"
+	"seedetcher.com/engrave"
+	"seedetcher.com/gui"
+	"seedetcher.com/print"
+	"seedetcher.com/zbar"
 )
 
-const dmesg = false
+// Debug hooks (ensure unique per build tag if needed, but keep as is for now).
+var (
+	engraverHook func() io.ReadWriteCloser
+	initHook     func(p *Platform) error
+)
 
-var screenshotCounter int
-
-func init() {
-	initHook = dbgInit
-	engraverHook = func() io.ReadWriteCloser {
-		return mjolnir.NewSimulator()
+type Platform struct {
+	display *drm.LCD
+	events  chan gui.Event
+	wakeups chan struct{}
+	timer   *time.Timer
+	camera  struct {
+		frames chan gui.FrameEvent
+		out    chan gui.FrameEvent
+		frame  *gui.FrameEvent
+		close  func()
+		active bool
 	}
 }
 
-func dbgInit(p *Platform) error {
-	s, err := openSerial("/dev/ttyGS1")
+func Init() (*Platform, error) {
+	_ = mountFS()
+	p := &Platform{
+		events:  make(chan gui.Event, 10),
+		wakeups: make(chan struct{}, 1),
+	}
+	c := &p.camera
+	c.frames = make(chan gui.FrameEvent)
+	c.out = make(chan gui.FrameEvent)
+	if initHook != nil {
+		if err := initHook(p); err != nil {
+			log.Printf("debug: %v", err)
+		}
+	}
+	if err := p.initSDCardNotifier(); err != nil {
+		return nil, err
+	}
+	if err := wshat.Open(p.events); err != nil {
+		return nil, err
+	}
+	d, err := drm.Open()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	// Redirect stderr and stdout
-	unix.Dup2(int(s.Fd()), syscall.Stderr)
-	unix.Dup2(int(s.Fd()), syscall.Stdout)
-	go func() {
-		defer s.Close()
-		if err := runSerial(p, s); err != nil {
-			debugLog("debug: serial communication failed: %v", err)
+	p.display = d
+	return p, nil
+}
+
+func (p *Platform) Wakeup() {
+	select {
+	case p.wakeups <- struct{}{}:
+	default:
+	}
+}
+
+func (p *Platform) AppendEvents(deadline time.Time, evts []gui.Event) []gui.Event {
+	c := &p.camera
+	if c.close != nil {
+		if c.frame != nil {
+			c.out <- *c.frame
+			c.frame = nil
 		}
-	}()
-	if dmesg {
-		kmsg, err := os.Open("/dev/kmsg")
+		if !c.active {
+			c.close()
+			c.close = nil
+		}
+		c.active = false
+	}
+	for {
+		runtime.Gosched()
+		select {
+		case e := <-p.events:
+			evts = append(evts, e)
+		case f := <-c.frames:
+			c.frame = &f
+			evts = append(evts, f.Event())
+		default:
+			if len(evts) > 0 {
+				return evts
+			}
+			d := time.Until(deadline)
+			if p.timer == nil {
+				p.timer = time.NewTimer(d)
+			} else if !p.timer.Stop() {
+				select {
+				case <-p.timer.C:
+				default:
+				}
+			}
+			if d <= 0 {
+				p.Wakeup()
+			} else {
+				p.timer.Reset(d)
+			}
+			select {
+			case e := <-p.events:
+				evts = append(evts, e)
+			case f := <-c.frames:
+				c.frame = &f
+				evts = append(evts, f.Event())
+			case <-p.timer.C:
+				return evts
+			case <-p.wakeups:
+				return evts
+			}
+		}
+	}
+}
+
+func (p *Platform) DisplaySize() image.Point {
+	return p.display.Size()
+}
+
+func (p *Platform) Dirty(r image.Rectangle) error {
+	return p.display.Dirty(r)
+}
+
+func (p *Platform) NextChunk() (draw.RGBA64Image, bool) {
+	return p.display.NextChunk()
+}
+
+func (p *Platform) PlateSizes() []backup.PlateSize {
+	return []backup.PlateSize{backup.SquarePlate, backup.LargePlate}
+}
+
+func (p *Platform) EngraverParams() engrave.Params {
+	return mjolnir.Params
+}
+
+func (p *Platform) Engraver() (gui.Engraver, error) {
+	var dev io.ReadWriteCloser
+	if engraverHook == nil {
+		var err error
+		dev, err = mjolnir.Open("")
 		if err != nil {
-			return err
+			return nil, err
 		}
-		go func() {
-			defer kmsg.Close()
-			io.Copy(os.Stderr, kmsg)
-		}()
+	} else {
+		dev = engraverHook()
 	}
-	return nil
+	return &engraver{dev: dev}, nil
+}
+
+type engraver struct {
+	dev io.ReadWriteCloser
+}
+
+func (e *engraver) Engrave(sz backup.PlateSize, plan engrave.Plan, quit <-chan struct{}) error {
+	const x = 97
+	y := 0
+	switch sz {
+	case backup.SquarePlate:
+		y = 49
+	}
+	mm := mjolnir.Params.Millimeter
+	plan = engrave.Offset(x*mm, y*mm, plan)
+	return mjolnir.Engrave(e.dev, mjolnir.Options{}, plan, quit)
+}
+
+func (e *engraver) Close() {
+	e.dev.Close()
+}
+
+var frameCounter int
+
+func (p *Platform) ScanQR(img *image.Gray) ([][]byte, error) {
+	frameCounter++
+	if frameCounter%10 != 0 {
+		return nil, nil
+	}
+	return zbar.Scan(img)
+}
+
+func (p *Platform) CameraFrame(dims image.Point) {
+	c := &p.camera
+	if c.close == nil {
+		c.close = libcamera.Open(dims, p.camera.frames, p.camera.out)
+	}
+	c.active = true
+}
+
+func (p *Platform) PrintPCL(mnemonic bip39.Mnemonic, qrData []byte) error {
+	printer := p.Printer()
+	if printer == nil {
+		return fmt.Errorf("printer not available")
+	}
+	return print.PrintPCL(printer, mnemonic, qrData)
 }
 
 func (p *Platform) Printer() io.Writer {
-	// Open /dev/ttyGS1 for PCL output only
 	printer, err := os.OpenFile("/dev/ttyGS1", os.O_WRONLY, 0)
 	if err != nil {
-		// Fallback to os.Stdout, but redirect debug elsewhere
+		log.Printf("Failed to open /dev/ttyGS1 for printer: %v", err)
 		logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
-			return os.Stdout
+			log.Printf("Error opening log file: %v", err)
+			return os.Stderr
 		}
-		os.Stderr = logFile // Redirect stderr to log file
-		os.Stdout = logFile // Redirect stdout to log file, not ttyGS1
-		return os.Stdout    // Fallback, but ideally use printer
+		os.Stdout = logFile
+		os.Stderr = logFile
+		return logFile
 	}
-	// Redirect stderr and stdout to avoid mixing with PCL
 	logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error opening log file: %v\n", err)
+		log.Printf("Error opening log file: %v", err)
 	} else {
+		os.Stdout = logFile
 		os.Stderr = logFile
-		os.Stdout = logFile // Ensure stdout also goes to log, not ttyGS1
 	}
 	return printer
 }
 
-func runSerial(p *Platform, s io.Reader) error {
-	r := bufio.NewReader(s)
-	for {
-		line, err := r.ReadString('\n')
-		if err != nil {
-			return err
-		}
-		var binSize int64
-		line = strings.TrimSpace(line)
-		debugLog("DEBUG: Raw received command: %q", line)
-		if _, err := fmt.Sscanf(line, "reload %d", &binSize); err == nil {
-			binFile := "/reload-a"
-			if binFile == os.Args[0] {
-				binFile = "/reload-b"
-			}
-			if err := writeReloader(r, binFile, binSize); err != nil {
-				debugLog("ERROR: %v", err)
-				return err
-			}
-			if err := syscall.Exec(binFile, []string{binFile}, nil); err != nil {
-				debugLog("ERROR: %s: %v", binFile, err)
-				return fmt.Errorf("%s: %w", binFile, err)
-			}
-			continue
-		}
-		switch line {
-		case "screenshot":
-			if p.display == nil {
-				break
-			}
-			screenshotCounter++
-			name := fmt.Sprintf("screenshot%d.png", screenshotCounter)
-			dumpImage(name, p.display.Framebuffer())
-		default:
-			for _, e := range debugCommand(line) {
-				p.events <- e.Event()
-			}
-		}
-	}
+func (p *Platform) Debug() bool {
+	return true
 }
 
-func writeReloader(s io.Reader, binFile string, size int64) (ferr error) {
-	bin, err := os.OpenFile(binFile, os.O_CREATE|os.O_WRONLY, 0o700)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := bin.Close(); ferr == nil {
-			ferr = err
-		}
-	}()
-	_, err = io.CopyN(bin, s, size)
-	return err
+func (p *Platform) Now() time.Time {
+	return time.Now()
 }
 
-func dumpImage(name string, img image.Image) {
-	buf := new(bytes.Buffer)
-	if err := png.Encode(buf, img); err != nil {
-		log.Printf("screenshot: failed to encode: %v", err)
-		return
+func (p *Platform) initSDCardNotifier() error {
+	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
+	if err != nil {
+		return fmt.Errorf("inotify_init1: %w", err)
 	}
-	if err := dumpFile(name, buf); err != nil {
-		log.Printf("screenshot: %s: %v", name, err)
-		return
+	f := os.NewFile(uintptr(fd), "inotify")
+	var flags uint32 = unix.IN_CREATE | unix.IN_DELETE
+	const dev = "/dev"
+	if _, err = unix.InotifyAddWatch(fd, dev, flags); err != nil {
+		f.Close()
+		return fmt.Errorf("inotify_add_watch: %w", err)
 	}
-	log.Printf("screenshot: dumped %s", name)
+	const sdcName = "mmcblk0"
+	inserted := true
+	if _, err := os.Stat(filepath.Join(dev, sdcName)); os.IsNotExist(err) {
+		inserted = false
+	}
+	go func() {
+		defer f.Close()
+		p.events <- gui.SDCardEvent{
+			Inserted: inserted,
+		}.Event()
+		var buf [(unix.SizeofInotifyEvent + unix.PathMax + 1) * 100]byte
+		for {
+			n, err := f.Read(buf[:])
+			if err != nil {
+				panic(err)
+			}
+			evts := buf[:n]
+			for len(evts) > 0 {
+				evt := (*unix.InotifyEvent)(unsafe.Pointer(&evts[0]))
+				evts = evts[unix.SizeofInotifyEvent:]
+				var name string
+				if evt.Len > 0 {
+					nameb := evts[:evt.Len-1]
+					evts = evts[evt.Len:]
+					nameb = bytes.TrimRight(nameb, "\000")
+					name = string(nameb)
+				}
+				if name == sdcName {
+					switch {
+					case evt.Mask&unix.IN_CREATE != 0:
+						p.events <- gui.SDCardEvent{Inserted: true}.Event()
+					case evt.Mask&unix.IN_DELETE != 0:
+						p.events <- gui.SDCardEvent{Inserted: false}.Event()
+					}
+				}
+			}
+		}
+	}()
+	return nil
 }
 
-func dumpFile(path string, r io.Reader) (ferr error) {
-	const mntDir = "/mnt"
-	if err := os.MkdirAll(mntDir, 0o644); err != nil {
-		return fmt.Errorf("mkdir %s: %w", mntDir, err)
+func mountFS() error {
+	devices := []struct {
+		path string
+		fs   string
+	}{
+		{"/dev", "devtmpfs"},
+		{"/sys", "sysfs"},
+		{"/proc", "proc"},
 	}
-	if err := syscall.Mount("/dev/mmcblk0p1", mntDir, "vfat", 0, ""); err != nil {
-		return fmt.Errorf("mount /dev/mmcblk0p1: %w", err)
-	}
-	defer func() {
-		if err := syscall.Unmount(mntDir, 0); ferr == nil {
-			ferr = err
+	for _, dev := range devices {
+		if err := os.MkdirAll(dev.path, 0o644); err != nil {
+			return fmt.Errorf("platform: %w", err)
 		}
-	}()
-	path = filepath.Join(mntDir, path)
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o644); err != nil {
-		return fmt.Errorf("mkdir %s: %w", dir, err)
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := f.Close(); ferr == nil {
-			ferr = err
+		if err := syscall.Mount(dev.fs, dev.path, dev.fs, 0, ""); err != nil {
+			return fmt.Errorf("platform: mount %s: %w", dev.path, err)
 		}
-	}()
-	_, err = io.Copy(f, r)
-	return err
-}
-
-func openSerial(path string) (s *os.File, err error) {
-	s, err = os.OpenFile(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_NONBLOCK, 0666)
-	if err != nil {
-		return nil, err
 	}
-	defer func() {
-		if err != nil && s != nil {
-			s.Close()
-		}
-	}()
-	c, err := s.SyscallConn()
-	if err != nil {
-		return nil, err
-	}
-	var errno syscall.Errno
-	err = c.Control(func(fd uintptr) {
-		// Base settings
-		cflagToUse := uint32(unix.CREAD | unix.CLOCAL | unix.CS8)
-		t := unix.Termios{
-			Iflag:  unix.IGNPAR,
-			Cflag:  cflagToUse,
-			Ispeed: 115200,
-			Ospeed: 115200,
-		}
-		t.Cc[unix.VMIN] = 1
-		t.Cc[unix.VTIME] = 0
-
-		if _, _, errno := unix.Syscall6(unix.SYS_IOCTL, fd, uintptr(unix.TCSETS), uintptr(unsafe.Pointer(&t)), 0, 0, 0); errno != 0 {
-			panic(errno)
-		}
-	})
-	if err != nil {
-		return nil, err
-	}
-	if errno != 0 {
-		return nil, errno
-	}
-	return
+	return nil
 }
