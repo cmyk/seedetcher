@@ -1,5 +1,8 @@
 // package engrave transforms shapes such as text and QR codes into
 // line and move commands for use with an engraver.
+
+// Version 001
+
 package engrave
 
 import (
@@ -366,8 +369,8 @@ func constantQR(strokeWidth, scale int, level qr.Level, content []byte) (*consta
 // padForConstantTime pads QR modules to ensure constant-time behavior (defined earlier or keep as is)
 func padForConstantTime(cmd *constantQRCmd, dim int) []image.Point {
 	nmod := constantTimeQRModules(dim)
-	moveLen := qrMoves * cmd.strokeWidth * cmd.scale //369
-	lineLen := cmd.strokeWidth * cmd.scale           //370
+	// moveLen := qrMoves * cmd.strokeWidth * cmd.scale //369
+	// lineLen := cmd.strokeWidth * cmd.scale           //370
 	currentLen := len(cmd.plan)
 	if currentLen >= nmod {
 		return cmd.plan // No padding needed if already sufficient
