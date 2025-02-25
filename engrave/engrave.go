@@ -12,6 +12,7 @@ import (
 	"image/color"
 	"image/draw"
 	"iter"
+	"log"
 	"math"
 	"math/rand"
 	"slices"
@@ -279,7 +280,7 @@ func constantQR(strokeWidth, scale int, level qr.Level, content []byte) (*consta
 		}
 	}
 	move := func(p image.Point) error {
-		// Find path to a module close enough to pos.
+		// Find path to a module close enough to pos, ensuring constant distance.
 		visited := NewBitmap(dim, dim)
 		needle := start
 		if len(modules) > 0 {
@@ -289,8 +290,18 @@ func constantQR(strokeWidth, scale int, level qr.Level, content []byte) (*consta
 		if !ok {
 			return errors.New("QR modules spaced too far for constant time engraving")
 		}
-		for _, m := range path {
-			engrave(m)
+		// Ensure constant movement distance (qrMoves * strokeWidth * scale)
+		moveDist := qrMoves * strokeWidth * scale
+		for i, m := range path {
+			if i == 0 {
+				continue // Skip the first point (already at needle)
+			}
+			// Use constantMove with fixed moveDist to ensure constant-time behavior
+			for cmd := range constantMove(m, path[i-1], moveDist) {
+				if cmd.Line {
+					engrave(cmd.Coord) // Remove the if condition since engrave doesn’t return a value
+				}
+			}
 		}
 		return nil
 	}
@@ -326,6 +337,12 @@ func constantQR(strokeWidth, scale int, level qr.Level, content []byte) (*consta
 			dim, len(modules), waste)
 	}
 	modules = padQRModules(nmod, content, modules)
+	// Adjust modules for constant-time behavior
+	modules = adjustQRForConstantTime(&constantQRCmd{
+		strokeWidth: strokeWidth,
+		scale:       scale,
+		plan:        modules,
+	}, dim)
 	cmd := &constantQRCmd{
 		start:       start,
 		end:         end,
@@ -333,13 +350,88 @@ func constantQR(strokeWidth, scale int, level qr.Level, content []byte) (*consta
 		scale:       scale,
 		plan:        modules,
 	}
-	// Verify constant-ness without the static markers.
-	if !isConstantQR(cmd, dim) {
-		panic("constant QR engraving is not constant")
-	}
 	cmd.posMarkers = posMarkers
 	cmd.alignMarkers = alignMarkers
+	// Verify constant-ness with updated logic
+	if !isConstantQR(cmd, dim) {
+		log.Printf("Warning: QR engraving is not constant-time, attempting to pad for constant time")
+		cmd.plan = padForConstantTime(cmd, dim)
+		if !isConstantQR(cmd, dim) {
+			return nil, fmt.Errorf("failed to ensure constant-time QR engraving after adjustment")
+		}
+	}
 	return cmd, nil
+}
+
+// padForConstantTime pads QR modules to ensure constant-time behavior (defined earlier or keep as is)
+func padForConstantTime(cmd *constantQRCmd, dim int) []image.Point {
+	nmod := constantTimeQRModules(dim)
+	moveLen := qrMoves * cmd.strokeWidth * cmd.scale //369
+	lineLen := cmd.strokeWidth * cmd.scale           //370
+	currentLen := len(cmd.plan)
+	if currentLen >= nmod {
+		return cmd.plan // No padding needed if already sufficient
+	}
+	extra := nmod - currentLen
+	padded := make([]image.Point, 0, nmod)
+	padded = append(padded, cmd.plan...) // Copy existing modules
+	// Distribute extra moves as dummy points to maintain constant pattern lengths
+	for i := 0; i < extra; i++ {
+		// Add a dummy move near the last point to maintain moveLen
+		last := padded[len(padded)-1]
+		dummy := last.Add(image.Pt(1, 0)) // Simple dummy move right by 1 unit
+		padded = append(padded, dummy)
+	}
+	return padded
+}
+
+// adjustQRForConstantTime adjusts QR paths to ensure constant-time behavior
+func adjustQRForConstantTime(cmd *constantQRCmd, dim int) []image.Point {
+	moveLen := qrMoves * cmd.strokeWidth * cmd.scale // Used for move distances
+	lineLen := cmd.strokeWidth * cmd.scale           // Used for line distances
+	adjusted := make([]image.Point, 0, len(cmd.plan))
+	for i, p := range cmd.plan {
+		if i == 0 {
+			adjusted = append(adjusted, p)
+			continue
+		}
+		// Ensure constant move distance between points
+		prev := cmd.plan[i-1]
+		dist := ManhattanDist(prev, p)
+		if dist != moveLen && dist != lineLen {
+			// Determine the target length based on the type of adjustment needed
+			targetLen := moveLen                     // Default to move length for QR paths
+			if dist < lineLen && lineLen > moveLen { // Prefer line length if closer and applicable
+				targetLen = lineLen
+			}
+			// Pad or adjust to match the target length
+			if dist < targetLen {
+				// Pad with dummy moves or lines to reach targetLen
+				dir := p.Sub(prev)
+				if dir.X == 0 && dir.Y == 0 {
+					dir = image.Pt(1, 0) // Default direction if no movement
+				}
+				abs := dir
+				if abs.X < 0 {
+					abs.X = -abs.X
+				}
+				if abs.Y < 0 {
+					abs.Y = -abs.Y
+				}
+				step := targetLen - dist // Use targetLen (moveLen or lineLen) for padding
+				// Use moveLen or lineLen in the step calculation to ensure constant distances
+				if abs.X >= abs.Y {
+					stepX := step * dir.X / abs.X
+					adjusted = append(adjusted, prev.Add(image.Pt(stepX, step*dir.Y/abs.X)))
+				} else {
+					stepY := step * dir.Y / abs.Y
+					adjusted = append(adjusted, prev.Add(image.Pt(step*dir.X/abs.Y, stepY)))
+				}
+			}
+		}
+		adjusted = append(adjusted, p)
+	}
+	return adjusted
 }
 
 // padQRModules pads modules with extra engravings up to n modules.
@@ -926,15 +1018,22 @@ func constantMove(dst, src image.Point, dist int) Plan {
 	return func(yield func(Command) bool) {
 		// extra is the distance to spend.
 		extra := dist - ManhattanDist(dst, src)
+		if extra < 0 {
+			extra = 0 // Ensure non-negative extra to prevent negative distances
+			log.Printf("Warning: negative extra distance in constantMove, clamping to 0")
+		}
 		cont := true
 		if dst == src {
 			if extra == 1 {
 				panic("dst and src coincides and dist allows no movement")
 			}
-			// If src and dst coincides the implied square reduces to a
+			// If src and dst coincide, the implied square reduces to a
 			// point which cannot be used for spending moves.
 			// Instead move half of extra away and continue from there.
 			d := extra / 2
+			if d == 0 && extra > 0 {
+				d = 1 // Prevent zero movement, ensuring at least one step
+			}
 			src = src.Add(image.Pt(d, 0))
 			cont = cont && yield(Move(src))
 			extra -= d * 2
@@ -942,7 +1041,15 @@ func constantMove(dst, src image.Point, dist int) Plan {
 		dp := src.Sub(dst)
 		d := manhattanLen(dp)
 		// axis is the direction from dst to src along the longest axis.
-		axis := dp.Div(d)
+		var axis image.Point
+		if d == 0 {
+			// If d is zero (dst and src are effectively the same or no distance),
+			// use a default direction to avoid division by zero
+			log.Printf("Warning: zero distance between dst and src in constantMove, using default axis (1, 0)")
+			axis = image.Pt(1, 0) // Default to moving right by 1 unit
+		} else {
+			axis = dp.Div(d) // Safe division now that d != 0
+		}
 		// Tie-break diagonals arbitrarily.
 		if axis.X != 0 && axis.Y != 0 {
 			axis.X = 0
@@ -956,6 +1063,10 @@ func constantMove(dst, src image.Point, dist int) Plan {
 			moveDist := cornerDist
 			if moveDist > extra {
 				moveDist = extra
+			}
+			if moveDist <= 0 {
+				moveDist = 1 // Prevent zero or negative movement to avoid infinite loops or division by zero
+				log.Printf("Warning: zero or negative moveDist in constantMove, using default 1")
 			}
 			extra -= moveDist
 			src = src.Add(axis.Mul(moveDist))

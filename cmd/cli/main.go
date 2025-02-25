@@ -35,6 +35,8 @@ var (
 	size       = flag.String("size", "SH02", "plate size (SH02, SH03)")
 	descriptor = flag.String("descriptor", "wpkh([97a6d3c2/84h/1h/0h]tpubDD5cTgxiP4qYJgBgkS6arjQH3GsJEHExFZWvumhNGGe4gBShn9u3b4TdpG2DvRg3knNXV7fBdmaw6cH2kKYdk2aXjQZYsnTchA4aFsZWehG)", "output descriptor")
 	mnemonic   = flag.String("mnemonic", "vocal tray giggle tool duck letter category pattern train magnet excite swamp", "seed phrase")
+	numPlates  = flag.Int("plates", 1, "number of plates to print (1-4)") // New flag for number of plates
+	paperSize  = flag.String("paper", "A4", "paper size (A4 or Letter)")  // New flag for paper size
 )
 
 func main() {
@@ -53,7 +55,15 @@ func dumpPCL(sideCmd engrave.Plan, size backup.PlateSize, keyIdx int, output str
 		return err
 	}
 	defer f.Close()
-	return print.PrintPCL(f, m, qrData) // Use full package path
+	paper := print.PaperA4
+	if *paperSize == "Letter" {
+		paper = print.PaperLetter
+	}
+	// Validate numPlates
+	if *numPlates < 1 || *numPlates > 4 {
+		return fmt.Errorf("-plates must be between 1 and 4, got %d", *numPlates)
+	}
+	return print.PrintPCL(f, m, qrData, *numPlates, paper) // Pass numPlates and paperSize
 }
 
 func run() error {
@@ -170,125 +180,6 @@ func run() error {
 	}
 	return dumpPCL(sideCmd, psz, keyIdx, *output)
 }
-
-// func run() error {
-// 	if *mnemonic == "" {
-// 		return errors.New("specify a seed")
-// 	}
-// 	m, err := bip39.ParseMnemonic(*mnemonic)
-// 	if err != nil {
-// 		return fmt.Errorf("invalid mnemonic: %w", err)
-// 	}
-// 	seed := bip39.MnemonicSeed(m, "")
-// 	var desc urtypes.OutputDescriptor
-// 	if *descriptor != "" {
-// 		desc, err = nonstandard.OutputDescriptor([]byte(*descriptor))
-// 		if err != nil {
-// 			return err
-// 		}
-// 		desc.Title = backup.TitleString(constant.Font, "Satoshi's Nice Stash")
-// 	}
-// 	network := &chaincfg.MainNetParams
-// 	if len(desc.Keys) > 0 {
-// 		network = desc.Keys[0].Network
-// 	}
-// 	mk, err := hdkeychain.NewMaster(seed, network)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	if *descriptor == "" {
-// 		path := urtypes.Path{0}
-// 		mfp, xpub, err := bip32.Derive(mk, path)
-// 		if err != nil {
-// 			return fmt.Errorf("failed to derive key: %w", err)
-// 		}
-// 		pub, err := xpub.ECPubKey()
-// 		if err != nil {
-// 			return fmt.Errorf("failed to derive public key: %w", err)
-// 		}
-// 		desc = urtypes.OutputDescriptor{
-// 			Threshold: 1,
-// 			Script:    urtypes.UnknownScript,
-// 			Type:      urtypes.Singlesig,
-// 			Keys: []urtypes.KeyDescriptor{
-// 				{
-// 					Network:           network,
-// 					DerivationPath:    path,
-// 					MasterFingerprint: mfp,
-// 					KeyData:           pub.SerializeCompressed(),
-// 					ChainCode:         xpub.ChainCode(),
-// 					ParentFingerprint: xpub.ParentFingerprint(),
-// 				},
-// 			},
-// 		}
-// 	}
-// 	if len(desc.Keys) == 0 {
-// 		return errors.New("descriptor contains no keys")
-// 	}
-// 	keyIdx := -1
-// 	for i, k := range desc.Keys {
-// 		_, xpub, err := bip32.Derive(mk, k.DerivationPath)
-// 		if err != nil {
-// 			// A derivation that generates an invalid key is by itself very unlikely,
-// 			// but also means that the seed doesn't match this xpub.
-// 			continue
-// 		}
-// 		if k.String() == xpub.String() {
-// 			keyIdx = i
-// 			break
-// 		}
-// 	}
-// 	if keyIdx == -1 {
-// 		return errors.New("seed is not among the descriptor keys")
-// 	}
-// 	var psz backup.PlateSize
-// 	switch *size {
-// 	case "SH02":
-// 		psz = backup.SquarePlate
-// 	case "SH03":
-// 		psz = backup.LargePlate
-// 	default:
-// 		return fmt.Errorf("-size must be 'SH02' or 'SH03'")
-// 	}
-// 	params := mjolnir.Params
-// 	var sideCmd engrave.Plan
-// 	switch *side {
-// 	case "back":
-// 		desc := backup.Seed{
-// 			Title:             desc.Title,
-// 			KeyIdx:            keyIdx,
-// 			Mnemonic:          m,
-// 			Keys:              len(desc.Keys),
-// 			MasterFingerprint: desc.Keys[keyIdx].MasterFingerprint,
-// 			Font:              constant.Font,
-// 			Size:              psz,
-// 		}
-// 		sideCmd, err = backup.EngraveSeed(params, desc)
-// 	case "front":
-// 		desc := backup.Descriptor{
-// 			Descriptor: desc,
-// 			KeyIdx:     keyIdx,
-// 			Font:       constant.Font,
-// 			Size:       psz,
-// 		}
-// 		sideCmd, err = backup.EngraveDescriptor(params, desc)
-// 	default:
-// 		return fmt.Errorf("-side must be 'front' or 'back'")
-// 	}
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	if *serialDev != "" {
-// 		err = hammer(sideCmd, *serialDev)
-// 	} else {
-// 		if err := os.MkdirAll(*output, 0o755); err != nil {
-// 			return err
-// 		}
-// 		err = dump(sideCmd, psz, keyIdx, *output)
-// 	}
-// 	return err
-// }
 
 func dump(sideCmd engrave.Plan, size backup.PlateSize, keyIdx int, output string) error {
 	const ppmm = 24

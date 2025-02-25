@@ -1,277 +1,254 @@
-// package print handles generating PCL output for printing seed phrases and QR codes.
+// package print handles generating PDF output for printing seed phrases and QR codes based on engraving plans.
 package print
 
 import (
+	"bytes"
 	"fmt"
-	"image"
-	"image/color"
 	"io"
 	"log"
+	"os"
 	"strings"
 
-	"github.com/kortschak/qr"
+	"github.com/jung-kurt/gofpdf"
+	"seedetcher.com/backup"
 	"seedetcher.com/bip39"
-	"seedetcher.com/font/bitmap"
-	"seedetcher.com/font/comfortaa"
+	"seedetcher.com/engrave"
+	"seedetcher.com/font/constant"
+	"seedetcher.com/seedqr"
+
+	"image/png"
+
+	"github.com/kortschak/qr"
 )
 
-func loadFont(fontFace *bitmap.Face, text string, fontSize int, dpi int) (*image.Gray, error) {
-	scale := float64(dpi) / 300.0
-	scaledFontSize := int(float64(fontSize) * scale)
+type PaperSize string
 
-	// Estimate width based on scaled font size (use 10/10 for better fit)
-	img := image.NewGray(image.Rect(0, 0, len(text)*scaledFontSize*10/10, scaledFontSize))
-	y := 0
-	for _, r := range text {
-		glyphImg, _, ok := fontFace.Glyph(r)
-		if !ok {
-			log.Printf("Warning: No glyph for rune %c", r)
-			continue
-		}
-		bounds := glyphImg.Bounds()
-		log.Printf("Glyph for '%c': bounds %v", r, bounds)
-		for py := 0; py < bounds.Dy(); py++ {
-			for px := 0; px < bounds.Dx(); px++ {
-				c := glyphImg.At(px, py)
-				if a, ok := c.(color.Alpha); ok {
-					// Use alpha as grayscale (0 = black, 255 = white)
-					gray := uint8(255 - a.A) // Invert for black-on-white
-					if gray < 128 {
-						img.SetGray(px, y+py, color.Gray{Y: 0}) // Black
-						log.Printf("Set black pixel at (%d, %d) for '%c'", px, y+py, r)
-					} else {
-						img.SetGray(px, y+py, color.Gray{Y: 255}) // White
-					}
-				} else if g, ok := c.(color.Gray); ok {
-					// Handle existing Gray pixels
-					if g.Y < 128 {
-						img.SetGray(px, y+py, color.Gray{Y: 0}) // Black
-						log.Printf("Set black pixel at (%d, %d) for '%c'", px, y+py, r)
-					} else {
-						img.SetGray(px, y+py, color.Gray{Y: 255}) // White
+const (
+	PaperA4     PaperSize = "A4"     // 210mm x 297mm
+	PaperLetter PaperSize = "Letter" // 216mm x 279mm
+)
+
+func GeneratePDF(outputPath string, plan engrave.Plan, mnemonic bip39.Mnemonic, title string, numPlates int, paperSize PaperSize) error {
+	// Define paper dimensions (in mm)
+	var paperWidth, paperHeight float64
+	switch paperSize {
+	case PaperLetter:
+		paperWidth, paperHeight = 216.0, 279.0 // 8.5" x 11"
+	case PaperA4:
+		paperWidth, paperHeight = 210.0, 297.0 // A4
+	default:
+		return fmt.Errorf("unsupported paper size: %s", paperSize)
+	}
+
+	// Create a new PDF document with the chosen paper size
+	pdf := gofpdf.New("P", "mm", string(paperSize), "") // Portrait, mm, A4 or Letter
+	pdf.AddPage()
+
+	// Set font (use Helvetica, a default font; adjust size as needed to match SeedHammer)
+	pdf.SetFont("Helvetica", "", 12) // Adjust size (e.g., 4.1mm = ~12pt, refine if needed)
+
+	// Plate size (85x85mm, independent of paper size)
+	plateSize := 85.0
+	margin := 5.0 // Margin for adjustability between plates and page edges
+
+	// Determine grid layout for numPlates (1–4)
+	var rows, cols int
+	switch numPlates {
+	case 1:
+		rows, cols = 1, 1
+	case 2:
+		rows, cols = 1, 2
+	case 3, 4:
+		rows, cols = 2, 2
+	default:
+		return fmt.Errorf("numPlates must be 1, 2, 3, or 4, got %d", numPlates)
+	}
+
+	// Calculate plate dimensions and positions
+	plateWidth, plateHeight := plateSize, plateSize
+	totalWidth := float64(cols)*plateWidth + float64(cols+1)*margin
+	totalHeight := float64(rows)*plateHeight + float64(rows+1)*margin
+	startX := (paperWidth - totalWidth) / 2   // Center horizontally on paper
+	startY := (paperHeight - totalHeight) / 2 // Center vertically on paper
+
+	// Generate plates (each 85x85mm) in the grid
+	for i := 0; i < numPlates; i++ {
+		plateX := startX + float64(i%cols)*(plateWidth+margin)
+		plateY := startY + float64(i/cols)*(plateHeight+margin)
+
+		// Variables for this plate
+		var seedWordsLeft, seedWordsRight []string
+		var qrData []byte
+		var qrCommands []engrave.Command // Collect QR path commands
+
+		// Process the engraving plan for this plate (assuming plan is per plate or use mnemonic)
+		for cmd := range plan {
+			if cmd.Line {
+				// Assume lines near the top (y < 1000 in 1/10mm units) are text (seed words)
+				if cmd.Coord.Y < 1000 { // Arbitrary threshold, adjust based on layout
+					// Try to infer text from coordinates (simplified heuristic)
+					wordIdx := len(seedWordsLeft) + len(seedWordsRight)
+					word := fmt.Sprintf("Word%d", wordIdx+1) // Placeholder, improve if possible
+					if strings.Contains(word, bip39.LabelFor(0)) {
+						wordText := strings.ToUpper(word)
+						if len(seedWordsLeft) <= len(seedWordsRight) {
+							seedWordsLeft = append(seedWordsLeft, fmt.Sprintf("%d %s", wordIdx+1, wordText))
+						} else {
+							seedWordsRight = append(seedWordsRight, fmt.Sprintf("%d %s", wordIdx+1, wordText))
+						}
 					}
 				} else {
-					log.Printf("Warning: Unexpected color type for glyph at (%d, %d): %T", px, py, c)
+					// Assume lines lower down (y > 1000) are part of the QR code
+					qrCommands = append(qrCommands, cmd)
 				}
 			}
 		}
-		// Use GlyphAdvance for accurate spacing, scaled for DPI
-		adv, ok := fontFace.GlyphAdvance(r)
-		if ok {
-			y += int(float64(int(adv)*scaledFontSize/64) * scale)
-		} else {
-			y += int(float64(bounds.Dy()) * scale) // Fallback to height
+
+		// If no QR commands are found, generate QR data from the mnemonic for this plate
+		if len(qrCommands) == 0 {
+			// For simplicity, use the same mnemonic for all plates; adjust if plates differ
+			qrData = seedqr.QR(mnemonic)
+			if len(qrData) == 0 {
+				log.Printf("Warning: QR data is empty for mnemonic %v", mnemonic)
+				continue // Skip QR rendering if data is invalid
+			}
 		}
-		log.Printf("Advanced y to %d for '%c'", y, r)
-	}
-	log.Printf("Loaded font for '%s': width %d, height %d", text, img.Bounds().Dx(), img.Bounds().Dy())
-	return img, nil
-}
 
-func rasterToPCL(img *image.Gray, dpi int) string {
-	bounds := img.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
-
-	if width == 0 || height == 0 {
-		log.Printf("Warning: Empty image in rasterToPCL, width: %d, height: %d", width, height)
-		return ""
-	}
-
-	// Start PCL raster with specified DPI, ensure single raster
-	pcl := fmt.Sprintf("\033*r%dA", dpi/300) // 300 DPI = 1
-	pcl += fmt.Sprintf("\033*t%04dW", width) // Set raster width
-	log.Printf("Raster width: %d, height: %d, DPI: %d", width, height, dpi)
-	// Transfer raster data, limit to A4 height (1190 units at 1/10mm), ensure valid pixels
-	for y := 0; y < height && y < 1190/10; y++ {
-		var row []byte
-		hasBlack := false
-		for x := 0; x < width; x += 8 {
-			byteVal := byte(0)
-			for bit := 0; bit < 8 && x+bit < width; bit++ {
-				c := img.GrayAt(x+bit, y)
-				if c.Y < 128 { // Black pixel
-					byteVal |= 1 << (7 - bit)
-					hasBlack = true
-				} else if c.Y > 128 { // Ensure white pixels are not misinterpreted
-					// No action for white (255), already 0 in byteVal
-				}
-				// Log a sample pixel for debugging
-				if x == 0 && y == 0 {
-					log.Printf("Pixel at (0,0) grayscale value: %d", c.Y)
+		// If no seed words are found, use the mnemonic directly with numbers in two columns
+		if len(seedWordsLeft)+len(seedWordsRight) == 0 {
+			for i, word := range mnemonic {
+				wordText := strings.ToUpper(bip39.LabelFor(word))
+				if i < 12 {
+					seedWordsLeft = append(seedWordsLeft, fmt.Sprintf("%d %s", i+1, wordText))
+				} else {
+					seedWordsRight = append(seedWordsRight, fmt.Sprintf("%d %s", i+1, wordText))
 				}
 			}
-			if hasBlack { // Only include rows with black pixels
-				row = append(row, byteVal)
+		}
+
+		// Render seed phrase in two columns, centered on 85x85mm plate with margin
+		lineHeight := 5.0                       // Adjust to match SeedHammer spacing (4.1mm font size ≈ 5mm line height)
+		plateWidth := 85.0                      // 85mm width per plate
+		plateHeight := 85.0                     // 85mm height per plate
+		colWidth := (plateWidth - 2*margin) / 2 // 37.5mm per column after margins
+
+		// Calculate starting y for columns (center vertically on plate, accounting for margins)
+		totalWords := len(seedWordsLeft) + len(seedWordsRight)
+		if totalWords > 0 {
+			totalHeight := float64(totalWords) * lineHeight
+			startY := (plateHeight-totalHeight)/2 + plateY
+
+			// Left column, with margin
+			y := startY
+			for _, word := range seedWordsLeft {
+				textWidth := pdf.GetStringWidth(word)
+				x := plateX + margin + (colWidth-textWidth)/2 // Center in left column with margin
+				pdf.Text(x, y, word)
+				y += lineHeight
+			}
+
+			// Right column, with margin
+			y = startY
+			for _, word := range seedWordsRight {
+				textWidth := pdf.GetStringWidth(word)
+				x := plateX + margin + colWidth + (colWidth-textWidth)/2 // Center in right column with margin
+				pdf.Text(x, y, word)
+				y += lineHeight
 			}
 		}
-		length := len(row)
-		if length == 0 {
-			log.Printf("Warning: Empty row at y=%d (skipping)", y)
-			continue
-		}
-		lengthBytes := []byte(fmt.Sprintf("%03d", length))
-		pcl += "\033*b"
-		pcl += string(lengthBytes)
-		pcl += "W"
-		pcl += string(row)
-		log.Printf("Wrote row %d, length %d, data: %v, hasBlack: %v", y, length, row, hasBlack)
-	}
-	pcl += "\033*rB" // End raster, no form feed
-	return pcl
-}
 
-func PrintPCL(w io.Writer, mnemonic bip39.Mnemonic, qrData []byte) error {
-	log.Printf("Starting PCL generation for mnemonic: %v", mnemonic)
-	var words []string
-	for _, w := range mnemonic {
-		words = append(words, bip39.LabelFor(w))
-	}
-	seed := strings.Join(words, " ")
-	log.Printf("Seed phrase: %s", seed)
-
-	io.WriteString(w, "\033E") // Reset printer
-	log.Printf("Wrote reset command: \\033E")
-	io.WriteString(w, "\033&l26A") // A4, portrait
-	log.Printf("Wrote A4 command: \\033&l26A")
-	io.WriteString(w, "\033&f3") // 1/10mm units
-	log.Printf("Wrote units command: \\033&f3")
-
-	params := struct {
-		Millimeter int
-	}{
-		Millimeter: 100, // 1mm = 100 units (1/10mm)
-	}
-	plateDims := image.Pt(850, 1190) // A4 in 1/10mm (width x height for portrait)
-	innerMargin := params.Millimeter * 10
-	seedFontSize := 20 // Increase for better visibility
-
-	seedFont := comfortaa.Bold17
-
-	wordsSlice := strings.Split(seed, " ")
-	maxWords := len(wordsSlice)
-	maxCol1, maxCol2 := 12, 12 // Default for 24 words, adjust for 12 words
-	if maxWords <= 12 {
-		maxCol1 = maxWords / 2
-		maxCol2 = maxWords - maxCol1
-	}
-
-	// Column 1 (300 DPI, centered vertically)
-	col1Y := (plateDims.Y / 2) - (maxCol1*seedFontSize*11/10)/2
-	col1Cmds := wordColumnPCL(seedFont, seedFontSize, wordsSlice, 0, maxCol1, innerMargin, col1Y, 300)
-	for i, cmd := range col1Cmds {
-		if cmd == "" {
-			log.Printf("Warning: Empty column 1 command at index %d", i)
-		} else {
-			log.Printf("Writing column 1 command %d: %s", i, cmd)
-			io.WriteString(w, cmd)
-		}
-	}
-
-	// Column 2 (300 DPI, centered vertically, right margin)
-	col2X := params.Millimeter * 44
-	col2Cmds := wordColumnPCL(seedFont, seedFontSize, wordsSlice, maxCol1, maxCol1+maxCol2, col2X, col1Y, 300)
-	for i, cmd := range col2Cmds {
-		if cmd == "" {
-			log.Printf("Warning: Empty column 2 command at index %d", i)
-		} else {
-			log.Printf("Writing column 2 command %d: %s", i, cmd)
-			io.WriteString(w, cmd)
-		}
-	}
-
-	// Metadata (Version, MFP, Page, Title) at top (300 DPI, single line)
-	log.Printf("Writing metadata commands...")
-	metaY := params.Millimeter * 10 // Top margin
-	metaTexts := []string{"V1", fmt.Sprintf("%.8x", 0x12345678), "Page 1", "SeedEtcher"}
-	metaX := innerMargin
-	for i, text := range metaTexts {
-		metaImg, _ := loadFont(seedFont, text, seedFontSize, 300)
-		metaPCL := rasterToPCL(metaImg, 300)
-		if metaPCL != "" {
-			io.WriteString(w, fmt.Sprintf("%s\033&a%dh%dV", metaPCL, metaX, metaY))
-			log.Printf("Wrote metadata %d: %s at %d,%d", i, text, metaX, metaY)
-			metaY += seedFontSize * 11 / 10 // Line spacing, ensure within A4
-			if metaY > plateDims.Y-innerMargin {
-				break
+		// Render QR code below the seed phrase, with margin
+		if len(qrData) > 0 {
+			qrCode, err := qr.Encode(string(qrData), qr.M)
+			if err != nil {
+				log.Printf("Warning: failed to encode QR code for mnemonic %v: %v", mnemonic, err)
+				continue // Skip QR rendering on error, but continue with other plates
 			}
+			buf := new(bytes.Buffer)
+			if err := png.Encode(buf, qrCode.Image()); err != nil {
+				log.Printf("Warning: failed to generate QR image for mnemonic %v: %v", mnemonic, err)
+				continue // Skip QR rendering on error
+			}
+			imgInfo := pdf.RegisterImageReader("qr.png", "PNG", buf)
+			if imgInfo == nil {
+				log.Printf("Warning: failed to register QR image for mnemonic %v", mnemonic)
+				continue // Skip QR rendering if registration fails
+			}
+			qrWidth := 30.0                                             // Adjust QR size to fit 85mm, e.g., 30mm width
+			qrX := plateX + margin + (plateWidth-2*margin-qrWidth)/2    // Center QR horizontally on plate with margins
+			qrY := plateY + 60.0 + margin                               // Position QR below seed phrase (adjust to fit 85mm height, with margin)
+			pdf.Image("qr.png", qrX, qrY, qrWidth, 0, false, "", 0, "") // Use image name directly
+		}
+
+		// Render title at the bottom, centered, with margin
+		if title != "" {
+			pdf.SetFont("Helvetica", "", 8) // Smaller font for title, adjust as needed
+			titleText := strings.ToUpper(title)
+			titleWidth := pdf.GetStringWidth(titleText)
+			titleX := plateX + margin + (plateWidth-2*margin-titleWidth)/2 // Center title horizontally on plate with margins
+			titleY := plateY + 80.0 + margin                               // Position at bottom, adjust to fit 85mm with margin
+			pdf.Text(titleX, titleY, titleText)
+			pdf.SetFont("Helvetica", "", 12) // Reset font for other text
 		}
 	}
 
-	// QR code (300 DPI, centered, single page)
-	qr, err := qr.Encode(string(qrData), qr.M)
+	// Save to file
+	err := pdf.OutputFileAndClose(outputPath)
 	if err != nil {
-		log.Printf("QR encoding failed: %v", err)
-		return err
+		return fmt.Errorf("failed to write PDF: %v", err)
 	}
-	dim := qr.Size
-	if dim == 0 {
-		log.Printf("Warning: QR code dimensions are zero")
-		return fmt.Errorf("invalid QR code size")
-	}
-	qrX := params.Millimeter*60 - dim*10/2 // Center horizontally
-	qrY := (plateDims.Y - dim*10) / 2      // Center vertically
-	io.WriteString(w, fmt.Sprintf("\033&a%dh%dV\033*r1A", qrX, qrY))
-	log.Printf("Wrote QR position and raster start: \\033&a%dh%dV\\033*r1A", qrX, qrY)
-	for y := 0; y < dim; y++ {
-		var row []byte
-		for x := 0; x < dim; x += 8 {
-			byteVal := byte(0)
-			for bit := 0; bit < 8 && x+bit < dim; bit++ {
-				if qr.Black(x+bit, y) {
-					byteVal |= 1 << (7 - bit)
-				}
-			}
-			row = append(row, byteVal)
-		}
-		length := len(row)
-		if length == 0 {
-			log.Printf("Warning: Empty QR row %d", y)
-			continue
-		}
-		lengthBytes := []byte(fmt.Sprintf("%03d", length))
-		io.WriteString(w, "\033*b")
-		w.Write(lengthBytes)
-		io.WriteString(w, "W")
-		w.Write(row)
-		log.Printf("Wrote QR row %d, length %d, data: %v", y, length, row)
-	}
-	io.WriteString(w, "\033*rB") // End raster, no form feed
-	log.Printf("Wrote end raster: \\033*rB")
+	log.Printf("Generated PDF at %s from engraving plan, mnemonic, and title with %d plates on %s paper", outputPath, numPlates, paperSize)
 	return nil
 }
 
-func wordColumnPCL(fontFace *bitmap.Face, fontSize int, words []string, start, end, x, y int, dpi int) []string {
-	var cmds []string
-	// Ensure end doesn’t exceed slice length
-	if end > len(words) {
-		end = len(words)
+func PrintPCL(w io.Writer, mnemonic bip39.Mnemonic, qrData []byte, numPlates int, paperSize PaperSize) error {
+	// Validate numPlates
+	if numPlates < 1 || numPlates > 4 {
+		return fmt.Errorf("numPlates must be between 1 and 4, got %d", numPlates)
 	}
-	for i := start; i < end; i++ {
-		if i >= len(words) { // Safety check
-			break
-		}
-		word := strings.ToUpper(words[i])
-		num := fmt.Sprintf("%2d ", i+1)
 
-		// Rasterize number
-		numImg, _ := loadFont(fontFace, num, fontSize, dpi)
-		numPCL := rasterToPCL(numImg, dpi)
-		numX := x
-		numY := y + (i-start)*(fontSize*11/10)
-		cmds = append(cmds, fmt.Sprintf("%s\033&a%dh%dV", numPCL, numX, numY))
-
-		// Rasterize word
-		wordImg, _ := loadFont(fontFace, word, fontSize, dpi)
-		wordPCL := rasterToPCL(wordImg, dpi)
-		wordWidth := 0
-		for _, r := range word {
-			adv, ok := fontFace.GlyphAdvance(r)
-			if ok {
-				wordWidth += int(adv) * fontSize / 64 // Convert fixed.Int26_6 to pixels
-			}
+	// Generate QR data from mnemonic if not provided
+	if len(qrData) == 0 {
+		qrData = seedqr.QR(mnemonic)
+		if len(qrData) == 0 {
+			return fmt.Errorf("failed to generate QR data for mnemonic %v", mnemonic)
 		}
-		wordX := numX + (len(num) * fontSize * 6 / 10)
-		cmds = append(cmds, fmt.Sprintf("%s\033&a%dh%dV", wordPCL, wordX, numY))
 	}
-	return cmds
+
+	// Generate engraving plan for the seed using backup.EngraveSeed for SquarePlate
+	plate := backup.Seed{
+		Title:             "SATOSHI STASH", // Match SeedHammer title
+		KeyIdx:            0,
+		Mnemonic:          mnemonic,
+		Keys:              1,
+		MasterFingerprint: 0x12345678, // Example, adjust as needed
+		Font:              constant.Font,
+		Size:              backup.SquarePlate, // Use 85x85mm plate
+	}
+	params := engrave.Params{Millimeter: 100} // 1mm = 100 units
+	log.Printf("QR Data: %s", string(qrData))
+	plan, err := backup.EngraveSeed(params, plate)
+	if err != nil {
+		return fmt.Errorf("failed to generate engraving plan: %v", err)
+	}
+
+	// Generate PDF from the plan, mnemonic, title, number of plates, and paper size
+	outputPath := "/home/cmyk/PDF/test.pdf"
+	if err := GeneratePDF(outputPath, plan, mnemonic, plate.Title, numPlates, paperSize); err != nil {
+		return err
+	}
+
+	// Optionally, print directly to printer if available
+	if printer, err := os.OpenFile("/dev/usb/lp0", os.O_WRONLY, 0); err == nil {
+		defer printer.Close()
+		pdfData, err := os.ReadFile(outputPath)
+		if err != nil {
+			return fmt.Errorf("failed to read PDF: %v", err)
+		}
+		if _, err := printer.Write(pdfData); err != nil {
+			return fmt.Errorf("failed to print PDF: %v", err)
+		}
+		log.Printf("Sent PDF to printer at /dev/usb/lp0")
+	}
+	return nil
 }
