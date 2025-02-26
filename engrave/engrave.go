@@ -27,6 +27,8 @@ import (
 	"seedetcher.com/font/vector"
 )
 
+var printing bool
+
 // Params decribe the physical characteristics of an
 // engraver.
 type Params struct {
@@ -300,7 +302,7 @@ func constantQR(strokeWidth, scale int, level qr.Level, content []byte) (*consta
 				continue // Skip the first point (already at needle)
 			}
 			// Use constantMove with fixed moveDist to ensure constant-time behavior
-			for cmd := range constantMove(m, path[i-1], moveDist) {
+			for cmd := range constantMove(m, path[i-1], moveDist, true) {
 				if cmd.Line {
 					engrave(cmd.Coord) // Remove the if condition since engrave doesn’t return a value
 				}
@@ -640,7 +642,7 @@ func (q constantQRCmd) engrave() Plan {
 		moveDist := qrMoves * sw * q.scale
 		for _, m := range q.plan {
 			center := q.centerOf(m)
-			for c := range constantMove(center, prev, moveDist) {
+			for c := range constantMove(center, prev, moveDist, true) {
 				cont = cont && yield(c)
 			}
 			prev = center
@@ -650,7 +652,7 @@ func (q constantQRCmd) engrave() Plan {
 			cont = cont && yield(Line(center))
 		}
 		end := q.centerOf(q.end)
-		for c := range constantMove(end, prev, moveDist) {
+		for c := range constantMove(end, prev, moveDist, true) {
 			cont = cont && yield(c)
 		}
 	}
@@ -891,7 +893,7 @@ func (c *ConstantStringer) String(txt string) Plan {
 				needle = center
 				cont := yield(Move(needle))
 				start := l.path[0].Add(off)
-				for c := range constantMove(start, needle, c.moveDist) {
+				for c := range constantMove(start, needle, c.moveDist, true) {
 					cont = cont && yield(c)
 				}
 				needle = start
@@ -899,7 +901,7 @@ func (c *ConstantStringer) String(txt string) Plan {
 					needle = pos.Add(off)
 					cont = cont && yield(Line(needle))
 				}
-				for c := range constantMove(center, needle, c.moveDist) {
+				for c := range constantMove(center, needle, c.moveDist, true) {
 					cont = cont && yield(c)
 				}
 				needle = center
@@ -926,7 +928,7 @@ func (c *ConstantStringer) String(txt string) Plan {
 			}
 		}
 		// Then let constantMove take care of the rest.
-		for c := range constantMove(c.wordEnd, needle, wantDist) {
+		for c := range constantMove(c.wordEnd, needle, wantDist, true) {
 			if !yield(c) {
 				return
 			}
@@ -1017,8 +1019,12 @@ func (c *ConstantStringer) isConstant(cmd Plan) bool {
 // constantMove assumes the distance between dst and src is less than or
 // equal to dist.
 // constantMove panics if dst equals src and dist is 1.
-func constantMove(dst, src image.Point, dist int) Plan {
+func constantMove(dst, src image.Point, dist int, printing bool) Plan {
 	return func(yield func(Command) bool) {
+		if printing {
+			yield(Move(dst))
+			return
+		}
 		// extra is the distance to spend.
 		extra := dist - ManhattanDist(dst, src)
 		if extra < 0 {
