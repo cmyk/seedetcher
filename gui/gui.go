@@ -31,7 +31,6 @@ import (
 	"seedetcher.com/gui/text"
 	"seedetcher.com/gui/widget"
 	"seedetcher.com/nonstandard"
-	"seedetcher.com/print"
 	"seedetcher.com/seedqr"
 )
 
@@ -1798,75 +1797,18 @@ func backupWalletFlow(ctx *Context, ops op.Ctx, th *Colors) {
 		if !ok {
 			continue
 		}
-		if desc == nil {
-			// Offer choice between engraving and printing
-			cs := &ChoiceScreen{
-				Title:   "Backup Option",
-				Lead:    "Choose how to back up your seed",
-				Choices: []string{"Engrave Plate", "Print Seed"},
-			}
-			choice, ok := cs.Choose(ctx, ops, th)
-			if !ok {
+		printScreen := &PrintSeedScreen{}
+		var keyIdx int
+		if desc != nil {
+			ds := &DescriptorScreen{Descriptor: *desc, Mnemonic: mnemonic}
+			var confirmed bool
+			keyIdx, confirmed = ds.Confirm(ctx, ops, th)
+			if !confirmed {
 				continue
 			}
-			switch choice {
-			case 0: // Engrave Plate
-				plate, err := engraveSeed(ctx.Platform.PlateSizes(), ctx.Platform.EngraverParams(), mnemonic)
-				if err != nil {
-					errScr := NewErrorScreen(err)
-					for {
-						dims := ctx.Platform.DisplaySize()
-						dismissed := errScr.Layout(ctx, ops, th, dims)
-						if dismissed {
-							break
-						}
-						ss.Draw(ctx, ops, th, dims, mnemonic)
-						ops.End().Add(ops) // Use ops.End().Add(ops) instead of ops.Add(ops.End())
-						ctx.Frame()
-					}
-					continue
-				}
-				completed := NewEngraveScreen(ctx, plate).Engrave(ctx, ops, &engraveTheme)
-				if completed {
-					return
-				}
-			case 1: // Print Seed
-				printScreen := &PrintSeedScreen{}
-				if printScreen.Print(ctx, ops, th, mnemonic) {
-					return
-				}
-			}
-			continue
 		}
-
-		ds := &DescriptorScreen{
-			Descriptor: *desc,
-			Mnemonic:   mnemonic,
-		}
-		for {
-			keyIdx, ok := ds.Confirm(ctx, ops, th)
-			if !ok {
-				break
-			}
-			plate, err := engravePlate(ctx.Platform.PlateSizes(), ctx.Platform.EngraverParams(), *desc, keyIdx, mnemonic)
-			if err != nil {
-				errScr := NewErrorScreen(err)
-				for {
-					dims := ctx.Platform.DisplaySize()
-					dismissed := errScr.Layout(ctx, ops, th, dims)
-					if dismissed {
-						break
-					}
-					ss.Draw(ctx, ops, th, dims, mnemonic)
-					ops.End().Add(ops) // Use ops.End().Add(ops)
-					ctx.Frame()
-				}
-				continue
-			}
-			completed := NewEngraveScreen(ctx, plate).Engrave(ctx, ops, &engraveTheme)
-			if completed {
-				return
-			}
+		if printScreen.Print(ctx, ops, th, mnemonic, desc, keyIdx) {
+			return
 		}
 	}
 }
@@ -2611,9 +2553,8 @@ type PrintSeedScreen struct {
 	inp InputTracker
 }
 
-func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic) bool {
+func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) bool {
 	inp := &s.inp
-	var _ = print.PrintPCL // Dummy use to prevent import removal (remove after fixing)
 	for {
 		for {
 			e, ok := inp.Next(ctx, Button1, Button3)
@@ -2621,16 +2562,15 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				break
 			}
 			switch e.Button {
-			case Button1: // Cancel
+			case Button1:
 				if inp.Clicked(e.Button) {
 					return false
 				}
-			case Button3: // Print
+			case Button3:
 				if inp.Clicked(e.Button) {
-					// Use mnemonic directly as bip39.Mnemonic
-					qrData := seedqr.QR(mnemonic)
-					if err := ctx.Platform.PrintPCL(mnemonic, qrData); err != nil {
+					if err := ctx.Platform.PrintPDF(mnemonic, desc, keyIdx); err != nil {
 						log.Printf("Print failed: %v", err)
+						s.showError(ctx, ops, th, fmt.Errorf("Print failed: %v", err))
 						return false
 					}
 					return true
@@ -2639,16 +2579,34 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		}
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
-		layoutTitle(ctx, ops, dims.X, th.Text, "Print Seed")
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text,
-			"Ensure your printer is connected before printing the seed.\n\nPress Print to continue.")
+		title := "Print Seed"
+		if desc != nil {
+			title = "Print Wallet Share"
+		}
+		layoutTitle(ctx, ops, dims.X, th.Text, title)
+		lead := "Ensure your printer is connected before printing the seed.\n\nPress Print to continue."
+		if desc != nil {
+			lead = fmt.Sprintf("Ensure your printer is connected before printing share %d/%d.\n\nPress Print to continue.", keyIdx+1, len(desc.Keys))
+		}
+		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, lead)
 		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
 		layoutNavigation(inp, ops, th, dims, []NavButton{
 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
 		}...)
 		ctx.Frame()
-		return false // Ensure a return value to fix "missing return" error
+	}
+}
+
+func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
+	errScr := NewErrorScreen(err)
+	for {
+		dims := ctx.Platform.DisplaySize()
+		dismissed := errScr.Layout(ctx, ops, th, dims)
+		if dismissed {
+			break
+		}
+		ctx.Frame()
 	}
 }
 
@@ -2739,8 +2697,8 @@ type Platform interface {
 	NextChunk() (draw.RGBA64Image, bool)
 	ScanQR(qr *image.Gray) ([][]byte, error)
 	Debug() bool
-	Printer() io.Writer                                    // Add this method for printer output
-	PrintPCL(mnemonic bip39.Mnemonic, qrData []byte) error // Add this method
+	Printer() io.Writer
+	PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error
 }
 
 type Engraver interface {

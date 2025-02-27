@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"seedetcher.com/backup"
+	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/driver/drm"
 	"seedetcher.com/driver/libcamera"
@@ -209,6 +210,25 @@ func (p *Platform) CameraFrame(dims image.Point) {
 		c.close = libcamera.Open(dims, p.camera.frames, p.camera.out)
 	}
 	c.active = true
+}
+
+func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
+	var buf bytes.Buffer
+	var err error
+	if desc == nil {
+		err = print.PrintPDF(&buf, mnemonic, print.PaperA4)
+	} else {
+		err = print.PrintDescriptorPDF(&buf, *desc, keyIdx, print.PaperA4)
+	}
+	if err != nil {
+		return err
+	}
+	printer := p.Printer()
+	if printer == nil {
+		return fmt.Errorf("printer not available")
+	}
+	_, err = printer.Write(buf.Bytes())
+	return err
 }
 
 func (p *Platform) PrintPCL(mnemonic bip39.Mnemonic, qrData []byte) error {

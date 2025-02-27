@@ -2,9 +2,19 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Apply Git Patch from macOS Clipboard (Remote Ubuntu)",
+            "label": "Save & Send Patch (macOS Terminal)",
             "type": "shell",
-            "command": "pbpaste | ssh cmyk@ubuntu 'cat > /tmp/patch.diff && git apply /tmp/patch.diff'",
+            "command": "osascript",
+            "args": [
+                "-e",
+                "tell application \"Terminal\" to do script \"pbpaste > /tmp/patch.diff && scp /tmp/patch.diff cmyk@ubuntu:/tmp/\""
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "Apply Git Patch (Ubuntu)",
+            "type": "shell",
+            "command": "ssh -o BatchMode=yes -i ~/.ssh/id_rsa cmyk@ubuntu 'cd ~/seedetcher && git apply --reject --whitespace=fix /tmp/patch.diff'",
             "problemMatcher": []
         },
         {

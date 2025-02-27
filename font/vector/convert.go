@@ -209,6 +209,10 @@ func parseChars(face *Face, d *xml.Decoder, adv, ascent int) error {
 			continue
 		}
 		id, _ := findAttr(e, "id")
+		if id == "" {
+			fmt.Printf("Skipping invalid glyph with empty id: %v\n", e) // Log invalid glyphs
+			continue
+		}
 		switch id {
 		case "advance", "height", "baseline", "size":
 			// Skip anonymous and meta-data elements.
@@ -219,7 +223,9 @@ func parseChars(face *Face, d *xml.Decoder, adv, ascent int) error {
 		}
 		r, ok := mapChar(id)
 		if !ok {
-			return fmt.Errorf("unknown character id: %q", id)
+			// Instead of returning error, let's log it and skip the character
+			fmt.Printf("Unknown character id: %q\n", id)
+			continue
 		}
 		idxStart := len(face.Segments)
 		if err := parseSegments(face, d, e, offx, -ascent); err != nil {
