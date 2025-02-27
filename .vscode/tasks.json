@@ -2,6 +2,12 @@
     "version": "2.0.0",
     "tasks": [
         {
+            "label": "Apply Git Patch from macOS Clipboard (Remote Ubuntu)",
+            "type": "shell",
+            "command": "pbpaste | ssh cmyk@ubuntu 'cat > /tmp/patch.diff && git apply /tmp/patch.diff'",
+            "problemMatcher": []
+        },
+        {
             "label": "Build and Flash SeedEtcher",
             "type": "shell",
             "command": "./build_and_flash.sh",
@@ -16,6 +22,12 @@
                 "focus": false,
                 "panel": "shared"
             }
+        },
+        {
+            "label": "Simple Test Task",
+            "type": "shell",
+            "command": "echo 'Task works!'",
+            "problemMatcher": []
         }
     ]
 }

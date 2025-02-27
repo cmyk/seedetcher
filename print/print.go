@@ -1,8 +1,6 @@
-// package print handles generating PDF output for printing seed phrases and QR codes based on engraving plans.
 package print
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -10,25 +8,33 @@ import (
 	"strings"
 
 	"github.com/jung-kurt/gofpdf"
-	"seedetcher.com/backup"
-	"seedetcher.com/bip39"
-	"seedetcher.com/engrave"
-	"seedetcher.com/font/constant"
-	"seedetcher.com/seedqr"
-
-	"image/png"
-
 	"github.com/kortschak/qr"
+	"seedetcher.com/bip39"
+	"seedetcher.com/font/vector"
+	"seedetcher.com/seedqr"
 )
 
 type PaperSize string
 
 const (
-	PaperA4     PaperSize = "A4"     // 210mm x 297mm
-	PaperLetter PaperSize = "Letter" // 216mm x 279mm
+	PaperA4     PaperSize = "A4"
+	PaperLetter PaperSize = "Letter"
 )
 
-func GeneratePDF(outputPath string, plan engrave.Plan, mnemonic bip39.Mnemonic, title string, numPlates int, paperSize PaperSize) error {
+// Load SeedEtcher’s vector font
+var fontFace = vector.NewFace(loadFontData("vector_font.bin"))
+
+// Load font binary data
+func loadFontData(fontPath string) []byte {
+	data, err := os.ReadFile(fontPath)
+	if err != nil {
+		log.Fatalf("Failed to load font: %v", err)
+	}
+	return data
+}
+
+// **Main PDF Generator**
+func PrintPDF(w io.Writer, mnemonicStr string, paperSize PaperSize) error {
 	var paperWidth, paperHeight float64
 	switch paperSize {
 	case PaperLetter:
@@ -41,100 +47,116 @@ func GeneratePDF(outputPath string, plan engrave.Plan, mnemonic bip39.Mnemonic, 
 
 	pdf := gofpdf.New("P", "mm", string(paperSize), "")
 	pdf.AddPage()
-	pdf.SetFont("Helvetica", "", 12)
+	pdf.SetMargins(0, 0, 0) // Prevent clipping
+	pdf.SetLineWidth(0.1)
 
 	plateSize := 85.0
-	margin := 5.0
+	plateX, plateY := (paperWidth-plateSize)/2, (paperHeight-plateSize)/2
+	log.Printf("Plate Position: X=%.1f, Y=%.1f, Size=%.1fmm", plateX, plateY, plateSize)
 
-	for i := 0; i < numPlates; i++ {
-		plateX := (paperWidth - plateSize) / 2
-		plateY := (paperHeight - plateSize) / 2
-
-		seedWords := extractSeedWordsFromPlan(plan)
-		qrData := seedqr.QR(mnemonic)
-
-		y := plateY + margin
-		for _, word := range seedWords {
-			pdf.Text(plateX+margin, y, word)
-			y += 5.0
+	// **Parse Mnemonic**
+	mnemonicWords := strings.Fields(mnemonicStr)
+	if len(mnemonicWords) != 24 {
+		return fmt.Errorf("mnemonic must contain exactly 24 words, got %d", len(mnemonicWords))
+	}
+	mnemonic := make(bip39.Mnemonic, len(mnemonicWords))
+	for i, w := range mnemonicWords {
+		word, ok := bip39.ClosestWord(w)
+		if !ok {
+			return fmt.Errorf("invalid word: %s", w)
 		}
-
-		qrCode, _ := qr.Encode(string(qrData), qr.M)
-		buf := new(bytes.Buffer)
-		png.Encode(buf, qrCode.Image())
-		pdf.RegisterImageReader("qr.png", "PNG", buf)
-		pdf.Image("qr.png", plateX+20, plateY+60, 40, 0, false, "", 0, "")
-
-		if title != "" {
-			pdf.SetFont("Helvetica", "", 8)
-			pdf.Text(plateX, plateY+80, strings.ToUpper(title))
-			pdf.SetFont("Helvetica", "", 12)
-		}
+		mnemonic[i] = word
+	}
+	if !mnemonic.Valid() {
+		return fmt.Errorf("invalid mnemonic")
 	}
 
-	return pdf.OutputFileAndClose(outputPath)
-}
+	// **Render Metadata**
+	drawVectorText(pdf, plateX+5.0, plateY+3.0, "1/1")
+	drawVectorText(pdf, plateX+37.0, plateY+3.0, "557CB555")
+	drawVectorText(pdf, plateX+75.0, plateY+3.0, "V1")
 
-func extractSeedWordsFromPlan(plan engrave.Plan) []string {
-	var words []string
-	for cmd := range plan {
-		if cmd.Line && cmd.Coord.Y < 1000 { // Detects seed words by engraving position
-			wordIdx := len(words) + 1
-			word := fmt.Sprintf("%d %s", wordIdx, bip39.LabelFor(bip39.Word(wordIdx)))
-			words = append(words, strings.ToUpper(word))
+	// **Render Seed Words**
+	col1X, col2X := 5.0, 50.0
+	wordY := 10.0
+	for i, word := range mnemonic {
+		wordStr := strings.ToUpper(bip39.LabelFor(word))
+		xPos := col1X
+		if i >= 12 {
+			xPos = col2X
 		}
-	}
-	return words
-}
-
-func PrintPCL(w io.Writer, mnemonic bip39.Mnemonic, qrData []byte, numPlates int, paperSize PaperSize) error {
-	// Validate numPlates
-	if numPlates < 1 || numPlates > 4 {
-		return fmt.Errorf("numPlates must be between 1 and 4, got %d", numPlates)
-	}
-
-	// Generate QR data from mnemonic if not provided
-	if len(qrData) == 0 {
-		qrData = seedqr.QR(mnemonic)
-		if len(qrData) == 0 {
-			return fmt.Errorf("failed to generate QR data for mnemonic %v", mnemonic)
+		drawVectorText(pdf, plateX+xPos, plateY+wordY, fmt.Sprintf("%2d %s", i+1, wordStr))
+		if i == 11 {
+			wordY = 10.0
+		} else {
+			wordY += 5.5
 		}
 	}
 
-	// Generate engraving plan for the seed using backup.EngraveSeed for SquarePlate
-	plate := backup.Seed{
-		Title:             "SATOSHI STASH", // Match SeedHammer title
-		KeyIdx:            0,
-		Mnemonic:          mnemonic,
-		Keys:              1,
-		MasterFingerprint: 0x12345678, // Example, adjust as needed
-		Font:              constant.Font,
-		Size:              backup.SquarePlate, // Use 85x85mm plate
+	// **Render QR Code**
+	qrContent := seedqr.QR(mnemonic)
+	if len(qrContent) == 0 {
+		return fmt.Errorf("failed to generate QR: empty content")
 	}
-	params := engrave.Params{Millimeter: 100} // 1mm = 100 units
-	log.Printf("QR Data: %s", string(qrData))
-	plan, err := backup.EngraveSeed(params, plate)
+	qrCode, err := qr.Encode(string(qrContent), qr.M)
 	if err != nil {
-		return fmt.Errorf("failed to generate engraving plan: %v", err)
+		return fmt.Errorf("failed to encode QR: %v", err)
 	}
 
-	// Generate PDF from the plan, mnemonic, title, number of plates, and paper size
-	outputPath := "/home/cmyk/PDF/test.pdf"
-	if err := GeneratePDF(outputPath, plan, mnemonic, plate.Title, numPlates, paperSize); err != nil {
-		return err
+	qrSize := 25.0
+	qrX := plateX + (plateSize-qrSize)/2
+	qrY := plateY + 35.0
+	pixelSize := qrSize / float64(qrCode.Size)
+
+	for y := 0; y < qrCode.Size; y++ {
+		for x := 0; x < qrCode.Size; x++ {
+			if qrCode.Black(x, y) {
+				startX := qrX + (float64(x) * pixelSize)
+				startY := qrY + (float64(y) * pixelSize)
+				pdf.Rect(startX, startY, pixelSize, pixelSize, "F")
+			}
+		}
 	}
 
-	// Optionally, print directly to printer if available
-	if printer, err := os.OpenFile("/dev/usb/lp0", os.O_WRONLY, 0); err == nil {
-		defer printer.Close()
-		pdfData, err := os.ReadFile(outputPath)
-		if err != nil {
-			return fmt.Errorf("failed to read PDF: %v", err)
+	// **Bottom Title**
+	drawVectorText(pdf, plateX+30.0, plateY+82.0, "SATOSH'S STASH")
+
+	return pdf.Output(w)
+}
+
+// **Helper Function: Draw Text Using SeedEtcher’s Vector Font**
+func drawVectorText(pdf *gofpdf.Fpdf, x, y float64, text string) {
+	cursorX := x
+
+	for _, r := range text {
+		advance, segments, found := fontFace.Decode(r)
+		if !found {
+			continue
 		}
-		if _, err := printer.Write(pdfData); err != nil {
-			return fmt.Errorf("failed to print PDF: %v", err)
+
+		// Start a path for the glyph
+		pdf.SetLineWidth(0.5)
+		pdf.SetDrawColor(0, 0, 0)
+		pdf.MoveTo(cursorX, y)
+
+		// Iterate over segments
+		for {
+			segment, hasMore := segments.Next()
+			if !hasMore {
+				break
+			}
+
+			switch segment.Op {
+			case vector.SegmentOpMoveTo:
+				pdf.MoveTo(cursorX+float64(segment.Arg.X), y+float64(segment.Arg.Y))
+			case vector.SegmentOpLineTo:
+				pdf.LineTo(cursorX+float64(segment.Arg.X), y+float64(segment.Arg.Y))
+			}
 		}
-		log.Printf("Sent PDF to printer at /dev/usb/lp0")
+
+		pdf.Stroke()
+
+		// Advance cursor for the next glyph
+		cursorX += float64(advance)
 	}
-	return nil
 }
