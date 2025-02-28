@@ -1,5 +1,4 @@
 //go:build debug && linux && arm
-// +build debug,linux,arm
 
 package main
 

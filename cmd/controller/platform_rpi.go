@@ -1,5 +1,4 @@
-//go:build debug && linux && arm
-// +build debug,linux,arm
+//go:build linux && arm
 
 package main
 
@@ -214,7 +213,7 @@ func (p *Platform) CameraFrame(dims image.Point) {
 
 func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
 	var buf bytes.Buffer
-	err := print.PrintPDF(&buf, mnemonic, desc, keyIdx, print.PaperA4) // Full signature
+	err := print.PrintPDF(&buf, mnemonic, desc, keyIdx, print.PaperA4)
 	if err != nil {
 		return err
 	}
@@ -329,4 +328,3 @@ func mountFS() error {
 	}
 	return nil
 }
-
