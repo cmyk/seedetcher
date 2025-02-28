@@ -7,8 +7,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/hdkeychain"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/jung-kurt/gofpdf"
 	"github.com/kortschak/qr"
+	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/seedqr"
 )
@@ -33,7 +37,7 @@ func loadFontData(fontPath string) []byte {
 }
 
 // PrintPDF renders the backup plate layout as a PDF with fixed positions for seed words, QR, and metadata, matching SeedHammer style.
-func PrintPDF(w io.Writer, mnemonicStr string, paperSize PaperSize) error {
+func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperSize PaperSize) error {
 	var paperWidth, paperHeight float64
 	switch paperSize {
 	case PaperLetter:
@@ -65,41 +69,59 @@ func PrintPDF(w io.Writer, mnemonicStr string, paperSize PaperSize) error {
 	plateX, plateY := (paperWidth-plateSize)/2, (paperHeight-plateSize)/2 // Center on page
 	pdf.Rect(plateX, plateY, plateSize, plateSize, "D")                   // Add visible border with 5mm margins
 
-	// Parse mnemonic (expecting 12 or 24 words)
-	mnemonicWords := strings.Fields(mnemonicStr)
-	if len(mnemonicWords) != 12 && len(mnemonicWords) != 24 {
-		return fmt.Errorf("mnemonic must contain 12 or 24 words, got %d", len(mnemonicWords))
-	}
-	mnemonic := make(bip39.Mnemonic, len(mnemonicWords))
-	for i, w := range mnemonicWords {
-		word, ok := bip39.ClosestWord(w)
-		if !ok {
-			return fmt.Errorf("invalid word: %s", w)
+	// Calculate fingerprint for the mnemonic using seedetcher.com/bip39 and btcd
+	var words []string
+	for _, w := range mnemonic {
+		if w != -1 { // Skip placeholder values
+			words = append(words, bip39.LabelFor(w))
 		}
-		mnemonic[i] = word
 	}
-	if !mnemonic.Valid() {
-		return fmt.Errorf("invalid mnemonic")
+	seed := bip39.MnemonicSeed(mnemonic, "") // Corrected to handle single return value
+	if seed == nil {                         // Check if seed is nil or handle error appropriately
+		return fmt.Errorf("invalid mnemonic: failed to generate seed")
 	}
+
+	// Generate master key from seed using BIP-32 (btcd)
+	masterKey, err := hdkeychain.NewMaster(seed, &chaincfg.MainNetParams)
+	if err != nil {
+		return fmt.Errorf("failed to derive master key: %v", err)
+	}
+
+	// Derive the master public key
+	masterPubKey, err := masterKey.Neuter()
+	if err != nil {
+		return fmt.Errorf("failed to derive master public key: %v", err)
+	}
+
+	// Calculate fingerprint (first 4 bytes of HASH160 of the public key)
+	pubKey, err := masterPubKey.ECPubKey() // Use ECPubKey instead of SerializedPubKey
+	if err != nil {
+		return fmt.Errorf("failed to get public key: %v", err)
+	}
+	fingerprint := btcutil.Hash160(pubKey.SerializeCompressed())[:4] // Use SerializeCompressed for public key
+	fingerprintHex := fmt.Sprintf("%X", fingerprint)                 // Convert to uppercase hex
 
 	// Set font for metadata/title (5pt, matching "SATOSHI'S STASH")
 	pdf.SetFont(fontName, "", 5) // 5pt for metadata/title
 
-	// Render metadata (top, 5mm margins, matching your image)
-	pdf.Text(plateX+5.0, plateY+5.0, "1/1")       // Page (top-left, 5mm margin)
-	pdf.Text(plateX+40.0, plateY+5.0, "557CB555") // Center checksum (40mm from left, 5mm margin)
-	pdf.Text(plateX+70.0, plateY+5.0, "V1")       // Version (top-right, 5mm margin)
+	// Render metadata (top, 5mm margins, with calculated fingerprint)
+	pdf.Text(plateX+5.0, plateY+5.0, "1/1")           // Page (top-left, 5mm margin)
+	pdf.Text(plateX+40.0, plateY+5.0, fingerprintHex) // Center fingerprint (40mm from left, 5mm margin)
+	pdf.Text(plateX+70.0, plateY+5.0, "V1")           // Version (top-right, 5mm margin)
 
 	// Reset font for seed words
 	pdf.SetFont(fontName, "", 8) // 8pt for words
 
-	// Render seed words (16 on left, 8 on right for 24 words, 5mm margin, 4mm spacing, stacked vertically, moved down by 5mm)
-	wordYLeft := plateY + 13.0  // Start left column 15mm from top (5mm margin + 10mm padding, down by 5mm)
-	wordYRight := plateY + 13.0 // Start right column at same Y for alignment, down by 5mm
+	// Render seed words (16 on left, 8 on right for 24 words, or 12 on left for 12 words, 5mm margin, 4mm spacing, stacked vertically, moved down by 5mm)
+	wordYLeft := plateY + 15.0  // Start left column 15mm from top (5mm margin + 10mm padding, down by 5mm)
+	wordYRight := plateY + 15.0 // Start right column at same Y for alignment, down by 5mm
 	for i, word := range mnemonic {
+		if word == -1 { // Skip placeholder values
+			continue
+		}
 		wordStr := strings.ToUpper(bip39.LabelFor(word))
 		if i < 16 { // First 16 words on left column
-			xPos := plateX + 15.0 // Left column, 5mm from left (equal margin)
+			xPos := plateX + 12.0 // Left column, 5mm from left (equal margin)
 			pdf.Text(xPos, wordYLeft, fmt.Sprintf("%2d %s", i+1, wordStr))
 			if i < 15 { // Increment for left column, excluding last word
 				wordYLeft += 4.0 // 4mm spacing
@@ -113,6 +135,16 @@ func PrintPDF(w io.Writer, mnemonicStr string, paperSize PaperSize) error {
 		}
 	}
 
+	// Render descriptor data if provided (optional, for metadata or title)
+	if desc != nil {
+		// Add descriptor title or key info (e.g., keyIdx) as metadata or title if applicable
+		descTitle := desc.Title
+		if descTitle == "" {
+			descTitle = fmt.Sprintf("Share %d/%d", keyIdx+1, len(desc.Keys))
+		}
+		pdf.Text(plateX+32.0, plateY+80.0, descTitle) // Add below words, centered, 5mm from bottom
+	}
+
 	// Render QR code (bottom right corner, aligned with right column’s words left edge, bottom aligned with left column’s bottom, 25mm size, moved down by 5mm)
 	qrContent := seedqr.QR(mnemonic)
 	if len(qrContent) == 0 {
@@ -122,9 +154,9 @@ func PrintPDF(w io.Writer, mnemonicStr string, paperSize PaperSize) error {
 	if err != nil {
 		return fmt.Errorf("failed to encode QR: %v", err)
 	}
-	qrSize := 25.0              // 25mm, matching your previous request
-	qrX := plateX + 45.0        // Align left edge of QR with left edge of right column’s words (45mm from left)
-	qrY := (wordYLeft - qrSize) // Align bottom of QR with bottom of left column’s last word (wordYLeft for 16th word), moved down by 5mm
+	qrSize := 25.0                          // 25mm, matching your previous request
+	qrX := plateX + 45.0                    // Align left edge of QR with left edge of right column’s words (45mm from left)
+	qrY := plateY + plateSize - qrSize - 10 // Align bottom of QR with bottom
 	pixelSize := qrSize / float64(qrCode.Size)
 	for y := 0; y < qrCode.Size; y++ {
 		for x := 0; x < qrCode.Size; x++ {

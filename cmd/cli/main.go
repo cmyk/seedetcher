@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"seedetcher.com/bip39"
 	"seedetcher.com/print"
 )
 
@@ -22,35 +23,46 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Validate mnemonic length (based on print.go's expectation of 24 words, but we'll allow 12 too)
+	// Parse and validate mnemonic
 	mnemonicWords := strings.Fields(*mnemonic)
 	if len(mnemonicWords) != 12 && len(mnemonicWords) != 24 {
 		fmt.Printf("Error: Mnemonic must be 12 or 24 words, got %d\n", len(mnemonicWords))
 		os.Exit(1)
 	}
+	m := make(bip39.Mnemonic, len(mnemonicWords))
+	for i, w := range mnemonicWords {
+		word, ok := bip39.ClosestWord(w)
+		if !ok {
+			fmt.Printf("Error: Invalid word at position %d: %s\n", i+1, w)
+			os.Exit(1)
+		}
+		m[i] = word
+	}
+	if !m.Valid() {
+		fmt.Println("Error: Invalid mnemonic (checksum failed)")
+		os.Exit(1)
+	}
+	fmt.Println("Mnemonic validated successfully")
 
-	// Create output directory
+	// Create output directory if it doesn't exist
 	if err := os.MkdirAll(*output, 0755); err != nil {
 		fmt.Printf("Error creating output directory: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Generate PDF
-	filename := "plate-side-back.pdf"
-	filepath := filepath.Join(*output, filename)
-	file, err := os.Create(filepath)
+	// Generate PDF with validated mnemonic, no descriptor, default keyIdx 0, and paper size
+	outputPath := filepath.Join(*output, "plate-side-back.pdf")
+	file, err := os.Create(outputPath)
 	if err != nil {
 		fmt.Printf("Error creating PDF file: %v\n", err)
 		os.Exit(1)
 	}
 	defer file.Close()
 
-	paper := print.PaperSize(*paperSize)
-	err = print.PrintPDF(file, *mnemonic, paper)
-	if err != nil {
+	ps := print.PaperSize(*paperSize)
+	if err := print.PrintPDF(file, m, nil, 0, ps); err != nil { // Pass mnemonic, nil descriptor, keyIdx 0, paperSize
 		fmt.Printf("Error generating PDF: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Printf("Generated %s\n", filepath)
+	fmt.Printf("Generated %s\n", outputPath)
 }
