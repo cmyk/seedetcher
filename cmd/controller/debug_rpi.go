@@ -31,7 +31,7 @@ import (
 	"seedetcher.com/zbar"
 )
 
-// Debug hooks (ensure unique per build tag if needed, but keep as is for now).
+// Debug hooks (ensure unique per build tag if needed, but keep as is for now). blah
 var (
 	engraverHook func() io.ReadWriteCloser
 	initHook     func(p *Platform) error
