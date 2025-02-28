@@ -1,5 +1,5 @@
-//go:build linux && arm && !debug
-// +build linux,arm,!debug
+//go:build debug && linux && arm
+// +build debug,linux,arm
 
 package main
 
@@ -31,7 +31,7 @@ import (
 	"seedetcher.com/zbar"
 )
 
-// Debug hooks (keep but ensure unique per build tag if needed).
+// Debug hooks (ensure unique per build tag if needed, but keep as is for now). blah
 var (
 	engraverHook func() io.ReadWriteCloser
 	initHook     func(p *Platform) error
@@ -214,12 +214,7 @@ func (p *Platform) CameraFrame(dims image.Point) {
 
 func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
 	var buf bytes.Buffer
-	var err error
-	if desc == nil {
-		err = print.PrintPDF(&buf, mnemonic, print.PaperA4)
-	} else {
-		err = print.PrintDescriptorPDF(&buf, *desc, keyIdx, print.PaperA4)
-	}
+	err := print.PrintPDF(&buf, mnemonic, desc, keyIdx, print.PaperA4) // Full signature
 	if err != nil {
 		return err
 	}
@@ -231,37 +226,31 @@ func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescrip
 	return err
 }
 
-func (p *Platform) PrintPCL(mnemonic bip39.Mnemonic, qrData []byte) error {
-	printer, err := os.OpenFile("/dev/usb/lp0", os.O_WRONLY, 0)
-	if err != nil {
-		log.Printf("Failed to open /dev/usb/lp0 for printer: %v", err)
-		logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			log.Printf("Error opening log file: %v", err)
-			return fmt.Errorf("printer unavailable: %v", err)
-		}
-		return print.PrintPCL(logFile, mnemonic, qrData)
-	}
-	defer printer.Close()
-	return print.PrintPCL(printer, mnemonic, qrData)
-}
-
 func (p *Platform) Printer() io.Writer {
-	printer, err := os.OpenFile("/dev/usb/lp0", os.O_WRONLY, 0)
+	printer, err := os.OpenFile("/dev/ttyGS1", os.O_WRONLY, 0)
 	if err != nil {
-		log.Printf("Failed to open /dev/usb/lp0 for printer: %v", err)
+		log.Printf("Failed to open /dev/ttyGS1 for printer: %v", err)
 		logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Printf("Error opening log file: %v", err)
 			return os.Stderr
 		}
+		os.Stdout = logFile
+		os.Stderr = logFile
 		return logFile
+	}
+	logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Printf("Error opening log file: %v", err)
+	} else {
+		os.Stdout = logFile
+		os.Stderr = logFile
 	}
 	return printer
 }
 
 func (p *Platform) Debug() bool {
-	return false
+	return true
 }
 
 func (p *Platform) Now() time.Time {
@@ -340,3 +329,4 @@ func mountFS() error {
 	}
 	return nil
 }
+
