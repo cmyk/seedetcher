@@ -517,6 +517,8 @@
               GOFLAGS="-buildmode=pie -tags=${tags}";
 
               buildPhase = ''
+                echo "Building from source: $src"
+                ls -l $src/cmd/controller/platform_rpi.go
                 HOME="$PWD/gohome" \
                 GOMODCACHE=${self.packages.${system}.go-deps} \
                   go build -trimpath -ldflags="-s -w" ./cmd/controller
