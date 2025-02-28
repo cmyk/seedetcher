@@ -214,12 +214,7 @@ func (p *Platform) CameraFrame(dims image.Point) {
 
 func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
 	var buf bytes.Buffer
-	var err error
-	if desc == nil {
-		err = print.PrintPDF(&buf, mnemonic, print.PaperA4)
-	} else {
-		err = print.PrintDescriptorPDF(&buf, *desc, keyIdx, print.PaperA4)
-	}
+	err := print.PrintPDF(&buf, mnemonic, desc, keyIdx, print.PaperA4) // Full signature
 	if err != nil {
 		return err
 	}
@@ -229,14 +224,6 @@ func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescrip
 	}
 	_, err = printer.Write(buf.Bytes())
 	return err
-}
-
-func (p *Platform) PrintPCL(mnemonic bip39.Mnemonic, qrData []byte) error {
-	printer := p.Printer()
-	if printer == nil {
-		return fmt.Errorf("printer not available")
-	}
-	return print.PrintPCL(printer, mnemonic, qrData)
 }
 
 func (p *Platform) Printer() io.Writer {

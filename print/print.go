@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/jung-kurt/gofpdf"
+	"github.com/kortschak/qr"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/seedqr"

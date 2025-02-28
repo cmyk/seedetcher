@@ -507,11 +507,6 @@
                 nukeReferences
               ];
 
-              env = {
-                GOCACHE = "/tmp/go-cache";
-                GOMODCACHE = "/tmp/go-mod";
-              };
-
               CGO_CXXFLAGS="-I${libcamera}/include";
               CGO_LDFLAGS="-L${libcamera}/lib -static-libstdc++ -static-libgcc";
               CGO_ENABLED="1";
@@ -570,7 +565,7 @@
 
               outputHashMode = "recursive";
               outputHashAlgo = "sha256";
-              outputHash = "ZbytzIze/RakSwFm1a7cSdjO+ER2uoTiYgFBzhGwJSI=";
+              outputHash = "9T8y/0OLBW+kGUISMgM1RaPy3EsM8Ip6yIy1UuAs21E=";
             };
             controller = self.lib.${system}.mkcontroller false;
             controller-debug = self.lib.${system}.mkcontroller true;
