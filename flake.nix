@@ -507,6 +507,11 @@
                 nukeReferences
               ];
 
+              env = {
+                GOCACHE = "/tmp/go-cache";
+                GOMODCACHE = "/tmp/go-mod";
+              };
+
               CGO_CXXFLAGS="-I${libcamera}/include";
               CGO_LDFLAGS="-L${libcamera}/lib -static-libstdc++ -static-libgcc";
               CGO_ENABLED="1";

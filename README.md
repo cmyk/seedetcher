@@ -9,7 +9,7 @@ sensor.
 
 ## Installation
 
-Write `seedhammer-vX.Y.X.img` to an SD-card and insert that into the SD-card
+Write `seedetcher-vX.Y.X.img` to an SD-card and insert that into the SD-card
 slot on the Raspberry Pi.
 
 ### Linux
@@ -17,7 +17,7 @@ slot on the Raspberry Pi.
 The `dd` command writes the image to the block device `/dev/sdX`:
 
 ```sh
-$ dd if=result/seedhammer-vX.Y.Z.img of=/dev/sdX bs=1M
+$ dd if=result/seedetcher-vX.Y.Z.img of=/dev/sdX bs=1M
 ```
 
 ### macOS
@@ -27,21 +27,21 @@ Use a similar command as for Linux or a GUI tool such as [balenaEtcher](https://
 
 ### Building from source
 
-To build a complete `seedhammer.img` image, [Nix](https://nixos.org/) with flakes enabled is required.
+To build a complete `seedetcher.img` image, [Nix](https://nixos.org/) with flakes enabled is required.
 The default Nix package in `flake.nix` builds the image:
 
 ```sh
-$ nix build github:seedhammer/seedhammer
-$ ls result/seedhammer.img
+$ nix build github:seedetcher/seedetcher
+$ ls result/seedetcher.img
 ```
 
-The `seedhammer.img` image contains the Pi Zero firmware, the Linux kernel and drivers, and the
+The `seedetcher.img` image contains the Pi Zero firmware, the Linux kernel and drivers, and the
 `controller` program that drives the Pi hardware and engraver.
 
 To build a versioned image, use the `mkrelease` script and specify a tag:
 
 ```sh
-$ nix run github:seedhammer/seedhammer#mkrelease vx.y.z
+$ nix run github:seedetcher/seedetcher#mkrelease vx.y.z
 ```
 
 the resulting image will embed the version. The command also accepts git branches or commits.
@@ -65,7 +65,7 @@ build and prepare a debug build of the image
 $ nix build .#image-debug
 ```
 
-from a local clone of this repository.  Then write `result/seedhammer-debug.img` to an SD-card.
+from a local clone of this repository.  Then write `result/seedetcher-debug.img` to an SD-card.
 Connect the device to your machine with a USB cable to the USB port closest to the mini-HDMI
 port of the device; that is, the port usually used to communicate with the engraver.
 

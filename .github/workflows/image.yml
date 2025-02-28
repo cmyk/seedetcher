@@ -20,5 +20,5 @@ jobs:
     - run: nix run -L .#stamp-release ${{ env.version }}
     - uses: actions/upload-artifact@v4
       with:
-        name: seedhammer-${{ env.version }}.img
-        path: seedhammer-${{ env.version }}.img
+        name: seedetcher-${{ env.version }}.img
+        path: seedetcher-${{ env.version }}.img

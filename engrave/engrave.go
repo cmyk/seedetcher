@@ -356,7 +356,7 @@ func padQRModules(n int, content []byte, modules []image.Point) []image.Point {
 	// Distribute the extra modules randomly as repeats of existing
 	// modules.
 	extra := n - len(modules)
-	mac := hmac.New(sha256.New, []byte("seedhammer constant qr"))
+	mac := hmac.New(sha256.New, []byte("seedetcher constant qr"))
 	mac.Write(content)
 	sum := mac.Sum(nil)
 	seed := int64(binary.BigEndian.Uint64(sum))

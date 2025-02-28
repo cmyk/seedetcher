@@ -18,7 +18,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/kortschak/qr"
 	"seedetcher.com/backup"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip32"
