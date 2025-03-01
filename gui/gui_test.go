@@ -18,6 +18,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/kortschak/qr"
 	"seedetcher.com/backup"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip32"
@@ -27,6 +28,7 @@ import (
 	"seedetcher.com/font/constant"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/nonstandard"
+	"seedetcher.com/printer"
 	"seedetcher.com/seedqr"
 )
 
@@ -80,6 +82,15 @@ func TestDescriptorScreenError(t *testing.T) {
 			}
 		})
 	}
+}
+
+func (p *testPlatform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
+	// Mock implementation for tests
+	return nil // or log.Println("PrintPDF called in testPlatform")
+}
+
+func (p *testPlatform) Printer() io.Writer {
+	return nil // Mock printer for tests
 }
 
 func TestValidateDescriptor(t *testing.T) {

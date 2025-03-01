@@ -178,7 +178,7 @@ func openSerial(path string) (s *os.File, err error) {
 		cflagToUse := uint32(unix.CREAD | unix.CLOCAL | unix.CS8)
 		t := unix.Termios{
 			Iflag:  unix.IGNPAR,
-			Cflag:  cflagToUse,
+			Cflag:  uint32(cflagToUse), // ✅ Explicit conversion to match platform
 			Ispeed: 115200,
 			Ospeed: 115200,
 		}

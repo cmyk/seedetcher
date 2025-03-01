@@ -6,15 +6,29 @@ import (
 	"errors"
 	"image"
 	"image/draw"
+	"io"
 	"log"
 	"time"
 
 	"seedetcher.com/backup"
+	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/bip39"
 	"seedetcher.com/engrave"
 	"seedetcher.com/gui"
+	"seedetcher.com/printer"
 )
 
 type Platform struct{}
+
+func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
+	log.Println("PrintPDF is not implemented on this platform")
+	return errors.New("PrintPDF not supported in platform_dummy")
+}
+
+func (p *Platform) Printer() io.Writer {
+	log.Println("Printer is not implemented on this platform")
+	return nil
+}
 
 func Init() (*Platform, error) {
 	log.Println("Running platform_dummy.go") // Add this to platform_dummy.go

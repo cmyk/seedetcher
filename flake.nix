@@ -514,7 +514,7 @@
               GOARCH="arm";
               GOARM="6";
               # -buildmode=pie is required by musl.
-              GOFLAGS="-buildmode=pie -tags=${tags}";
+              GOFLAGS="-buildmode=pie -tags=${tags} -gccgoflags=-march=armv6";
 
               buildPhase = ''
                 HOME="$PWD/gohome" \
@@ -795,6 +795,14 @@
               echo "🚀 Welcome to the SeedEtcher dev shell!"
               export PS1='\[\e[1;32m\][seedetcher-dev]\[\e[0m\] \w \$ '
               export SHELL=${localpkgs.bash}/bin/bash
+              export CC=arm-linux-gnueabihf-gcc
+              export CXX=arm-linux-gnueabihf-g++
+              export GOARCH=arm
+              export GOARM=6
+              export GOOS=linux
+              export CGO_ENABLED=1
+              export CGO_CXXFLAGS="-I${self.packages.${system}.libcamera}/include"
+              export CGO_LDFLAGS="-L${self.packages.${system}.libcamera}/lib"
             '';
           };
       });
