@@ -24,10 +24,6 @@ func click(btn gui.Button) []gui.ButtonEvent {
 		},
 		{
 			Button:  btn,
-			Pressed: true,
-		},
-		{
-			Button:  btn,
 			Pressed: false,
 		},
 	}
@@ -57,7 +53,6 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 		for _, name := range strings.Split(cmd, " ") {
 			name = strings.TrimSpace(name)
 			var btn gui.Button
-
 			switch name {
 			case "up":
 				btn = gui.Up
@@ -81,7 +76,6 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 			}
 			evts = append(evts, click(btn)...)
 		}
-
 	case cmd == "goroutines":
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 	default:

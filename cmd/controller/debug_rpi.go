@@ -36,7 +36,7 @@ func init() {
 }
 
 func dbgInit(p *Platform) error {
-	s, err := openSerial("/dev/ttyGS0")
+	s, err := openSerial("/dev/ttyGS1")
 	if err != nil {
 		return err
 	}
@@ -46,7 +46,7 @@ func dbgInit(p *Platform) error {
 	go func() {
 		defer s.Close()
 		if err := runSerial(p, s); err != nil {
-			log.Printf("debug: serial communication failed: %v", err)
+			debugLog("debug: serial communication failed: %v", err)
 		}
 	}()
 	if dmesg {
@@ -178,7 +178,7 @@ func openSerial(path string) (s *os.File, err error) {
 		cflagToUse := uint32(unix.CREAD | unix.CLOCAL | unix.CS8)
 		t := unix.Termios{
 			Iflag:  unix.IGNPAR,
-			Cflag:  uint32(cflagToUse), // ✅ Explicit conversion to match platform
+			Cflag:  cflagToUse,
 			Ispeed: 115200,
 			Ospeed: 115200,
 		}
