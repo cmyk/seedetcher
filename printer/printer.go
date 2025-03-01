@@ -1,4 +1,4 @@
-package print
+package printer
 
 import (
 	"fmt"
@@ -37,18 +37,18 @@ func loadFontData(fontPath string) []byte {
 }
 
 // PrintPDF renders the backup plate layout as a PDF with fixed positions for seed words, QR, and metadata, matching SeedHammer style.
-func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperSize PaperSize) error {
+func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize) error {
 	var paperWidth, paperHeight float64
-	switch paperSize {
-	case PaperLetter:
-		paperWidth, paperHeight = 216.0, 279.0 // 8.5x11 inches in mm
+	switch paperFormat {
 	case PaperA4:
+		paperWidth, paperHeight = 216.0, 279.0 // 8.5x11 inches in mm
+	case PaperLetter:
 		paperWidth, paperHeight = 210.0, 297.0 // A4 in mm
 	default:
-		return fmt.Errorf("unsupported paper size: %s", paperSize)
+		return fmt.Errorf("unsupported paper size: %s", paperFormat)
 	}
 
-	pdf := gofpdf.New("P", "mm", string(paperSize), "")
+	pdf := gofpdf.New("P", "mm", string(paperFormat), "")
 	pdf.AddPage()
 	pdf.SetMargins(0, 0, 0) // Prevent clipping
 	pdf.SetLineWidth(0.2)   // Thicker border for visibility

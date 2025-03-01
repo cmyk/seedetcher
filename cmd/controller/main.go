@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"seedetcher.com/gui"
 )
 
 func main() {
-	fmt.Println("Application started...")
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "controller: %v\n", err)
 		os.Exit(2)
@@ -23,10 +23,8 @@ func run() error {
 	version := os.Getenv("sh_version")
 	p, err := Init()
 	if err != nil {
-		log.Fatalf("Initialization failed: %v", err)
 		return err
 	}
-
 	for range gui.Run(p, version) {
 	}
 	return nil
@@ -34,4 +32,11 @@ func run() error {
 
 var debug = false
 
-// Remove Platform struct and methods here; delegate to debug_rpi.go or platform_rpi.go
+// Move these to main.go, not Platform
+func (p *Platform) Debug() bool {
+	return debug
+}
+
+func (p *Platform) Now() time.Time {
+	return time.Now()
+}

@@ -26,7 +26,7 @@ import (
 	"seedetcher.com/driver/wshat"
 	"seedetcher.com/engrave"
 	"seedetcher.com/gui"
-	"seedetcher.com/print"
+	"seedetcher.com/printer"
 	"seedetcher.com/zbar"
 )
 
@@ -211,18 +211,17 @@ func (p *Platform) CameraFrame(dims image.Point) {
 	c.active = true
 }
 
-func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
-	var buf bytes.Buffer
-	err := print.PrintPDF(&buf, mnemonic, desc, keyIdx, print.PaperA4)
-	if err != nil {
-		return err
+func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
+	// Open the printer output file or device
+	printerDevice := p.Printer()
+	if printerDevice == nil {
+		return fmt.Errorf("no printer available")
 	}
-	printer := p.Printer()
-	if printer == nil {
-		return fmt.Errorf("printer not available")
-	}
-	_, err = printer.Write(buf.Bytes())
-	return err
+
+	log.Printf("Printing PDF with paper size: %s", paperFormat)
+
+	// Call the correct `PrintPDF` function from the `printer` package
+	return printer.PrintPDF(p.Printer(), mnemonic, desc, keyIdx, paperFormat)
 }
 
 func (p *Platform) Printer() io.Writer {
@@ -246,14 +245,6 @@ func (p *Platform) Printer() io.Writer {
 		os.Stderr = logFile
 	}
 	return printer
-}
-
-func (p *Platform) Debug() bool {
-	return true
-}
-
-func (p *Platform) Now() time.Time {
-	return time.Now()
 }
 
 func (p *Platform) initSDCardNotifier() error {

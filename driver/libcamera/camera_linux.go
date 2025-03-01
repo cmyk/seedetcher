@@ -1,3 +1,5 @@
+//go:build linux && arm && cgo
+
 // package libcamera implements an interface to the libcamera2
 // camera driver.
 package libcamera

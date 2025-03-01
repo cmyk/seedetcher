@@ -31,6 +31,7 @@ import (
 	"seedetcher.com/gui/text"
 	"seedetcher.com/gui/widget"
 	"seedetcher.com/nonstandard"
+	"seedetcher.com/printer"
 	"seedetcher.com/seedqr"
 )
 
@@ -1807,7 +1808,7 @@ func backupWalletFlow(ctx *Context, ops op.Ctx, th *Colors) {
 				continue
 			}
 		}
-		if printScreen.Print(ctx, ops, th, mnemonic, desc, keyIdx) {
+		if printScreen.Print(ctx, ops, th, mnemonic, desc, keyIdx, printer.PaperA4) { // or printer.PaperLetter
 			return
 		}
 	}
@@ -2553,7 +2554,7 @@ type PrintSeedScreen struct {
 	inp InputTracker
 }
 
-func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) bool {
+func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) bool {
 	inp := &s.inp
 	for {
 		for {
@@ -2568,7 +2569,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				}
 			case Button3:
 				if inp.Clicked(e.Button) {
-					if err := ctx.Platform.PrintPDF(mnemonic, desc, keyIdx); err != nil {
+					if err := ctx.Platform.PrintPDF(mnemonic, desc, keyIdx, printer.PaperA4); err != nil {
 						log.Printf("Print failed: %v", err)
 						s.showError(ctx, ops, th, fmt.Errorf("Print failed: %v", err))
 						return false
@@ -2698,7 +2699,7 @@ type Platform interface {
 	ScanQR(qr *image.Gray) ([][]byte, error)
 	Debug() bool
 	Printer() io.Writer
-	PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error
+	PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error
 }
 
 type Engraver interface {

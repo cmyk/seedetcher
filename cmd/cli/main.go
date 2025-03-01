@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"seedetcher.com/bip39"
-	"seedetcher.com/print"
+	"seedetcher.com/printer"
 )
 
 func main() {
@@ -59,8 +59,8 @@ func main() {
 	}
 	defer file.Close()
 
-	ps := print.PaperSize(*paperSize)
-	if err := print.PrintPDF(file, m, nil, 0, ps); err != nil { // Pass mnemonic, nil descriptor, keyIdx 0, paperSize
+	ps := printer.PaperSize(*paperSize)
+	if err := printer.PrintPDF(file, m, nil, 0, ps); err != nil { // Pass mnemonic, nil descriptor, keyIdx 0, paperSize
 		fmt.Printf("Error generating PDF: %v\n", err)
 		os.Exit(1)
 	}
