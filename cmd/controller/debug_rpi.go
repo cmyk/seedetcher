@@ -25,7 +25,7 @@ const dmesg = false
 var screenshotCounter int
 
 func init() {
-	log.Printf("Debug mode active")
+	log.Printf("Debug mode active debug_rpi.go")
 	// Set debug hooks for platform_rpi.go
 	engraverHook = func() io.ReadWriteCloser {
 		return mjolnir.NewSimulator()

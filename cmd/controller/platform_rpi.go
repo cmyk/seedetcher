@@ -51,6 +51,7 @@ type Platform struct {
 }
 
 func Init() (*Platform, error) {
+	log.Println("Running platform_rpi.go") // Add this to platform_rpi.go
 	_ = mountFS()
 	p := &Platform{
 		events:  make(chan gui.Event, 10),

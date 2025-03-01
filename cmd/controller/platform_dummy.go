@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image"
 	"image/draw"
+	"log"
 	"time"
 
 	"seedetcher.com/backup"
@@ -16,6 +17,7 @@ import (
 type Platform struct{}
 
 func Init() (*Platform, error) {
+	log.Println("Running platform_dummy.go") // Add this to platform_dummy.go
 	return new(Platform), nil
 }
 
