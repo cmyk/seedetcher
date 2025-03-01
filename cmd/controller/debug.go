@@ -9,10 +9,11 @@ import (
 	"strings"
 
 	"seedetcher.com/gui"
+	"seedetcher.com/logutil"
 )
 
 func init() {
-	debugLog("DEBUG: Init function executed, debug mode enabled")
+	logutil.DebugLog("DEBUG: Init function executed, debug mode enabled")
 	debug = true
 }
 
@@ -79,7 +80,7 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 	case cmd == "goroutines":
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 	default:
-		debugLog("debug: unrecognized command: %q", cmd)
+		logutil.DebugLog("debug: unrecognized command: %q", cmd)
 	}
 	return evts
 }

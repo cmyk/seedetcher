@@ -18,6 +18,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"seedetcher.com/driver/mjolnir"
+	"seedetcher.com/logutil"
 )
 
 const dmesg = false
@@ -46,7 +47,7 @@ func dbgInit(p *Platform) error {
 	go func() {
 		defer s.Close()
 		if err := runSerial(p, s); err != nil {
-			debugLog("debug: serial communication failed: %v", err)
+			logutil.DebugLog("debug: serial communication failed: %v", err)
 		}
 	}()
 	if dmesg {

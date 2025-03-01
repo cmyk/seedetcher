@@ -30,6 +30,7 @@ import (
 	"seedetcher.com/gui/saver"
 	"seedetcher.com/gui/text"
 	"seedetcher.com/gui/widget"
+	"seedetcher.com/logutil"
 	"seedetcher.com/nonstandard"
 	"seedetcher.com/printer"
 	"seedetcher.com/seedqr"
@@ -270,7 +271,7 @@ func ShowAddressesScreen(ctx *Context, ops op.Ctx, th *Colors, desc urtypes.Outp
 		if s.page == 1 {
 			title = "Change"
 		}
-		layoutTitle(ctx, ops, dims.X, th.Text, title)
+		layoutTitle(ctx, ops, dims.X, th.Text, "%s", title)
 
 		op.ImageOp(ops.Begin(), assets.ArrowLeft, true)
 		op.ColorOp(ops, th.Text)
@@ -295,7 +296,7 @@ func ShowAddressesScreen(ctx *Context, ops op.Ctx, th *Colors, desc urtypes.Outp
 		addrs := s.addresses[s.page]
 		for _, addr := range addrs {
 			ops := ops
-			bodytxt.Add(ops, ctx.Styles.body, inner.Dx(), th.Text, addr)
+			bodytxt.Add(ops, ctx.Styles.body, inner.Dx(), th.Text, "%s", addr)
 		}
 		addresses := ops.End()
 
@@ -429,20 +430,20 @@ func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
 			op.Position(ops, w, pos)
 		}
 
-		title := layoutTitle(ctx, ops.Begin(), dims.X, th.Text, s.Title)
+		title := layoutTitle(ctx, ops.Begin(), dims.X, th.Text, "%s", s.Title)
 		title.Min.Y += 4
 		title.Max.Y -= 4
 		background(ops, ops.End(), title, image.Point{})
 
 		// Camera error, if any.
 		if err := cameraErr; err != nil {
-			sz := widget.Labelwf(ops.Begin(), ctx.Styles.body, dims.X-2*16, th.Text, err.Error())
+			sz := widget.Labelwf(ops.Begin(), ctx.Styles.body, dims.X-2*16, th.Text, "%s", err.Error())
 			op.Position(ops, ops.End(), r.Center(sz))
 		}
 
 		width := dims.X - 2*8
 		// Lead text.
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, width, th.Text, s.Lead)
+		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, width, th.Text, "%s", s.Lead)
 		top, footer := r.CutBottom(sz.Y + 2*12)
 		pos := footer.Center(sz)
 		background(ops, ops.End(), image.Rectangle{Min: pos, Max: pos.Add(sz)}, pos)
@@ -653,7 +654,7 @@ func (w *Warning) Layout(ctx *Context, ops op.Ctx, th *Colors, dims image.Point,
 	op.ColorOp(ops, th.Text)
 
 	btnOff := assets.NavBtnPrimary.Bounds().Dx() + btnMargin
-	titlesz := widget.Labelwf(ops.Begin(), ctx.Styles.warning, dims.X-btnOff*2, th.Text, strings.ToTitle(title))
+	titlesz := widget.Labelwf(ops.Begin(), ctx.Styles.warning, dims.X-btnOff*2, th.Text, "%s", strings.ToTitle(title))
 	titlew := ops.End()
 	op.Position(ops, titlew, image.Pt((dims.X-titlesz.X)/2, r.Min.Y))
 
@@ -661,7 +662,7 @@ func (w *Warning) Layout(ctx *Context, ops op.Ctx, th *Colors, dims image.Point,
 		Min: image.Pt(pstart+boxMargin, ptop+titlesz.Y),
 		Max: image.Pt(dims.X-btnOff, dims.Y-pbottom-boxMargin),
 	}
-	bodysz := widget.Labelwf(ops.Begin(), ctx.Styles.body, bodyClip.Dx(), th.Text, txt)
+	bodysz := widget.Labelwf(ops.Begin(), ctx.Styles.body, bodyClip.Dx(), th.Text, "%s", txt)
 	body := ops.End()
 	innerCtx := ops.Begin()
 	w.txtclip = bodyClip.Dy()
@@ -1427,7 +1428,7 @@ func (k *Keyboard) Layout(ctx *Context, ops op.Ctx, th *Colors) image.Point {
 				op.ImageOp(ops.Begin(), icn, true)
 				op.ColorOp(ops, col)
 			} else {
-				sz = widget.Labelf(ops.Begin(), style, col, string(key))
+				sz = widget.Labelf(ops.Begin(), style, col, "%s", string(key))
 			}
 			key := ops.End()
 			bg.Add(ops.Begin(), image.Rectangle{Max: bgsz}, true)
@@ -1493,10 +1494,10 @@ func (s *ChoiceScreen) Draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Poi
 	r := layout.Rectangle{Max: dims}
 	op.ColorOp(ops, th.Background)
 
-	layoutTitle(ctx, ops, dims.X, th.Text, s.Title)
+	layoutTitle(ctx, ops, dims.X, th.Text, "%s", s.Title)
 
 	_, bottom := r.CutTop(leadingSize)
-	sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-2*8, th.Text, s.Lead)
+	sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-2*8, th.Text, "%s", s.Lead)
 	content, lead := bottom.CutBottom(leadingSize)
 	op.Position(ops, ops.End(), lead.Center(sz))
 
@@ -1513,7 +1514,7 @@ func (s *ChoiceScreen) Draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Poi
 		if i == s.choice {
 			col = th.Background
 		}
-		sz := widget.Labelf(ops.Begin(), style, col, c)
+		sz := widget.Labelf(ops.Begin(), style, col, "%s", c)
 		ch := ops.End()
 		children[i].Size = sz
 		children[i].W = ch
@@ -1629,7 +1630,7 @@ func drawMainScreen(ctx *Context, ops op.Ctx, dims image.Point, page program) {
 	}
 	op.ColorOp(ops, th.Background)
 
-	layoutTitle(ctx, ops, dims.X, th.Text, title)
+	layoutTitle(ctx, ops, dims.X, th.Text, "%s", title)
 
 	r := layout.Rectangle{Max: dims}
 	sz := layoutMainPage(ops.Begin(), th, dims.X, page)
@@ -1639,7 +1640,7 @@ func drawMainScreen(ctx *Context, ops op.Ctx, dims image.Point, page program) {
 	_, footer := r.CutBottom(leadingSize)
 	op.Position(ops, ops.End(), footer.Center(sz))
 
-	versz := widget.Labelwf(ops.Begin(), ctx.Styles.debug, 100, th.Text, ctx.Version)
+	versz := widget.Labelwf(ops.Begin(), ctx.Styles.debug, 100, th.Text, "%s", ctx.Version)
 	op.Position(ops, ops.End(), r.SE(versz.Add(image.Pt(4, 0))))
 	shsz := widget.Labelwf(ops.Begin(), ctx.Styles.debug, 100, th.Text, "SeedEtcher")
 	op.Position(ops, ops.End(), r.SW(shsz).Add(image.Pt(3, 0)))
@@ -2018,7 +2019,7 @@ func (s *SeedScreen) Draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Point
 	layoutWord := func(ops op.Ctx, col color.NRGBA, n int, word string) image.Point {
 		prefix := widget.Labelf(ops.Begin(), style, col, "%d: ", n)
 		op.Position(ops, ops.End(), image.Pt(longestPrefix.X-prefix.X, 0))
-		txt := widget.Labelf(ops.Begin(), style, col, word)
+		txt := widget.Labelf(ops.Begin(), style, col, "%s", word)
 		op.Position(ops, ops.End(), image.Pt(longestPrefix.X, 0))
 		return image.Pt(longestPrefix.X+txt.X, txt.Y)
 	}
@@ -2251,7 +2252,7 @@ func (s *DescriptorScreen) Draw(ctx *Context, ops op.Ctx, th *Colors, dims image
 		subst := ctx.Styles.subtitle
 		if desc.Title != "" {
 			bodytxt.Add(ops, subst, body.Dx(), th.Text, "Title")
-			bodytxt.Add(ops, bodyst, body.Dx(), th.Text, desc.Title)
+			bodytxt.Add(ops, bodyst, body.Dx(), th.Text, "%s", desc.Title)
 			bodytxt.Y += infoSpacing
 		}
 		bodytxt.Add(ops, subst, body.Dx(), th.Text, "Type")
@@ -2267,7 +2268,7 @@ func (s *DescriptorScreen) Draw(ctx *Context, ops op.Ctx, th *Colors, dims image
 		}
 		bodytxt.Y += infoSpacing
 		bodytxt.Add(ops, subst, body.Dx(), th.Text, "Script")
-		bodytxt.Add(ops, bodyst, body.Dx(), th.Text, desc.Script.String())
+		bodytxt.Add(ops, bodyst, body.Dx(), th.Text, "%s", desc.Script.String())
 	}
 
 	op.Position(ops, ops.End(), body.Min.Add(image.Pt(0, scrollFadeDist)))
@@ -2570,7 +2571,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			case Button3:
 				if inp.Clicked(e.Button) {
 					if err := ctx.Platform.PrintPDF(mnemonic, desc, keyIdx, printer.PaperA4); err != nil {
-						log.Printf("Print failed: %v", err)
+						logutil.DebugLog("Print failed: %v", err)
 						s.showError(ctx, ops, th, fmt.Errorf("Print failed: %v", err))
 						return false
 					}
@@ -2584,12 +2585,12 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		if desc != nil {
 			title = "Print Wallet Share"
 		}
-		layoutTitle(ctx, ops, dims.X, th.Text, title)
+		layoutTitle(ctx, ops, dims.X, th.Text, "%s", title)
 		lead := "Ensure your printer is connected before printing the seed.\n\nPress Print to continue."
 		if desc != nil {
 			lead = fmt.Sprintf("Ensure your printer is connected before printing share %d/%d.\n\nPress Print to continue.", keyIdx+1, len(desc.Keys))
 		}
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, lead)
+		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", lead)
 		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
 		layoutNavigation(inp, ops, th, dims, []NavButton{
 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
@@ -2637,7 +2638,7 @@ func (s *EngraveScreen) draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Po
 	}
 	content = content.Shrink(0, margin, 0, margin)
 	content, lead := content.CutBottom(leadingSize)
-	bodysz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, content.Dx(), th.Text, ins.resolvedBody)
+	bodysz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, content.Dx(), th.Text, "%s", ins.resolvedBody)
 	if img := ins.Image; img != nil {
 		sz := img.Bounds().Size()
 		op.Offset(ops, image.Pt((bodysz.X-sz.X)/2, bodysz.Y))
@@ -2648,7 +2649,7 @@ func (s *EngraveScreen) draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Po
 		bodysz.Y += sz.Y
 	}
 	op.Position(ops, ops.End(), content.Center(bodysz))
-	leadsz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-2*margin, th.Text, ins.Lead)
+	leadsz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-2*margin, th.Text, "%s", ins.Lead)
 	op.Position(ops, ops.End(), lead.Center(leadsz))
 
 	progressw := dims.X * (s.step + 1) / len(s.instructions)

@@ -29,3 +29,4 @@ require (
 )
 
 replace github.com/kortschak/qr => github.com/seedhammer/kortschak-qr v0.0.0-20240113235555-375796488df0
+replace seedetcher.com/logutil => ./logutil
