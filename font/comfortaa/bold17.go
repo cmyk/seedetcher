@@ -8,5 +8,7 @@ import (
 	"unsafe"
 )
 
-var Bold17 = bitmap.NewFace(unsafe.Slice(unsafe.StringData(dataBold17), len(dataBold17)))
-var dataBold17 string
+var Bold17 = bitmap.NewFace(unsafe.Slice(unsafe.StringData(databold17), len(databold17)))
+
+//go:embed bold17.bin
+var databold17 string

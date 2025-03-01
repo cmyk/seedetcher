@@ -1,5 +1,3 @@
-//go:build linux && arm && cgo
-
 // package drm implements a display on top of dumb DRM devices.
 package drm
 
