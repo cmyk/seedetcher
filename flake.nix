@@ -286,6 +286,9 @@
               busyboxStatic = crosspkgs.pkgsStatic.busybox;
               bashStatic = crosspkgs.pkgsStatic.bash;
               straceStatic = crosspkgs.pkgsStatic.strace;
+
+              fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
+
               # cupsStatic = crosspkgs.pkgsStatic.cups.overrideAttrs (old: {
               #   configureFlags = (old.configureFlags or []) ++ [
               #     "--disable-openssl"
@@ -327,6 +330,12 @@
                 rm -f `find initramfs -type l`
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' `find initramfs`
 
+                # Add font directory and file
+                mkdir -p initramfs/font/martianmono
+                cp ${fontFile} initramfs/font/martianmono/MartianMono_Condensed-Regular.ttf
+                chmod 0644 initramfs/font/martianmono/MartianMono_Condensed-Regular.ttf
+                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/font/martianmono/MartianMono_Condensed-Regular.ttf
+    
                 # Create essential initramfs directories
                 mkdir -p initramfs/{bin,lib,share,dev,proc,sys,run}
 

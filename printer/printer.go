@@ -3,7 +3,6 @@ package printer
 import (
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"strings"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/kortschak/qr"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
+	"seedetcher.com/logutil"
 	"seedetcher.com/seedqr"
 )
 
@@ -29,10 +29,13 @@ var martianMono = "font/martianmono/MartianMono_Condensed-Regular.ttf" // Path t
 
 // Load font binary data
 func loadFontData(fontPath string) []byte {
+	logutil.DebugLog("Attempting to load font from %s", fontPath)
 	data, err := os.ReadFile(fontPath)
 	if err != nil {
-		log.Fatalf("Failed to load font from %s: %v", fontPath, err)
+		logutil.DebugLog("Failed to load font: %v", err)
+		return nil // Return nil instead of crashing
 	}
+	logutil.DebugLog("Font data loaded, size: %d bytes", len(data))
 	return data
 }
 
@@ -45,24 +48,30 @@ func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescript
 	case PaperLetter:
 		paperWidth, paperHeight = 210.0, 297.0 // A4 in mm
 	default:
-		return fmt.Errorf("unsupported paper size: %s", paperFormat)
+		logutil.DebugLog("unsupported paper size: %s", paperFormat)
 	}
-
+	logutil.DebugLog("Creating PDF with size %fx%f mm", paperWidth, paperHeight)
 	pdf := gofpdf.New("P", "mm", string(paperFormat), "")
 	pdf.AddPage()
+	logutil.DebugLog("Page added")
 	pdf.SetMargins(0, 0, 0) // Prevent clipping
 	pdf.SetLineWidth(0.2)   // Thicker border for visibility
 
 	// Try to load and add the Martian Mono font as UTF-8 TrueType
 	var fontName string = "MartianMono"
 	fontData := loadFontData(martianMono)
-	pdf.AddUTF8FontFromBytes(fontName, "", fontData) // Call directly
-	if pdf.Err() {                                   // Check for error using pdf.Err() as bool
-		log.Printf("Failed to add MartianMono font as UTF-8: %v. Falling back to Courier.", pdf.Error())
-		fontName = "Courier"
-		pdf.SetFont(fontName, "", 8) // 8pt for words
+	if fontData == nil {
+		logutil.DebugLog("Font data is nil, falling back to Courier")
+		pdf.SetFont("Courier", "", 8) // Fallback to built-in font
 	} else {
-		pdf.SetFont(fontName, "", 8) // Use MartianMono at 8pt for words
+		pdf.AddUTF8FontFromBytes(fontName, "", fontData)
+		if pdf.Err() {
+			logutil.DebugLog("Font load failed: %v", pdf.Error())
+			pdf.SetFont("Courier", "", 8) // Fallback on error
+		} else {
+			logutil.DebugLog("Font loaded")
+			pdf.SetFont(fontName, "", 8)
+		}
 	}
 
 	plateSize := 85.0                                                     // 85x85mm plate
@@ -171,6 +180,8 @@ func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescript
 	// Render title (bottom, centered, 5mm margin, matching "SATOSHI'S STASH")
 	pdf.SetFont(fontName, "", 5)                                                                                  // 5pt for title
 	pdf.Text(plateX+(plateSize-pdf.GetStringWidth("SATOSHI'S STASH"))/2, plateY+plateSize-5.0, "SATOSHI'S STASH") // Bottom-center, 5mm margin
-
-	return pdf.Output(w)
+	logutil.DebugLog("Preparing to write PDF")
+	err = pdf.Output(w) // Fixed: Use = instead of :=
+	logutil.DebugLog("PDF write completed with err: %v", err)
+	return err
 }

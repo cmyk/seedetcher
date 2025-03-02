@@ -49,6 +49,7 @@ type Platform struct {
 		close  func()
 		active bool
 	}
+	printerCached io.Writer
 }
 
 func Init() (*Platform, error) {
@@ -213,46 +214,32 @@ func (p *Platform) CameraFrame(dims image.Point) {
 	c.active = true
 }
 
+func (p *Platform) Printer() io.Writer {
+	logutil.DebugLog("Attempting to open /dev/ttyGS1")
+	printer, err := os.OpenFile("/dev/ttyGS1", os.O_WRONLY, 0)
+	if err != nil {
+		logutil.DebugLog("Failed to open /dev/ttyGS1: %v", err)
+		return os.Stderr // Fallback to stderr, not log file
+	}
+	logutil.DebugLog("Successfully opened /dev/ttyGS1")
+	return printer // Don’t redirect stdout/stderr here
+}
+
 func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
 	logutil.DebugLog("Entering PrintPDF with mnemonic length: %d, desc: %v, keyIdx: %d, paper: %s", len(mnemonic), desc != nil, keyIdx, paperFormat)
-	// Open the printer output file or device
 	printerDevice := p.Printer()
 	if printerDevice == nil {
 		logutil.DebugLog("Printer is nil")
 		return fmt.Errorf("no printer available")
 	}
 	logutil.DebugLog("Printer acquired, calling PrintPDF")
-	log.Printf("Printing PDF with paper size: %s", paperFormat)
-
-	err := printer.PrintPDF(p.Printer(), mnemonic, desc, keyIdx, paperFormat)
+	// Use cached printer if available
+	if p.printerCached != nil {
+		printerDevice = p.printerCached
+	}
+	err := printer.PrintPDF(printerDevice, mnemonic, desc, keyIdx, paperFormat)
 	logutil.DebugLog("PrintPDF returned with err: %v", err)
 	return err
-}
-
-func (p *Platform) Printer() io.Writer {
-	logutil.DebugLog("Attempting to open /dev/ttyGS1")
-	printer, err := os.OpenFile("/dev/ttyGS1", os.O_WRONLY, 0)
-	if err != nil {
-		logutil.DebugLog("Failed to open /dev/ttyGS1: %v", err)
-		logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			log.Printf("Error opening log file: %v", err)
-			return os.Stderr
-		}
-		os.Stdout = logFile
-		os.Stderr = logFile
-		logutil.DebugLog("Falling back to log file")
-		return logFile
-	}
-	logutil.DebugLog("Successfully opened /dev/ttyGS1")
-	logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Printf("Error opening log file: %v", err)
-	} else {
-		os.Stdout = logFile
-		os.Stderr = logFile
-	}
-	return printer
 }
 
 func (p *Platform) initSDCardNotifier() error {
