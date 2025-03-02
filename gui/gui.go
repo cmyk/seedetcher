@@ -2557,6 +2557,20 @@ type PrintSeedScreen struct {
 
 func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) bool {
 	inp := &s.inp
+	// Add paper size selection dialog
+	paperChoice := &ChoiceScreen{
+		Title:   "Select Paper Size",
+		Lead:    "Choose your printer's paper size",
+		Choices: []string{"A4", "Letter"},
+	}
+	choice, ok := paperChoice.Choose(ctx, ops, th)
+	if !ok {
+		return false // User canceled
+	}
+	selectedPaper := printer.PaperA4
+	if choice == 1 {
+		selectedPaper = printer.PaperLetter
+	}
 	for {
 		for {
 			e, ok := inp.Next(ctx, Button1, Button3)
@@ -2570,7 +2584,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				}
 			case Button3:
 				if inp.Clicked(e.Button) {
-					if err := ctx.Platform.PrintPDF(mnemonic, desc, keyIdx, printer.PaperA4); err != nil {
+					if err := ctx.Platform.PrintPDF(mnemonic, desc, keyIdx, selectedPaper); err != nil {
 						logutil.DebugLog("Print failed: %v", err)
 						s.showError(ctx, ops, th, fmt.Errorf("Print failed: %v", err))
 						return false
@@ -2586,9 +2600,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			title = "Print Wallet Share"
 		}
 		layoutTitle(ctx, ops, dims.X, th.Text, "%s", title)
-		lead := "Ensure your printer is connected before printing the seed.\n\nPress Print to continue."
+		lead := fmt.Sprintf("Paper size: %s\n\nEnsure your printer is connected before printing.\nPress Print to continue.", selectedPaper)
 		if desc != nil {
-			lead = fmt.Sprintf("Ensure your printer is connected before printing share %d/%d.\n\nPress Print to continue.", keyIdx+1, len(desc.Keys))
+			lead = fmt.Sprintf("Paper size: %s\n\nEnsure your printer is connected before printing share %d/%d.\nPress Print to continue.", selectedPaper, keyIdx+1, len(desc.Keys))
 		}
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", lead)
 		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
@@ -2607,14 +2621,6 @@ func (s *PrintSeedScreen) PrintSeed(ctx *Context, ops op.Ctx, th *Colors) {
 			s.showError(ctx, ops, th, fmt.Errorf("Printing failed: %v", r))
 		}
 	}()
-	// errScr := NewErrorScreen(err)
-	// for {
-	// 	dims := ctx.Platform.DisplaySize()
-	// 	dismissed := errScr.Layout(ctx, ops, th, dims)
-	// 	if dismissed {
-	// 		logutil.DebugLog("Error screen dismissed")
-	// 		break
-	// 	}
 	logutil.DebugLog("Print button pressed, starting print job")
 	ctx.Frame()
 }
