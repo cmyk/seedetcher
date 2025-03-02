@@ -38,6 +38,13 @@ import (
 
 const nbuttons = 8
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 type Context struct {
 	Platform Platform
 	Styles   Styles
