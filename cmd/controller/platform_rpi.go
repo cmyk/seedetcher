@@ -26,6 +26,7 @@ import (
 	"seedetcher.com/driver/wshat"
 	"seedetcher.com/engrave"
 	"seedetcher.com/gui"
+	"seedetcher.com/logutil"
 	"seedetcher.com/printer"
 	"seedetcher.com/zbar"
 )
@@ -213,22 +214,26 @@ func (p *Platform) CameraFrame(dims image.Point) {
 }
 
 func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
+	logutil.DebugLog("Entering PrintPDF with mnemonic length: %d, desc: %v, keyIdx: %d, paper: %s", len(mnemonic), desc != nil, keyIdx, paperFormat)
 	// Open the printer output file or device
 	printerDevice := p.Printer()
 	if printerDevice == nil {
+		logutil.DebugLog("Printer is nil")
 		return fmt.Errorf("no printer available")
 	}
-
+	logutil.DebugLog("Printer acquired, calling PrintPDF")
 	log.Printf("Printing PDF with paper size: %s", paperFormat)
 
-	// Call the correct `PrintPDF` function from the `printer` package
-	return printer.PrintPDF(p.Printer(), mnemonic, desc, keyIdx, paperFormat)
+	err := printer.PrintPDF(p.Printer(), mnemonic, desc, keyIdx, paperFormat)
+	logutil.DebugLog("PrintPDF returned with err: %v", err)
+	return err
 }
 
 func (p *Platform) Printer() io.Writer {
+	logutil.DebugLog("Attempting to open /dev/ttyGS1")
 	printer, err := os.OpenFile("/dev/ttyGS1", os.O_WRONLY, 0)
 	if err != nil {
-		log.Printf("Failed to open /dev/ttyGS1 for printer: %v", err)
+		logutil.DebugLog("Failed to open /dev/ttyGS1: %v", err)
 		logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			log.Printf("Error opening log file: %v", err)
@@ -236,8 +241,10 @@ func (p *Platform) Printer() io.Writer {
 		}
 		os.Stdout = logFile
 		os.Stderr = logFile
+		logutil.DebugLog("Falling back to log file")
 		return logFile
 	}
+	logutil.DebugLog("Successfully opened /dev/ttyGS1")
 	logFile, err := os.OpenFile("/log/seedetcher.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		log.Printf("Error opening log file: %v", err)

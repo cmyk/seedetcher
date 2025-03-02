@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log"
 	"os"
 	"runtime/pprof"
 	"strings"
@@ -72,7 +71,7 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 			case "b3":
 				btn = gui.Button3
 			default:
-				log.Printf("debug: unknown button: %s", name)
+				logutil.DebugLog("debug: unknown button: %s", name)
 				continue
 			}
 			evts = append(evts, click(btn)...)

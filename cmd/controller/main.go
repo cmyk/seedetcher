@@ -1,4 +1,4 @@
-// command controller is the user interface for engraving SeedEtcher plates.
+// command controller is the user interface for printing SeedEtcher backup plates.
 // It runs on a Raspberry Pi Zero, in the same configuration as SeedSigner.
 package main
 

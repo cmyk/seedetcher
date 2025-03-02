@@ -2600,12 +2600,33 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	}
 }
 
+func (s *PrintSeedScreen) PrintSeed(ctx *Context, ops op.Ctx, th *Colors) {
+	defer func() {
+		if r := recover(); r != nil {
+			logutil.DebugLog("PANIC RECOVERED in PrintSeed: %v", r)
+			s.showError(ctx, ops, th, fmt.Errorf("Printing failed: %v", r))
+		}
+	}()
+	// errScr := NewErrorScreen(err)
+	// for {
+	// 	dims := ctx.Platform.DisplaySize()
+	// 	dismissed := errScr.Layout(ctx, ops, th, dims)
+	// 	if dismissed {
+	// 		logutil.DebugLog("Error screen dismissed")
+	// 		break
+	// 	}
+	logutil.DebugLog("Print button pressed, starting print job")
+	ctx.Frame()
+}
+
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
+	logutil.DebugLog("showError called with error: %v", err)
 	errScr := NewErrorScreen(err)
 	for {
 		dims := ctx.Platform.DisplaySize()
 		dismissed := errScr.Layout(ctx, ops, th, dims)
 		if dismissed {
+			logutil.DebugLog("Error screen dismissed")
 			break
 		}
 		ctx.Frame()
