@@ -10,16 +10,10 @@
   outputs = { self, nixpkgs, nixpkgs-unstable, utils }:
     utils.lib.eachDefaultSystem (system:
       let
-        arch = builtins.head (builtins.split "-" system);
-        localpkgs = import nixpkgs {
-          inherit system;
-        };
-        localpkgs-unstable = import nixpkgs-unstable {
-          inherit system;
-        };
-
-        crosspkgs = import nixpkgs {
-          inherit system;
+        # Explicitly define host and cross packages
+        hostPkgs = import nixpkgs { system = system; };  # Host system (e.g., x86_64-linux)
+        crossPkgs = import nixpkgs {
+          system = system;
           crossSystem = {
             config = "armv6l-unknown-linux-musleabihf";
             gcc = {
@@ -42,7 +36,7 @@
         };
         
         crosspkgs-unstable = import nixpkgs-unstable {
-          inherit system;
+          system = system;  # Changed from inherit for clarity
           crossSystem = {
             config = "armv6l-unknown-linux-musleabihf";
             gcc = {
@@ -51,15 +45,45 @@
             };
           };
         };
+
+
+        # Source-based CUPS, dynamic linking (keep this from your latest working version)
+        cupsSource = crossPkgs.stdenv.mkDerivation {
+          name = "cups-armv6-build-test";  # Match test naming for consistency
+          src = crossPkgs.fetchurl {
+            url = "https://github.com/OpenPrinting/cups/releases/download/v2.4.7/cups-2.4.7-source.tar.gz";
+            sha256 = "sha256-3VQijdkDUmQozn43lhr67SMK0xB4gUHadc66oINiz2w=";
+          };
+          nativeBuildInputs = with hostPkgs; [ pkg-config autoconf automake binutils ];  # Host tools
+          buildInputs = with crossPkgs; [ cups cups-filters ghostscript openssl ];  # Match test inputs, drop cups
+          configurePhase = ''
+            ./configure \
+              --host=armv6l-unknown-linux-musleabihf \
+              --prefix=/dummy \
+              --with-tls=openssl \
+              CC="${crossPkgs.stdenv.cc}/bin/armv6l-unknown-linux-musleabihf-gcc" \
+              CXX="${crossPkgs.stdenv.cc}/bin/armv6l-unknown-linux-musleabihf-g++" \
+              AR="${crossPkgs.stdenv.cc.bintools}/bin/armv6l-unknown-linux-musleabihf-ar" \
+              LD="${crossPkgs.stdenv.cc.bintools}/bin/armv6l-unknown-linux-musleabihf-ld"
+          '';
+          buildPhase = "make";
+          installPhase = ''
+            make install DESTDIR=$out
+            mkdir -p $out/bin
+            cp scheduler/cupsd $out/bin/cupsd        # Match SeedEtcher's expected location
+            cp systemv/lp $out/bin/lp                # Match SeedEtcher's expected location
+          '';
+        };
+
         timestamp = "2009/01/03T12:15:05";
         loader-lib = "ld-musl-armhf.so.1";
       in
       {
-        formatter = localpkgs.nixpkgs-fmt;
+        formatter = hostPkgs.nixpkgs-fmt;
         lib = {
           mkkernel =
             let
-              pkgs = crosspkgs;
+              pkgs = crossPkgs;
               panel-firmware = self.lib.${system}.panel-firmware;
             in
             debug: pkgs.stdenv.mkDerivation {
@@ -240,7 +264,7 @@
             };
           panel-firmware =
             let
-              pkgs = localpkgs;
+              pkgs = hostPkgs;
               # firmware is the commands required to initialize the st7789 panel.
               firmware = pkgs.writeText "firmware.txt" ''
                 command 0x11 # exit sleep mode
@@ -282,23 +306,14 @@
             };
           mkinitramfs = debug:
             let
-              pkgs = localpkgs;
-              busyboxStatic = crosspkgs.pkgsStatic.busybox;
-              bashStatic = crosspkgs.pkgsStatic.bash;
-              straceStatic = crosspkgs.pkgsStatic.strace;
+              pkgs = hostPkgs;
+              busyboxStatic = crossPkgs.pkgsStatic.busybox;
+              bashStatic = crossPkgs.pkgsStatic.bash;
+              straceStatic = crossPkgs.pkgsStatic.strace;
+              cupsDynamic = cupsSource;  # Use source-based CUPS
+              ghostscriptDynamic = crossPkgs.ghostscript;  # Use Nixpkgs ghostscript, not static
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
-
-              # cupsStatic = crosspkgs.pkgsStatic.cups.overrideAttrs (old: {
-              #   configureFlags = (old.configureFlags or []) ++ [
-              #     "--disable-openssl"
-              #   ];
-              # });  # This ensures CUPS does NOT require OpenSSL
-              # libeventStatic = crosspkgs.pkgsStatic.libevent.overrideAttrs (old: {
-              #   configureFlags = (old.configureFlags or []) ++ [
-              #     "--disable-openssl"
-              #   ];
-              # });
 
               controller =
                 if debug then
@@ -355,13 +370,19 @@
                                 
                 cp -a ${busyboxStatic}/bin/* initramfs/bin/ 
                 cp -a ${straceStatic}/bin/strace initramfs/bin/
+                cp -a ${cupsDynamic}/bin/cupsd initramfs/bin/  # Fixed variable name
+                cp -a ${cupsDynamic}/bin/lp initramfs/bin/
+                cp -a ${ghostscriptDynamic}/bin/gsc initramfs/bin/gs  # Copy gsc directly, rename to gs
+
+                # Copy dynamic libraries explicitly
+                cp ${crossPkgs.lib.getLib crossPkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
+                cp ${crossPkgs.lib.getLib crossPkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
+                cp ${crossPkgs.lib.getLib crossPkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
+                cp ${crossPkgs.lib.getLib crossPkgs.openssl}/lib/libssl.so.3 initramfs/lib/ || echo "Failed to copy libssl.so.3"
+                cp ${crossPkgs.lib.getLib crossPkgs.openssl}/lib/libcrypto.so.3 initramfs/lib/ || echo "Failed to copy libcrypto.so.3"
+                cp ${crossPkgs.lib.getLib crossPkgs.zlib}/lib/libz.so.1 initramfs/lib/ || echo "Failed to copy libz.so.1"
+            
                 
-
-                # Copy required shared libraries explicitly (no loops, avoids Nix attribute issues)
-                cp ${crosspkgs.lib.getLib crosspkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
-                cp ${crosspkgs.lib.getLib crosspkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
-                cp ${crosspkgs.lib.getLib crosspkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
-
                 # Only create symlinks if they do not already exist
                 for cmd in ls cat echo sh rm mkdir rmdir cp mv touch; do
                   if [ ! -e initramfs/bin/$cmd ]; then
@@ -400,7 +421,7 @@
             };
           mkimage = debug:
             let
-              pkgs = localpkgs;
+              pkgs = hostPkgs;
               firmware = self.packages.${system}.firmware;
               kernel =
                 if debug then
@@ -503,7 +524,7 @@
           mkcontroller = debug:
             let
               libcamera = self.packages.${system}.libcamera;
-              pkgs = crosspkgs;
+              pkgs = crossPkgs;
               pkgs-unstable = crosspkgs-unstable;
               tags = builtins.concatStringsSep "," ([ "netgo" ] ++ (if debug then [ "debug" ] else [ ]));
             in
@@ -516,6 +537,7 @@
                 nukeReferences
               ];
 
+              buildInputs = with pkgs; [ cupsSource ];  # Add CUPS if controller interacts with printing
               CGO_CXXFLAGS="-I${libcamera}/include";
               CGO_LDFLAGS="-L${libcamera}/lib -static-libstdc++ -static-libgcc";
               CGO_ENABLED="1";
@@ -551,7 +573,7 @@
         };
         packages =
           {
-            go-deps = let pkgs = localpkgs; pkgs-unstable = localpkgs-unstable; in pkgs.stdenvNoCC.mkDerivation {
+            go-deps = let pkgs = hostPkgs; pkgs-unstable = crosspkgs-unstable; in pkgs.stdenvNoCC.mkDerivation {
               pname = "go-deps";
               version = "1";
 
@@ -580,7 +602,7 @@
             controller-debug = self.lib.${system}.mkcontroller true;
             libcamera =
               let
-                pkgs = crosspkgs;
+                pkgs = crossPkgs;
                 cpu = pkgs.targetPlatform.parsed.cpu;
                 cross-file = pkgs.writeText "cross-file.conf" ''
                   [properties]
@@ -665,7 +687,7 @@
 
                 allowedReferences = [ ];
               };
-            camera-driver = let pkgs = crosspkgs; in pkgs.stdenv.mkDerivation {
+            camera-driver = let pkgs = crossPkgs; in pkgs.stdenv.mkDerivation {
               name = "camera-driver";
 
               dontUnpack = true;
@@ -692,7 +714,7 @@
             };
             kernel = self.lib.${system}.mkkernel false;
             kernel-debug = self.lib.${system}.mkkernel true;
-            firmware = localpkgs.fetchFromGitHub {
+            firmware = hostPkgs.fetchFromGitHub {
               owner = "raspberrypi";
               repo = "firmware";
               rev = "9de4cecc88873d154455b2c254a2bfbb2be8c1b7";
@@ -704,7 +726,7 @@
             image = self.lib.${system}.mkimage false;
             image-debug = self.lib.${system}.mkimage true;
             # reload the controller binary to a running seedetcher debug image.
-            reload = let pkgs = localpkgs; in pkgs.writeShellScriptBin "reload" ''
+            reload = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "reload" ''
               #!/bin/sh
               set -x  # Enable debug mode
               
@@ -732,7 +754,7 @@
             '';
             # reload-fast is a faster, but impure, way of reloading the controller binary
             # from a developer shell.
-            reload-fast = let pkgs = localpkgs; in pkgs.writeShellScriptBin "reload-fast" ''
+            reload-fast = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "reload-fast" ''
               set -e
               USBDEV=$1
               if [ -z "$1" ]; then
@@ -749,7 +771,7 @@
               cat "$PROG" > "$USBDEV"
               exec cat "$USBDEV"
             '';
-            mkrelease = let pkgs = localpkgs; in pkgs.writeShellScriptBin "mkrelease" ''
+            mkRelease = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "mk-release" ''
               set -eu
 
               VERSION=$1
@@ -766,7 +788,7 @@
                 ssh-keygen -Y sign -f "$SSH_SIGNING_KEY" -n seedetcher.img seedetcher-"$VERSION".img
               fi
             '';
-            stamp-release = let pkgs = localpkgs; in pkgs.writeShellScriptBin "stamp-release" ''
+            stamp-release = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "stamp-release" ''
               set -eu
 
               # For determinism.
@@ -795,15 +817,16 @@
               ${pkgs.mtools}/bin/mdel -i "$dst@@$OFFSET" ::cmdline.txt
               ${pkgs.mtools}/bin/mcopy -bpm -i "$dst@@$OFFSET" "$TMPDIR/cmdline.txt" ::
             '';
+
             default = self.packages.${system}.image;
           };
           # developer shell for running .#reload-fast.
-          devShells.default = localpkgs.mkShell {
+          devShells.default = hostPkgs.mkShell {
             packages = [ self.packages.${system}.controller-debug ];
             shellHook = ''
               echo "🚀 Welcome to the SeedEtcher dev shell!"
               export PS1='\[\e[1;32m\][seedetcher-dev]\[\e[0m\] \w \$ '
-              export SHELL=${localpkgs.bash}/bin/bash
+              export SHELL=${hostPkgs.bash}/bin/bash
               export CC=arm-linux-gnueabihf-gcc
               export CXX=arm-linux-gnueabihf-g++
               export GOARCH=arm

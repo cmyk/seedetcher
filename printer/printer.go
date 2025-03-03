@@ -1,9 +1,11 @@
 package printer
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -40,7 +42,7 @@ func loadFontData(fontPath string) []byte {
 }
 
 // PrintPDF renders the backup plate layout as a PDF with fixed positions for seed words, QR, and metadata, matching SeedHammer style.
-func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize) error {
+func printPDFToBuffer(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize) error {
 	var paperWidth, paperHeight float64
 	switch paperFormat {
 	case PaperA4:
@@ -184,4 +186,24 @@ func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescript
 	err = pdf.Output(w) // Fixed: Use = instead of :=
 	logutil.DebugLog("PDF write completed with err: %v", err)
 	return err
+}
+
+// Update PrintPDF to convert based on capabilities
+func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize, supportsPCL, supportsPostScript bool) error {
+	var buf bytes.Buffer
+	if err := printPDFToBuffer(&buf, mnemonic, desc, keyIdx, paperFormat); err != nil {
+		return err
+	}
+
+	if supportsPostScript {
+		cmd := exec.Command("pdftops", "-", "-") // Convert PDF to PostScript
+		cmd.Stdin = &buf
+		cmd.Stdout = w
+		return cmd.Run()
+	} else {
+		cmd := exec.Command("gs", "-dBATCH", "-dNOPAUSE", "-sDEVICE=pcld5", "-sOutputFile=-", "-") // Convert PDF to PCL5
+		cmd.Stdin = &buf
+		cmd.Stdout = w
+		return cmd.Run()
+	}
 }

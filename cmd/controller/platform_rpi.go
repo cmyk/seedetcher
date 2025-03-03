@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -37,6 +38,31 @@ var (
 	initHook     func(p *Platform) error
 )
 
+// queryPrinterCapabilities sends a PJL query and parses the response for PCL/PostScript support
+func queryPrinterCapabilities(w io.Writer, r io.Reader) (supportsPCL, supportsPostScript bool, err error) {
+	// PJL query for printer language
+	query := []byte("\033%-12345X@PJL INFO VARIABLES\r\n\033%-12345X")
+	if _, err = w.Write(query); err != nil {
+		logutil.DebugLog("PJL query failed: %v", err)
+		return false, false, err
+	}
+
+	// Read response (simplified, assumes line-based response)
+	buf := make([]byte, 1024)
+	n, err := r.Read(buf)
+	if err != nil {
+		logutil.DebugLog("Failed to read PJL response: %v", err)
+		return false, false, err
+	}
+	response := string(buf[:n])
+	logutil.DebugLog("PJL response: %s", response)
+
+	// Parse for PCL and PostScript (simplified, adjust for actual printer response)
+	supportsPCL = strings.Contains(response, "PCL")
+	supportsPostScript = strings.Contains(response, "POSTSCRIPT")
+	return supportsPCL, supportsPostScript, nil
+}
+
 type Platform struct {
 	display *drm.LCD
 	events  chan gui.Event
@@ -49,7 +75,9 @@ type Platform struct {
 		close  func()
 		active bool
 	}
-	printerCached io.Writer
+	printerCached      io.Writer
+	supportsPCL        bool
+	supportsPostScript bool
 }
 
 func Init() (*Platform, error) {
@@ -216,12 +244,19 @@ func (p *Platform) CameraFrame(dims image.Point) {
 
 func (p *Platform) Printer() io.Writer {
 	logutil.DebugLog("Attempting to open /dev/ttyGS1")
-	printer, err := os.OpenFile("/dev/ttyGS1", os.O_WRONLY, 0)
+	printer, err := os.OpenFile("/dev/ttyGS1", os.O_RDWR, 0) // RDWR for reading response
 	if err != nil {
 		logutil.DebugLog("Failed to open /dev/ttyGS1: %v", err)
 		return os.Stderr // Fallback to stderr, not log file
 	}
 	logutil.DebugLog("Successfully opened /dev/ttyGS1")
+	// Query printer capabilities (simplified, assumes connected printer)
+	supportsPCL, supportsPostScript, err := queryPrinterCapabilities(printer, printer)
+	if err != nil {
+		logutil.DebugLog("Printer query failed, assuming PCL: %v", err)
+	}
+	p.supportsPCL = supportsPCL
+	p.supportsPostScript = supportsPostScript
 	return printer // Don’t redirect stdout/stderr here
 }
 
@@ -232,12 +267,8 @@ func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescrip
 		logutil.DebugLog("Printer is nil")
 		return fmt.Errorf("no printer available")
 	}
-	logutil.DebugLog("Printer acquired, calling PrintPDF")
-	// Use cached printer if available
-	if p.printerCached != nil {
-		printerDevice = p.printerCached
-	}
-	err := printer.PrintPDF(printerDevice, mnemonic, desc, keyIdx, paperFormat)
+	logutil.DebugLog("Printer acquired, calling PrintPDF with PCL: %v, PostScript: %v", p.supportsPCL, p.supportsPostScript)
+	err := printer.PrintPDF(printerDevice, mnemonic, desc, keyIdx, paperFormat, p.supportsPCL, p.supportsPostScript)
 	logutil.DebugLog("PrintPDF returned with err: %v", err)
 	return err
 }
