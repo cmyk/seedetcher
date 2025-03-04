@@ -46,6 +46,8 @@
           };
         };
 
+        # Inherit lib from nixpkgs
+        lib = nixpkgs.lib;
 
         # Source-based CUPS, dynamic linking (keep this from your latest working version)
         cupsSource = crossPkgs.stdenv.mkDerivation {
@@ -133,14 +135,7 @@
                 perl
                 util-linux
                 bash
-                acl     # For filesystem ACLs
-                gmp     # For OpenSSL/crypto
-                attr    # For extended attributes
                 busybox
-                strace
-                # cups
-                # libevent
-                # avahi
               ];
                 
               patches = [
@@ -310,6 +305,7 @@
               busyboxStatic = crossPkgs.pkgsStatic.busybox;
               bashStatic = crossPkgs.pkgsStatic.bash;
               straceStatic = crossPkgs.pkgsStatic.strace;
+              binutilsStatic = crossPkgs.pkgsStatic.binutils; #for readelf
               cupsDynamic = cupsSource;  # Use source-based CUPS
               ghostscriptDynamic = crossPkgs.ghostscript;  # Use Nixpkgs ghostscript, not static
 
@@ -327,6 +323,36 @@
                 text = builtins.readFile ./init.sh;
               };
 
+              # Define runtimeLibs here
+              runtimeLibs = with crossPkgs; lib.unique [
+                (lib.getLib musl)           # libc.so
+                (lib.getLib zlib)           # libz.so.1
+                (lib.getLib libtiff)        # libtiff.so.6
+                (lib.getLib cups)           # libcups.so.2
+                (lib.getLib ijs)            # libijs-0.35.so
+                (lib.getLib libpng)         # libpng16.so.16
+                (lib.getLib jbig2dec)       # libjbig2dec.so.0
+                (lib.getLib libjpeg)        # libjpeg.so.62
+                (lib.getLib lcms2)          # liblcms2.so.2
+                (lib.getLib libpaper)       # libpaper.so.1
+                (lib.getLib fontconfig)     # libfontconfig.so.1
+                (lib.getLib freetype)       # libfreetype.so.6
+                (lib.getLib openjpeg)       # libopenjp2.so.7
+                (lib.getLib openssl)        # For CUPS TLS
+                (lib.getLib ghostscript)    # libgs.so.10 itself
+                (lib.getLib acl) (lib.getLib attr) (lib.getLib gmp)  # CUPS/GS transitive deps
+                # Added transitive deps
+                (lib.getLib libdeflate)     # libdeflate.so.0 (for libtiff)
+                (lib.getLib lerc)           # libLerc.so.4 (for libtiff)
+                (lib.getLib xz)             # liblzma.so.5 (for libtiff)
+                (lib.getLib zstd)           # libzstd.so.1 (for libtiff)
+                (lib.getLib libwebp)        # libwebp.so.7, libsharpyuv.so.0 (for libtiff)
+                (lib.getLib avahi)          # libavahi-common.so.3, libavahi-client.so.3 (for libcups)
+                (lib.getLib gnutls)         # libgnutls.so.30 (for libcups)
+                (lib.getLib bzip2)          # libbz2.so.1 (for libfontconfig, libfreetype)
+                (lib.getLib brotli)         # libbrotlidec.so.1 (for libfontconfig, libfreetype)
+                (lib.getLib expat)          # libexpat.so.1 (for libfontconfig)
+              ];
             in
             pkgs.stdenvNoCC.mkDerivation {
               name = "initramfs";
@@ -367,22 +393,43 @@
                 chmod -R u+w initramfs/bin initramfs/lib || true
 
                 # Copy essential binaries
-                                
-                cp -a ${busyboxStatic}/bin/* initramfs/bin/ 
+                cp -a ${busyboxStatic}/bin/* initramfs/bin/
                 cp -a ${straceStatic}/bin/strace initramfs/bin/
-                cp -a ${cupsDynamic}/bin/cupsd initramfs/bin/  # Fixed variable name
+                cp -L --no-preserve=mode ${binutilsStatic}/bin/readelf initramfs/bin/readelf
+                chmod +x initramfs/bin/readelf
+                cp -a ${cupsDynamic}/bin/cupsd initramfs/bin/
                 cp -a ${cupsDynamic}/bin/lp initramfs/bin/
-                cp -a ${ghostscriptDynamic}/bin/gsc initramfs/bin/gs  # Copy gsc directly, rename to gs
+                cp -a ${ghostscriptDynamic}/bin/gsc initramfs/bin/gs
 
-                # Copy dynamic libraries explicitly
-                cp ${crossPkgs.lib.getLib crossPkgs.acl}/lib/libacl.so.1 initramfs/lib/ || echo "Failed to copy libacl.so.1"
-                cp ${crossPkgs.lib.getLib crossPkgs.attr}/lib/libattr.so.1 initramfs/lib/ || echo "Failed to copy libattr.so.1"
-                cp ${crossPkgs.lib.getLib crossPkgs.gmp}/lib/libgmp.so.10 initramfs/lib/ || echo "Failed to copy libgmp.so.10"
-                cp ${crossPkgs.lib.getLib crossPkgs.openssl}/lib/libssl.so.3 initramfs/lib/ || echo "Failed to copy libssl.so.3"
-                cp ${crossPkgs.lib.getLib crossPkgs.openssl}/lib/libcrypto.so.3 initramfs/lib/ || echo "Failed to copy libcrypto.so.3"
-                cp ${crossPkgs.lib.getLib crossPkgs.zlib}/lib/libz.so.1 initramfs/lib/ || echo "Failed to copy libz.so.1"
-            
-                
+                # Debug output
+                echo "Verifying readelf:"
+                ls -alh initramfs/bin/readelf
+                file initramfs/bin/readelf
+
+
+                # Copy all runtime libraries, handling symlinks and subdirectories
+                ${builtins.concatStringsSep "\n" (map (lib: ''
+                  if [ -d "${lib}/lib" ]; then
+                    cp -r --no-preserve=mode "${lib}/lib/"* initramfs/lib/ || echo "Failed to copy from ${lib}"
+                  fi
+                '') runtimeLibs)}
+
+                # Copy readelf as a file, ensuring it's dereferenced and not a symlink
+                target=$(readlink -f "${binutilsStatic}/bin/readelf")
+                cp -L --no-preserve=mode "$target" initramfs/bin/readelf || echo "Failed to copy readelf"
+                chmod +x initramfs/bin/readelf 2>/dev/null || echo "Warning: Could not change permissions of readelf"
+
+                # Ensure binaries are writable before patching
+                chmod u+w initramfs/bin/{gs,cupsd,lp} || echo "Failed to make binaries writable"
+
+                # Patch binaries and libraries to use /lib
+                for bin in initramfs/bin/{gs,cupsd,lp} initramfs/lib/lib*.so*; do
+                  ${hostPkgs.patchelf}/bin/patchelf \
+                    --set-interpreter /lib/ld-musl-armhf.so.1 \
+                    --set-rpath /lib \
+                    "$bin" || echo "Failed to patch $bin"
+                done
+
                 # Only create symlinks if they do not already exist
                 for cmd in ls cat echo sh rm mkdir rmdir cp mv touch; do
                   if [ ! -e initramfs/bin/$cmd ]; then
@@ -392,10 +439,6 @@
 
                 # Set proper permissions
                 chmod -R 0755 initramfs/bin initramfs/lib || true
-
-                # Debug output
-                echo "Final permissions and contents of initramfs/bin:"
-                ls -alh initramfs/bin
 
                 cp ${initScript} initramfs/init
                 # Make init executable
@@ -415,6 +458,7 @@
 
                 ls -alh initramfs/  # Verify initramfs contents before copying
                 ls -alh initramfs/bin/  # Check if binaries are actually copied
+                ls -alh initramfs/lib/
               '';
 
               allowedReferences = [ ];

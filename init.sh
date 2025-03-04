@@ -14,6 +14,7 @@ export LIBCAMERA_LOG_LEVEL=ERROR
 export LIBCAMERA_LOG_FILE=/log/libcamera.log  # Use LIBCAMERA_LOG_FILE instead of LOG_OUTPUT
 export LIBCAMERA_LOG_OUTPUT=""  # Clear any default output to terminal
 export LIBCAMERA_PROVIDER_LOG=0  # Disable provider logs if supported
+export LD_LIBRARY_PATH=/lib
 
 mount -t devtmpfs devtmpfs /dev
 mount -t proc none /proc
@@ -60,6 +61,9 @@ debug_echo "Setting USBDEV1 to raw mode..."
 stty -F /dev/ttyGS1 raw -echo
 echo "" > /dev/ttyGS1
 
+debug_echo "Checking /controller existence and permissions..."
+ls -l /controller > /dev/ttyGS0 2>&1
+file /controller > /dev/ttyGS0 2>&1
 debug_echo "Starting controller..."
 # Ensure controller’s stdout/stderr go to log, not ttyGS1
 /controller < /dev/ttyGS1 >> /log/debug.log 2>> /log/debug.log &
@@ -70,10 +74,7 @@ while ! pidof controller > /dev/null; do
 done
 
 trap "echo 'Caught SIGINT! Exiting...'; exit 1" SIGINT
-
-#again sending controller input to make it available on ttyACM1
-#echo "ping" > /dev/ttyGS1 &
-
+debug_echo "Controller started with PID $(pidof controller)"
 
 touch ~/.shrc
 chmod 644 ~/.shrc
@@ -98,4 +99,5 @@ while read -t 0.1 junk; do :; done < /dev/ttyGS0
 echo "reset" > /dev/ttyGS0
 sleep 0.1
 
-exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1
+debug_echo "Launching shell..."
+exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1 || echo "Failed to launch shell" > /dev/ttyGS0
