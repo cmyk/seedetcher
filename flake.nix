@@ -325,34 +325,33 @@
 
               # Define runtimeLibs here
               runtimeLibs = with crossPkgs; lib.unique [
-                (lib.getLib musl)           # libc.so
-                (lib.getLib zlib)           # libz.so.1
-                (lib.getLib libtiff)        # libtiff.so.6
-                (lib.getLib cups)           # libcups.so.2
-                (lib.getLib ijs)            # libijs-0.35.so
-                (lib.getLib libpng)         # libpng16.so.16
-                (lib.getLib jbig2dec)       # libjbig2dec.so.0
-                (lib.getLib libjpeg)        # libjpeg.so.62
-                (lib.getLib lcms2)          # liblcms2.so.2
-                (lib.getLib libpaper)       # libpaper.so.1
-                (lib.getLib fontconfig)     # libfontconfig.so.1
-                (lib.getLib freetype)       # libfreetype.so.6
-                (lib.getLib openjpeg)       # libopenjp2.so.7
-                (lib.getLib openssl)        # For CUPS TLS
-                (lib.getLib ghostscript)    # libgs.so.10 itself
-                (lib.getLib acl) (lib.getLib attr) (lib.getLib gmp)  # CUPS/GS transitive deps
-                # Added transitive deps
-                (lib.getLib libdeflate)     # libdeflate.so.0 (for libtiff)
-                (lib.getLib lerc)           # libLerc.so.4 (for libtiff)
-                (lib.getLib xz)             # liblzma.so.5 (for libtiff)
-                (lib.getLib zstd)           # libzstd.so.1 (for libtiff)
-                (lib.getLib libwebp)        # libwebp.so.7, libsharpyuv.so.0 (for libtiff)
-                (lib.getLib avahi)          # libavahi-common.so.3, libavahi-client.so.3 (for libcups)
-                (lib.getLib gnutls)         # libgnutls.so.30 (for libcups)
-                (lib.getLib bzip2)          # libbz2.so.1 (for libfontconfig, libfreetype)
-                (lib.getLib brotli)         # libbrotlidec.so.1 (for libfontconfig, libfreetype)
-                (lib.getLib expat)          # libexpat.so.1 (for libfontconfig)
+                (lib.getLib musl)
+                (lib.getLib zlib)
+                (lib.getLib libtiff.override { lerc = null; })
+                (lib.getLib cups)  # Use default cups, ensure musl-compatible
+                (lib.getLib ijs)
+                (lib.getLib libpng)
+                (lib.getLib jbig2dec)
+                (lib.getLib libjpeg)
+                (lib.getLib lcms2)
+                (lib.getLib libpaper)
+                (lib.getLib fontconfig)
+                (lib.getLib freetype)
+                (lib.getLib openjpeg)
+                (lib.getLib openssl)
+                (lib.getLib ghostscript)
+                (lib.getLib acl) (lib.getLib attr) (lib.getLib gmp)
+                (lib.getLib libdeflate)
+                (lib.getLib xz)
+                (lib.getLib zstd)
+                (lib.getLib libwebp)
+                (lib.getLib brotli)
+                (lib.getLib expat)
+                (lib.getLib nettle)
+                (lib.getLib libtasn1)
+                (lib.getLib gcc)  # For libstdc++.so.6 and libgcc_s.so.1
               ];
+
             in
             pkgs.stdenvNoCC.mkDerivation {
               name = "initramfs";
@@ -422,8 +421,8 @@
                 # Ensure binaries are writable before patching
                 chmod u+w initramfs/bin/{gs,cupsd,lp} || echo "Failed to make binaries writable"
 
-                # Patch binaries and libraries to use /lib
-                for bin in initramfs/bin/{gs,cupsd,lp} initramfs/lib/lib*.so*; do
+                # Patch only dynamic libraries and executables, skipping static libraries
+                for bin in initramfs/bin/{gs,cupsd,lp}; do
                   ${hostPkgs.patchelf}/bin/patchelf \
                     --set-interpreter /lib/ld-musl-armhf.so.1 \
                     --set-rpath /lib \
