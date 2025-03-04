@@ -278,6 +278,7 @@
               bashStatic = crossPkgs.pkgsStatic.bash;
               straceStatic = crossPkgs.pkgsStatic.strace;
               binutilsStatic = crossPkgs.pkgsStatic.binutils; #for readelf
+              mupdfHeadlessStatic = self.packages.${system}.mupdf_headless;
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
 
@@ -347,6 +348,10 @@
                 target=$(readlink -f "${binutilsStatic}/bin/readelf")
                 cp -L --no-preserve=mode "$target" initramfs/bin/readelf || echo "Failed to copy readelf"
                 chmod +x initramfs/bin/readelf 2>/dev/null || echo "Warning: Could not change permissions of readelf"
+
+                cp -a ${mupdfHeadlessStatic}/bin/mutool initramfs/bin/ || echo "Failed to copy mutool from ${mupdfHeadlessStatic}/bin/"
+                chmod +x initramfs/bin/mutool || echo "chmod failed, listing dir: $(ls -alh initramfs/bin/)"
+
 
                 # Only create symlinks if they do not already exist
                 for cmd in ls cat echo sh rm mkdir rmdir cp mv touch; do
@@ -778,6 +783,52 @@
               ${pkgs.mtools}/bin/mdel -i "$dst@@$OFFSET" ::cmdline.txt
               ${pkgs.mtools}/bin/mcopy -bpm -i "$dst@@$OFFSET" "$TMPDIR/cmdline.txt" ::
             '';
+
+          mupdf_headless = crossPkgs.stdenv.mkDerivation {
+            name = "mupdf-headless";
+            version = "1.25.4";
+
+            src = crossPkgs.fetchurl {
+              url = "https://mupdf.com/downloads/archive/mupdf-1.25.4-source.tar.gz";
+              # Replace with the correct hash from your build logs or nix-prefetch-url
+              hash = "sha256-dLlDA4/oFZS/f8ViHGC8pYiyhH8NRvsumWUqIfoNlJE="; # Update this!
+            };
+
+            nativeBuildInputs = with crossPkgs.buildPackages; [
+              pkg-config
+            ];
+            buildInputs = with crossPkgs.pkgsStatic; [
+              zlib
+              freetype
+              libpng
+              musl # Explicitly include musl for static linking
+            ];
+
+            # Ensure static linking by passing -static and adjusting LDFLAGS
+            buildPhase = ''
+              make HAVE_X11=no HAVE_GLUT=no HAVE_GLFW=no prefix=/usr \
+                CC="${crossPkgs.stdenv.cc.targetPrefix}cc -static" \
+                AR=${crossPkgs.stdenv.cc.targetPrefix}ar \
+                LDFLAGS="-static -L${crossPkgs.pkgsStatic.zlib}/lib -L${crossPkgs.pkgsStatic.freetype}/lib -L${crossPkgs.pkgsStatic.libpng}/lib -L${crossPkgs.pkgsStatic.musl}/lib" \
+                libs # Build libmupdf first
+              make HAVE_X11=no HAVE_GLUT=no HAVE_GLFW=no prefix=/usr \
+                CC="${crossPkgs.stdenv.cc.targetPrefix}cc -static" \
+                AR=${crossPkgs.stdenv.cc.targetPrefix}ar \
+                LDFLAGS="-static -L${crossPkgs.pkgsStatic.zlib}/lib -L${crossPkgs.pkgsStatic.freetype}/lib -L${crossPkgs.pkgsStatic.libpng}/lib -L${crossPkgs.pkgsStatic.musl}/lib" \
+                apps # Build mutool statically
+            '';
+
+            installPhase = ''
+              mkdir -p $out/bin $out/lib
+              cp build/release/libmupdf.a $out/lib/
+              cp build/release/mutool $out/bin/
+              ${crossPkgs.stdenv.cc.targetPrefix}strip $out/bin/mutool
+            '';
+
+            hardeningDisable = ["all"];
+            dontStrip = false;
+            allowedReferences = []; # Keep this for now, should be empty if fully static
+          };
 
             default = self.packages.${system}.image;
           };
