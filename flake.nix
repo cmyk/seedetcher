@@ -49,34 +49,6 @@
         # Inherit lib from nixpkgs
         lib = nixpkgs.lib;
 
-        # Source-based CUPS, dynamic linking (keep this from your latest working version)
-        cupsSource = crossPkgs.stdenv.mkDerivation {
-          name = "cups-armv6-build-test";  # Match test naming for consistency
-          src = crossPkgs.fetchurl {
-            url = "https://github.com/OpenPrinting/cups/releases/download/v2.4.7/cups-2.4.7-source.tar.gz";
-            sha256 = "sha256-3VQijdkDUmQozn43lhr67SMK0xB4gUHadc66oINiz2w=";
-          };
-          nativeBuildInputs = with hostPkgs; [ pkg-config autoconf automake binutils ];  # Host tools
-          buildInputs = with crossPkgs; [ cups cups-filters ghostscript openssl ];  # Match test inputs, drop cups
-          configurePhase = ''
-            ./configure \
-              --host=armv6l-unknown-linux-musleabihf \
-              --prefix=/dummy \
-              --with-tls=openssl \
-              CC="${crossPkgs.stdenv.cc}/bin/armv6l-unknown-linux-musleabihf-gcc" \
-              CXX="${crossPkgs.stdenv.cc}/bin/armv6l-unknown-linux-musleabihf-g++" \
-              AR="${crossPkgs.stdenv.cc.bintools}/bin/armv6l-unknown-linux-musleabihf-ar" \
-              LD="${crossPkgs.stdenv.cc.bintools}/bin/armv6l-unknown-linux-musleabihf-ld"
-          '';
-          buildPhase = "make";
-          installPhase = ''
-            make install DESTDIR=$out
-            mkdir -p $out/bin
-            cp scheduler/cupsd $out/bin/cupsd        # Match SeedEtcher's expected location
-            cp systemv/lp $out/bin/lp                # Match SeedEtcher's expected location
-          '';
-        };
-
         timestamp = "2009/01/03T12:15:05";
         loader-lib = "ld-musl-armhf.so.1";
       in
@@ -306,8 +278,6 @@
               bashStatic = crossPkgs.pkgsStatic.bash;
               straceStatic = crossPkgs.pkgsStatic.strace;
               binutilsStatic = crossPkgs.pkgsStatic.binutils; #for readelf
-              cupsDynamic = cupsSource;  # Use source-based CUPS
-              ghostscriptDynamic = crossPkgs.ghostscript;  # Use Nixpkgs ghostscript, not static
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
 
@@ -322,35 +292,6 @@
                 name = "init";
                 text = builtins.readFile ./init.sh;
               };
-
-              # Define runtimeLibs here
-              runtimeLibs = with crossPkgs; lib.unique [
-                (lib.getLib musl)
-                (lib.getLib zlib)
-                (lib.getLib libtiff.override { lerc = null; })
-                (lib.getLib cups)  # Use default cups, ensure musl-compatible
-                (lib.getLib ijs)
-                (lib.getLib libpng)
-                (lib.getLib jbig2dec)
-                (lib.getLib libjpeg)
-                (lib.getLib lcms2)
-                (lib.getLib libpaper)
-                (lib.getLib fontconfig)
-                (lib.getLib freetype)
-                (lib.getLib openjpeg)
-                (lib.getLib openssl)
-                (lib.getLib ghostscript)
-                (lib.getLib acl) (lib.getLib attr) (lib.getLib gmp)
-                (lib.getLib libdeflate)
-                (lib.getLib xz)
-                (lib.getLib zstd)
-                (lib.getLib libwebp)
-                (lib.getLib brotli)
-                (lib.getLib expat)
-                (lib.getLib nettle)
-                (lib.getLib libtasn1)
-                (lib.getLib gcc)  # For libstdc++.so.6 and libgcc_s.so.1
-              ];
 
             in
             pkgs.stdenvNoCC.mkDerivation {
@@ -396,38 +337,16 @@
                 cp -a ${straceStatic}/bin/strace initramfs/bin/
                 cp -L --no-preserve=mode ${binutilsStatic}/bin/readelf initramfs/bin/readelf
                 chmod +x initramfs/bin/readelf
-                cp -a ${cupsDynamic}/bin/cupsd initramfs/bin/
-                cp -a ${cupsDynamic}/bin/lp initramfs/bin/
-                cp -a ${ghostscriptDynamic}/bin/gsc initramfs/bin/gs
 
                 # Debug output
                 echo "Verifying readelf:"
                 ls -alh initramfs/bin/readelf
                 file initramfs/bin/readelf
 
-
-                # Copy all runtime libraries, handling symlinks and subdirectories
-                ${builtins.concatStringsSep "\n" (map (lib: ''
-                  if [ -d "${lib}/lib" ]; then
-                    cp -r --no-preserve=mode "${lib}/lib/"* initramfs/lib/ || echo "Failed to copy from ${lib}"
-                  fi
-                '') runtimeLibs)}
-
                 # Copy readelf as a file, ensuring it's dereferenced and not a symlink
                 target=$(readlink -f "${binutilsStatic}/bin/readelf")
                 cp -L --no-preserve=mode "$target" initramfs/bin/readelf || echo "Failed to copy readelf"
                 chmod +x initramfs/bin/readelf 2>/dev/null || echo "Warning: Could not change permissions of readelf"
-
-                # Ensure binaries are writable before patching
-                chmod u+w initramfs/bin/{gs,cupsd,lp} || echo "Failed to make binaries writable"
-
-                # Patch only dynamic libraries and executables, skipping static libraries
-                for bin in initramfs/bin/{gs,cupsd,lp}; do
-                  ${hostPkgs.patchelf}/bin/patchelf \
-                    --set-interpreter /lib/ld-musl-armhf.so.1 \
-                    --set-rpath /lib \
-                    "$bin" || echo "Failed to patch $bin"
-                done
 
                 # Only create symlinks if they do not already exist
                 for cmd in ls cat echo sh rm mkdir rmdir cp mv touch; do
@@ -580,7 +499,6 @@
                 nukeReferences
               ];
 
-              buildInputs = with pkgs; [ cupsSource ];  # Add CUPS if controller interacts with printing
               CGO_CXXFLAGS="-I${libcamera}/include";
               CGO_LDFLAGS="-L${libcamera}/lib -static-libstdc++ -static-libgcc";
               CGO_ENABLED="1";
