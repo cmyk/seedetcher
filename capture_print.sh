@@ -1,20 +1,39 @@
 #!/bin/bash
 set -x
-OUTPUT_FILE="test.pdf"  # Rename to .pdf
+set -e
+
 PDF_DIR="/home/cmyk/PDF"
+OUTPUT_FILE="$PDF_DIR/test.pdf"
 USBDEV="${1:-/dev/ttyACM1}"
+
 echo "Listening on $USBDEV..."
-timeout 10 cat "$USBDEV" > "$OUTPUT_FILE"
+
+# Clear buffer
+stty -F "$USBDEV" raw -echo
+cat "$USBDEV" > /dev/null 2>/dev/null &
+PID=$!
+sleep 1
+kill $PID 2>/dev/null || true
+echo "Buffer cleared" >&2
+
+# Capture with timeout
+echo "Waiting for print job at $(date '+%H:%M:%S')..." >&2
+mkdir -p "$PDF_DIR"  # Ensure dir exists
+timeout 5 tee "$OUTPUT_FILE" < "$USBDEV"  # Write directly to /home/cmyk/PDF/test.pdf
+
+# Process
 if [ -s "$OUTPUT_FILE" ]; then
-    mkdir -p "$PDF_DIR"
-    if head -c 4 "$OUTPUT_FILE" | grep -q "%PDF"; then
-        cp "$OUTPUT_FILE" "$PDF_DIR/test.pdf"
-        echo "Captured PDF saved to $PDF_DIR/test.pdf"
+    echo "Saved test.pdf to $PDF_DIR/test.pdf"
+    if grep -q "%PDF" "$OUTPUT_FILE"; then
+        echo "Contains %PDF"
     else
-        echo "Captured data is not a PDF"
-        cat "$OUTPUT_FILE"  # Debug non-PDF content
+        echo "No %PDF, first 20 lines:"
+        xxd "$OUTPUT_FILE" | head -n 20
     fi
-    ls -lh "$PDF_DIR/test.pdf" || true
+    cp "$OUTPUT_FILE" "$PDF_DIR/test_raw.pdf"
+    echo "Saved test_raw.pdf to $PDF_DIR/test_raw.pdf"
+    ls -lh "$PDF_DIR/test.pdf" "$PDF_DIR/test_raw.pdf"
 else
-    echo "No data captured in $OUTPUT_FILE"
+    echo "No data captured" >&2
+    exit 1
 fi

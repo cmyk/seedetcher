@@ -9,7 +9,18 @@ import (
 	"time"
 
 	"seedetcher.com/gui"
+	"seedetcher.com/logutil"
 )
+
+func init() {
+	// Set libcamera environment variables to redirect logs and suppress terminal output
+	os.Setenv("LIBCAMERA_LOG_LEVEL", "ERROR")
+	os.Setenv("LIBCAMERA_LOG_FILE", "/log/libcamera.log")
+	os.Setenv("LIBCAMERA_LOG_OUTPUT", "")
+	os.Setenv("LIBCAMERA_PROVIDER_LOG", "0")
+	os.Setenv("LD_LIBRARY_PATH", "/lib")
+	logutil.DebugLog("Set libcamera environment variables: LOG_LEVEL=ERROR, LOG_FILE=/log/libcamera.log")
+}
 
 func main() {
 	if err := run(); err != nil {

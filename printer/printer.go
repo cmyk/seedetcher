@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -19,11 +18,12 @@ import (
 	"seedetcher.com/seedqr"
 )
 
+// PaperSize defines the supported paper formats for printing.
 type PaperSize string
 
 const (
-	PaperA4     PaperSize = "A4"
-	PaperLetter PaperSize = "Letter"
+	PaperA4     PaperSize = "A4"     // A4 paper size (210x297mm)
+	PaperLetter PaperSize = "Letter" // Letter paper size (216x279mm)
 )
 
 // Load Fonts
@@ -42,15 +42,17 @@ func loadFontData(fontPath string) []byte {
 }
 
 // PrintPDF renders the backup plate layout as a PDF with fixed positions for seed words, QR, and metadata, matching SeedHammer style.
-func printPDFToBuffer(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize) error {
+func PrintPDFToBuffer(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize) error {
+	// Corrected paper dimensions (your original had A4 and Letter swapped)
 	var paperWidth, paperHeight float64
 	switch paperFormat {
 	case PaperA4:
-		paperWidth, paperHeight = 216.0, 279.0 // 8.5x11 inches in mm
-	case PaperLetter:
 		paperWidth, paperHeight = 210.0, 297.0 // A4 in mm
+	case PaperLetter:
+		paperWidth, paperHeight = 216.0, 279.0 // Letter in mm (8.5x11 inches)
 	default:
 		logutil.DebugLog("unsupported paper size: %s", paperFormat)
+		return fmt.Errorf("unsupported paper size: %s", paperFormat)
 	}
 	logutil.DebugLog("Creating PDF with size %fx%f mm", paperWidth, paperHeight)
 	pdf := gofpdf.New("P", "mm", string(paperFormat), "")
@@ -188,22 +190,113 @@ func printPDFToBuffer(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.Output
 	return err
 }
 
-// Update PrintPDF to convert based on capabilities
 func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize, supportsPCL, supportsPostScript bool) error {
+	logutil.DebugLog("Starting PrintPDF")
 	var buf bytes.Buffer
-	if err := printPDFToBuffer(&buf, mnemonic, desc, keyIdx, paperFormat); err != nil {
-		return err
+	logutil.DebugLog("Generating PDF buffer")
+	if err := PrintPDFToBuffer(&buf, mnemonic, desc, keyIdx, paperFormat); err != nil { // Changed to PrintPDFToBuffer
+		return fmt.Errorf("failed to generate PDF: %v", err)
 	}
+	logutil.DebugLog("PDF buffer generated, size: %d bytes", buf.Len())
 
 	if supportsPostScript {
-		cmd := exec.Command("pdftops", "-", "-") // Convert PDF to PostScript
-		cmd.Stdin = &buf
-		cmd.Stdout = w
-		return cmd.Run()
-	} else {
-		cmd := exec.Command("gs", "-dBATCH", "-dNOPAUSE", "-sDEVICE=pcld5", "-sOutputFile=-", "-") // Convert PDF to PCL5
-		cmd.Stdin = &buf
-		cmd.Stdout = w
-		return cmd.Run()
+		logutil.DebugLog("Printer supports PostScript, but skipping for test")
 	}
+	if supportsPCL {
+		logutil.DebugLog("Printer supports PCL, but skipping for test")
+	}
+
+	logutil.DebugLog("Sending raw PDF (test mode)")
+	_, err := w.Write(buf.Bytes())
+	if err != nil {
+		logutil.DebugLog("Write failed: %v", err)
+		return fmt.Errorf("failed to write PDF to printer: %v", err)
+	}
+	logutil.DebugLog("Write completed successfully")
+	return nil
 }
+
+// PrintPDF sends the PDF to the printer, converting to PostScript or PCL with mutool
+// based on printer capabilities, falling back to raw PDF if conversion isn’t possible.
+// func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize, supportsPCL, supportsPostScript bool) error {
+// 	// Generate PDF into a buffer
+// 	var buf bytes.Buffer
+// 	if err := printPDFToBuffer(&buf, mnemonic, desc, keyIdx, paperFormat); err != nil {
+// 		return fmt.Errorf("failed to generate PDF: %v", err)
+// 	}
+
+// 	// Check for mutool availability once, since it’s used for both conversions
+// 	mutoolAvailable := false
+// 	if _, err := exec.LookPath("mutool"); err == nil {
+// 		mutoolAvailable = true
+// 	}
+
+// 	// Prefer PostScript if supported and mutool is available
+// 	if supportsPostScript && mutoolAvailable {
+// 		logutil.DebugLog("Printer supports PostScript, converting with mutool")
+// 		// Create a temporary file for the PDF
+// 		tempFile, err := os.CreateTemp("", "seedetcher-*.pdf")
+// 		if err != nil {
+// 			logutil.DebugLog("Failed to create temp file for PostScript: %v", err)
+// 			goto rawPDF
+// 		}
+// 		defer os.Remove(tempFile.Name()) // Clean up after use
+// 		if _, err := tempFile.Write(buf.Bytes()); err != nil {
+// 			logutil.DebugLog("Failed to write temp PDF for PostScript: %v", err)
+// 			tempFile.Close()
+// 			goto rawPDF
+// 		}
+// 		tempFile.Close()
+
+// 		// Convert to PostScript with mutool
+// 		cmd := exec.Command("mutool", "convert", "-o", "-", "-F", "ps", tempFile.Name())
+// 		cmd.Stdout = w
+// 		if err := cmd.Run(); err != nil {
+// 			logutil.DebugLog("mutool PostScript conversion failed: %v, falling back to raw PDF", err)
+// 			goto rawPDF
+// 		}
+// 		logutil.DebugLog("Sent PostScript via mutool")
+// 		return nil
+// 	} else if supportsPostScript {
+// 		logutil.DebugLog("Printer supports PostScript, but mutool not found, falling back to raw PDF")
+// 	}
+
+// 	// Use PCL if supported and mutool is available (PostScript takes priority)
+// 	if supportsPCL && mutoolAvailable {
+// 		logutil.DebugLog("Printer supports PCL, converting with mutool")
+// 		// Create a temporary file for the PDF
+// 		tempFile, err := os.CreateTemp("", "seedetcher-*.pdf")
+// 		if err != nil {
+// 			logutil.DebugLog("Failed to create temp file for PCL: %v", err)
+// 			goto rawPDF
+// 		}
+// 		defer os.Remove(tempFile.Name()) // Clean up after use
+// 		if _, err := tempFile.Write(buf.Bytes()); err != nil {
+// 			logutil.DebugLog("Failed to write temp PDF for PCL: %v", err)
+// 			tempFile.Close()
+// 			goto rawPDF
+// 		}
+// 		tempFile.Close()
+
+// 		// Convert to PCL with mutool (using default PCL settings for simplicity)
+// 		cmd := exec.Command("mutool", "convert", "-o", "-", "-F", "pcl", tempFile.Name())
+// 		cmd.Stdout = w
+// 		if err := cmd.Run(); err != nil {
+// 			logutil.DebugLog("mutool PCL conversion failed: %v, falling back to raw PDF", err)
+// 			goto rawPDF
+// 		}
+// 		logutil.DebugLog("Sent PCL via mutool")
+// 		return nil
+// 	} else if supportsPCL {
+// 		logutil.DebugLog("Printer supports PCL, but mutool not found, falling back to raw PDF")
+// 	}
+
+// rawPDF:
+// 	// Fallback to sending raw PDF
+// 	logutil.DebugLog("Sending raw PDF")
+// 	_, err := w.Write(buf.Bytes())
+// 	if err != nil {
+// 		return fmt.Errorf("failed to write PDF to printer: %v", err)
+// 	}
+// 	return nil
+// }

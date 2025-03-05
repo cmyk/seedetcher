@@ -32,7 +32,7 @@ import (
 	"seedetcher.com/zbar"
 )
 
-// Debug hooks (ensure unique per build tag if needed, but keep as is for now). blah
+// Debug hooks (ensure unique per build tag if needed, but keep as is for now).
 var (
 	engraverHook func() io.ReadWriteCloser
 	initHook     func(p *Platform) error
@@ -242,35 +242,51 @@ func (p *Platform) CameraFrame(dims image.Point) {
 	c.active = true
 }
 
+// In platform_rpi.go, replace Printer function
 func (p *Platform) Printer() io.Writer {
 	logutil.DebugLog("Attempting to open /dev/ttyGS1")
 	printer, err := os.OpenFile("/dev/ttyGS1", os.O_RDWR, 0) // RDWR for reading response
 	if err != nil {
-		logutil.DebugLog("Failed to open /dev/ttyGS1: %v", err)
-		return os.Stderr // Fallback to stderr, not log file
+		logutil.DebugLog("Failed to open /dev/ttyGS1: %v, falling back to stderr", err)
+		p.printerCached = os.Stderr
+		return p.printerCached
 	}
 	logutil.DebugLog("Successfully opened /dev/ttyGS1")
-	// Query printer capabilities (simplified, assumes connected printer)
-	supportsPCL, supportsPostScript, err := queryPrinterCapabilities(printer, printer)
-	if err != nil {
-		logutil.DebugLog("Printer query failed, assuming PCL: %v", err)
-	}
-	p.supportsPCL = supportsPCL
-	p.supportsPostScript = supportsPostScript
-	return printer // Don’t redirect stdout/stderr here
+	// Skip PJL query for now—assume no PCL/PS support
+	p.supportsPCL = false
+	p.supportsPostScript = false
+	p.printerCached = printer
+	logutil.DebugLog("Printer initialized without query, PCL: %v, PS: %v", p.supportsPCL, p.supportsPostScript)
+	return printer
 }
 
+// In platform_rpi.go, replace PrintPDF function
 func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
 	logutil.DebugLog("Entering PrintPDF with mnemonic length: %d, desc: %v, keyIdx: %d, paper: %s", len(mnemonic), desc != nil, keyIdx, paperFormat)
-	printerDevice := p.Printer()
-	if printerDevice == nil {
+	printerDev := p.Printer()
+	if printerDev == nil {
 		logutil.DebugLog("Printer is nil")
 		return fmt.Errorf("no printer available")
 	}
-	logutil.DebugLog("Printer acquired, calling PrintPDF with PCL: %v, PostScript: %v", p.supportsPCL, p.supportsPostScript)
-	err := printer.PrintPDF(printerDevice, mnemonic, desc, keyIdx, paperFormat, p.supportsPCL, p.supportsPostScript)
-	logutil.DebugLog("PrintPDF returned with err: %v", err)
-	return err
+	logutil.DebugLog("Printer acquired, preparing to write PDF")
+	var buf bytes.Buffer
+	if err := printer.PrintPDFToBuffer(&buf, mnemonic, desc, keyIdx, paperFormat); err != nil {
+		logutil.DebugLog("PDF generation failed: %v", err)
+		return err
+	}
+	logutil.DebugLog("Generated PDF buffer, size: %d bytes, first 20 bytes: %x", buf.Len(), buf.Bytes()[:20])
+	if err := os.WriteFile("/log/debug_pdf.bin", buf.Bytes(), 0644); err != nil {
+		logutil.DebugLog("Failed to write debug PDF file: %v", err)
+	}
+	data := buf.Bytes()
+	n, err := printerDev.Write(data) // Single write
+	if err != nil {
+		logutil.DebugLog("Write failed: %v", err)
+		return err
+	}
+	logutil.DebugLog("Wrote %d bytes to /dev/ttyGS1", n)
+	time.Sleep(2 * time.Second) // Long flush
+	return nil
 }
 
 func (p *Platform) initSDCardNotifier() error {
