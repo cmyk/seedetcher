@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/jung-kurt/gofpdf"
+	"github.com/jung-kurt/gofpdf/v2"
 )
 
 func main() {

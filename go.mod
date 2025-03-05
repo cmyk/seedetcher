@@ -8,7 +8,7 @@ require (
 	github.com/btcsuite/btcd/btcutil v1.1.3
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.3.0
 	github.com/fxamacker/cbor/v2 v2.4.0
-	github.com/jung-kurt/gofpdf v1.16.2
+	github.com/jung-kurt/gofpdf/v2 v2.17.3
 	github.com/kortschak/qr v0.3.0
 	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
 	github.com/tarm/serial v0.0.0-20180830185346-98f6abe2eb07
@@ -29,4 +29,5 @@ require (
 )
 
 replace github.com/kortschak/qr => github.com/seedhammer/kortschak-qr v0.0.0-20240113235555-375796488df0
+
 replace seedetcher.com/logutil => ./logutil

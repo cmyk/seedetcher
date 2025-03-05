@@ -260,7 +260,6 @@ func (p *Platform) Printer() io.Writer {
 	return printer
 }
 
-// In platform_rpi.go, replace PrintPDF function
 func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
 	logutil.DebugLog("Entering PrintPDF with mnemonic length: %d, desc: %v, keyIdx: %d, paper: %s", len(mnemonic), desc != nil, keyIdx, paperFormat)
 	printerDev := p.Printer()
@@ -270,7 +269,8 @@ func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescrip
 	}
 	logutil.DebugLog("Printer acquired, preparing to write PDF")
 	var buf bytes.Buffer
-	if err := printer.PrintPDFToBuffer(&buf, mnemonic, desc, keyIdx, paperFormat); err != nil {
+	// Call printer.PrintPDF with package prefix
+	if err := printer.PrintPDF(&buf, mnemonic, desc, keyIdx, paperFormat, p.supportsPCL, p.supportsPostScript); err != nil {
 		logutil.DebugLog("PDF generation failed: %v", err)
 		return err
 	}
@@ -279,13 +279,13 @@ func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescrip
 		logutil.DebugLog("Failed to write debug PDF file: %v", err)
 	}
 	data := buf.Bytes()
-	n, err := printerDev.Write(data) // Single write
+	n, err := printerDev.Write(data)
 	if err != nil {
 		logutil.DebugLog("Write failed: %v", err)
 		return err
 	}
 	logutil.DebugLog("Wrote %d bytes to /dev/ttyGS1", n)
-	time.Sleep(2 * time.Second) // Long flush
+	time.Sleep(2 * time.Second)
 	return nil
 }
 

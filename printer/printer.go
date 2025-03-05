@@ -10,7 +10,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/jung-kurt/gofpdf"
+	"github.com/jung-kurt/gofpdf/v2"
 	"github.com/kortschak/qr"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
@@ -35,141 +35,127 @@ func loadFontData(fontPath string) []byte {
 	data, err := os.ReadFile(fontPath)
 	if err != nil {
 		logutil.DebugLog("Failed to load font: %v", err)
-		return nil // Return nil instead of crashing
+		return nil
 	}
 	logutil.DebugLog("Font data loaded, size: %d bytes", len(data))
 	return data
 }
 
-// PrintPDF renders the backup plate layout as a PDF with fixed positions for seed words, QR, and metadata, matching SeedHammer style.
-func PrintPDFToBuffer(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize) error {
-	// Corrected paper dimensions (your original had A4 and Letter swapped)
-	var paperWidth, paperHeight float64
-	switch paperFormat {
-	case PaperA4:
-		paperWidth, paperHeight = 210.0, 297.0 // A4 in mm
-	case PaperLetter:
-		paperWidth, paperHeight = 216.0, 279.0 // Letter in mm (8.5x11 inches)
-	default:
-		logutil.DebugLog("unsupported paper size: %s", paperFormat)
-		return fmt.Errorf("unsupported paper size: %s", paperFormat)
+// PrintPDF generates a single 85x85mm PDF plate for a seed phrase, centered on A4/Letter.
+func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize, supportsPCL, supportsPostScript bool) error {
+	logutil.DebugLog("Starting PrintPDF for single seed plate")
+	pdf, err := CreateSeedPlatePDF(mnemonic, desc, keyIdx, paperFormat)
+	if err != nil {
+		return fmt.Errorf("failed to create seed plate PDF: %v", err)
 	}
-	logutil.DebugLog("Creating PDF with size %fx%f mm", paperWidth, paperHeight)
+
+	var buf bytes.Buffer
+	if err := pdf.Output(&buf); err != nil {
+		return fmt.Errorf("failed to generate PDF: %v", err)
+	}
+	_, err = w.Write(buf.Bytes())
+	if err != nil {
+		return fmt.Errorf("failed to write PDF to printer: %v", err)
+	}
+	return nil
+}
+
+// CreateSeedPlatePDF generates a single 85x85mm PDF plate for a seed phrase, centered on A4/Letter.
+func CreateSeedPlatePDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize) (*gofpdf.Fpdf, error) {
 	pdf := gofpdf.New("P", "mm", string(paperFormat), "")
 	pdf.AddPage()
-	logutil.DebugLog("Page added")
-	pdf.SetMargins(0, 0, 0) // Prevent clipping
-	pdf.SetLineWidth(0.2)   // Thicker border for visibility
+	pdf.SetMargins(0, 0, 0)
+	pdf.SetLineWidth(0.2)
 
-	// Try to load and add the Martian Mono font as UTF-8 TrueType
 	var fontName string = "MartianMono"
 	fontData := loadFontData(martianMono)
 	if fontData == nil {
-		logutil.DebugLog("Font data is nil, falling back to Courier")
-		pdf.SetFont("Courier", "", 8) // Fallback to built-in font
+		pdf.SetFont("Courier", "", 8)
 	} else {
 		pdf.AddUTF8FontFromBytes(fontName, "", fontData)
 		if pdf.Err() {
-			logutil.DebugLog("Font load failed: %v", pdf.Error())
-			pdf.SetFont("Courier", "", 8) // Fallback on error
+			pdf.SetFont("Courier", "", 8)
 		} else {
-			logutil.DebugLog("Font loaded")
 			pdf.SetFont(fontName, "", 8)
 		}
 	}
 
-	plateSize := 85.0                                                     // 85x85mm plate
-	plateX, plateY := (paperWidth-plateSize)/2, (paperHeight-plateSize)/2 // Center on page
-	pdf.Rect(plateX, plateY, plateSize, plateSize, "D")                   // Add visible border with 5mm margins
+	plateSize := 85.0
+	plateX, plateY := (210.0-plateSize)/2, (297.0-plateSize)/2
+	pdf.Rect(plateX, plateY, plateSize, plateSize, "D")
 
-	// Calculate fingerprint for the mnemonic using seedetcher.com/bip39 and btcd
+	pdf.SetFont(fontName, "", 5)
+	pdf.Text(plateX+5.0, plateY+5.0, "1/1")
 	var words []string
 	for _, w := range mnemonic {
-		if w != -1 { // Skip placeholder values
+		if w != -1 {
 			words = append(words, bip39.LabelFor(w))
 		}
 	}
-	seed := bip39.MnemonicSeed(mnemonic, "") // Corrected to handle single return value
-	if seed == nil {                         // Check if seed is nil or handle error appropriately
-		return fmt.Errorf("invalid mnemonic: failed to generate seed")
+	seed := bip39.MnemonicSeed(mnemonic, "")
+	if seed == nil {
+		return nil, fmt.Errorf("invalid mnemonic: failed to generate seed")
 	}
 
-	// Generate master key from seed using BIP-32 (btcd)
 	masterKey, err := hdkeychain.NewMaster(seed, &chaincfg.MainNetParams)
 	if err != nil {
-		return fmt.Errorf("failed to derive master key: %v", err)
+		return nil, fmt.Errorf("failed to derive master key: %v", err)
 	}
-
-	// Derive the master public key
 	masterPubKey, err := masterKey.Neuter()
 	if err != nil {
-		return fmt.Errorf("failed to derive master public key: %v", err)
+		return nil, fmt.Errorf("failed to derive master public key: %v", err)
 	}
-
-	// Calculate fingerprint (first 4 bytes of HASH160 of the public key)
-	pubKey, err := masterPubKey.ECPubKey() // Use ECPubKey instead of SerializedPubKey
+	pubKey, err := masterPubKey.ECPubKey()
 	if err != nil {
-		return fmt.Errorf("failed to get public key: %v", err)
+		return nil, fmt.Errorf("failed to get public key: %v", err)
 	}
-	fingerprint := btcutil.Hash160(pubKey.SerializeCompressed())[:4] // Use SerializeCompressed for public key
-	fingerprintHex := fmt.Sprintf("%X", fingerprint)                 // Convert to uppercase hex
+	fingerprint := btcutil.Hash160(pubKey.SerializeCompressed())[:4]
+	fingerprintHex := fmt.Sprintf("%X", fingerprint)
+	pdf.Text(plateX+40.0, plateY+5.0, fingerprintHex)
+	pdf.Text(plateX+70.0, plateY+5.0, "V1")
 
-	// Set font for metadata/title (5pt, matching "SATOSHI'S STASH")
-	pdf.SetFont(fontName, "", 5) // 5pt for metadata/title
-
-	// Render metadata (top, 5mm margins, with calculated fingerprint)
-	pdf.Text(plateX+5.0, plateY+5.0, "1/1")           // Page (top-left, 5mm margin)
-	pdf.Text(plateX+40.0, plateY+5.0, fingerprintHex) // Center fingerprint (40mm from left, 5mm margin)
-	pdf.Text(plateX+70.0, plateY+5.0, "V1")           // Version (top-right, 5mm margin)
-
-	// Reset font for seed words
-	pdf.SetFont(fontName, "", 8) // 8pt for words
-
-	// Render seed words (16 on left, 8 on right for 24 words, or 12 on left for 12 words, 5mm margin, 4mm spacing, stacked vertically, moved down by 5mm)
-	wordYLeft := plateY + 15.0  // Start left column 15mm from top (5mm margin + 10mm padding, down by 5mm)
-	wordYRight := plateY + 15.0 // Start right column at same Y for alignment, down by 5mm
+	pdf.SetFont(fontName, "", 8)
+	wordYLeft := plateY + 15.0
+	wordYRight := plateY + 15.0
 	for i, word := range mnemonic {
-		if word == -1 { // Skip placeholder values
+		if word == -1 {
 			continue
 		}
 		wordStr := strings.ToUpper(bip39.LabelFor(word))
-		if i < 16 { // First 16 words on left column
-			xPos := plateX + 12.0 // Left column, 5mm from left (equal margin)
+		if i < 16 {
+			xPos := plateX + 12.0
 			pdf.Text(xPos, wordYLeft, fmt.Sprintf("%2d %s", i+1, wordStr))
-			if i < 15 { // Increment for left column, excluding last word
-				wordYLeft += 4.0 // 4mm spacing
+			if i < 15 {
+				wordYLeft += 4.0
 			}
-		} else if len(mnemonic) == 24 { // Remaining 8 words on right column for 24 words, stacked vertically
-			xPos := plateX + 45.0 // Right column, 45mm from left (maintain 5mm padding from right)
+		} else if len(mnemonic) == 24 {
+			xPos := plateX + 45.0
 			pdf.Text(xPos, wordYRight, fmt.Sprintf("%2d %s", i+1, wordStr))
-			if i < 23 { // Increment for right column, excluding last word
-				wordYRight += 4.0 // 4mm spacing, matching left column
+			if i < 23 {
+				wordYRight += 4.0
 			}
 		}
 	}
 
-	// Render descriptor data if provided (optional, for metadata or title)
 	if desc != nil {
-		// Add descriptor title or key info (e.g., keyIdx) as metadata or title if applicable
 		descTitle := desc.Title
 		if descTitle == "" {
 			descTitle = fmt.Sprintf("Share %d/%d", keyIdx+1, len(desc.Keys))
 		}
-		pdf.Text(plateX+32.0, plateY+80.0, descTitle) // Add below words, centered, 5mm from bottom
+		pdf.Text(plateX+32.0, plateY+80.0, descTitle)
 	}
 
-	// Render QR code (bottom right corner, aligned with right column’s words left edge, bottom aligned with left column’s bottom, 25mm size, moved down by 5mm)
 	qrContent := seedqr.QR(mnemonic)
 	if len(qrContent) == 0 {
-		return fmt.Errorf("failed to generate QR: empty content")
+		return nil, fmt.Errorf("failed to generate QR: empty content")
 	}
-	qrCode, err := qr.Encode(string(qrContent), qr.M) // Medium error correction
+	qrCode, err := qr.Encode(string(qrContent), qr.M)
 	if err != nil {
-		return fmt.Errorf("failed to encode QR: %v", err)
+		return nil, fmt.Errorf("failed to encode QR: %v", err)
 	}
-	qrSize := 25.0                          // 25mm, matching your previous request
-	qrX := plateX + 45.0                    // Align left edge of QR with left edge of right column’s words (45mm from left)
-	qrY := plateY + plateSize - qrSize - 10 // Align bottom of QR with bottom
+	qrSize := 25.0
+	qrX := plateX + 45.0
+	qrY := plateY + plateSize - qrSize - 10
 	pixelSize := qrSize / float64(qrCode.Size)
 	for y := 0; y < qrCode.Size; y++ {
 		for x := 0; x < qrCode.Size; x++ {
@@ -181,122 +167,8 @@ func PrintPDFToBuffer(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.Output
 		}
 	}
 
-	// Render title (bottom, centered, 5mm margin, matching "SATOSHI'S STASH")
-	pdf.SetFont(fontName, "", 5)                                                                                  // 5pt for title
-	pdf.Text(plateX+(plateSize-pdf.GetStringWidth("SATOSHI'S STASH"))/2, plateY+plateSize-5.0, "SATOSHI'S STASH") // Bottom-center, 5mm margin
-	logutil.DebugLog("Preparing to write PDF")
-	err = pdf.Output(w) // Fixed: Use = instead of :=
-	logutil.DebugLog("PDF write completed with err: %v", err)
-	return err
+	pdf.SetFont(fontName, "", 5)
+	pdf.Text(plateX+(plateSize-pdf.GetStringWidth("SATOSHI'S STASH"))/2, plateY+plateSize-5.0, "SATOSHI'S STASH")
+
+	return pdf, nil
 }
-
-func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize, supportsPCL, supportsPostScript bool) error {
-	logutil.DebugLog("Starting PrintPDF")
-	var buf bytes.Buffer
-	logutil.DebugLog("Generating PDF buffer")
-	if err := PrintPDFToBuffer(&buf, mnemonic, desc, keyIdx, paperFormat); err != nil { // Changed to PrintPDFToBuffer
-		return fmt.Errorf("failed to generate PDF: %v", err)
-	}
-	logutil.DebugLog("PDF buffer generated, size: %d bytes", buf.Len())
-
-	if supportsPostScript {
-		logutil.DebugLog("Printer supports PostScript, but skipping for test")
-	}
-	if supportsPCL {
-		logutil.DebugLog("Printer supports PCL, but skipping for test")
-	}
-
-	logutil.DebugLog("Sending raw PDF (test mode)")
-	_, err := w.Write(buf.Bytes())
-	if err != nil {
-		logutil.DebugLog("Write failed: %v", err)
-		return fmt.Errorf("failed to write PDF to printer: %v", err)
-	}
-	logutil.DebugLog("Write completed successfully")
-	return nil
-}
-
-// PrintPDF sends the PDF to the printer, converting to PostScript or PCL with mutool
-// based on printer capabilities, falling back to raw PDF if conversion isn’t possible.
-// func PrintPDF(w io.Writer, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize, supportsPCL, supportsPostScript bool) error {
-// 	// Generate PDF into a buffer
-// 	var buf bytes.Buffer
-// 	if err := printPDFToBuffer(&buf, mnemonic, desc, keyIdx, paperFormat); err != nil {
-// 		return fmt.Errorf("failed to generate PDF: %v", err)
-// 	}
-
-// 	// Check for mutool availability once, since it’s used for both conversions
-// 	mutoolAvailable := false
-// 	if _, err := exec.LookPath("mutool"); err == nil {
-// 		mutoolAvailable = true
-// 	}
-
-// 	// Prefer PostScript if supported and mutool is available
-// 	if supportsPostScript && mutoolAvailable {
-// 		logutil.DebugLog("Printer supports PostScript, converting with mutool")
-// 		// Create a temporary file for the PDF
-// 		tempFile, err := os.CreateTemp("", "seedetcher-*.pdf")
-// 		if err != nil {
-// 			logutil.DebugLog("Failed to create temp file for PostScript: %v", err)
-// 			goto rawPDF
-// 		}
-// 		defer os.Remove(tempFile.Name()) // Clean up after use
-// 		if _, err := tempFile.Write(buf.Bytes()); err != nil {
-// 			logutil.DebugLog("Failed to write temp PDF for PostScript: %v", err)
-// 			tempFile.Close()
-// 			goto rawPDF
-// 		}
-// 		tempFile.Close()
-
-// 		// Convert to PostScript with mutool
-// 		cmd := exec.Command("mutool", "convert", "-o", "-", "-F", "ps", tempFile.Name())
-// 		cmd.Stdout = w
-// 		if err := cmd.Run(); err != nil {
-// 			logutil.DebugLog("mutool PostScript conversion failed: %v, falling back to raw PDF", err)
-// 			goto rawPDF
-// 		}
-// 		logutil.DebugLog("Sent PostScript via mutool")
-// 		return nil
-// 	} else if supportsPostScript {
-// 		logutil.DebugLog("Printer supports PostScript, but mutool not found, falling back to raw PDF")
-// 	}
-
-// 	// Use PCL if supported and mutool is available (PostScript takes priority)
-// 	if supportsPCL && mutoolAvailable {
-// 		logutil.DebugLog("Printer supports PCL, converting with mutool")
-// 		// Create a temporary file for the PDF
-// 		tempFile, err := os.CreateTemp("", "seedetcher-*.pdf")
-// 		if err != nil {
-// 			logutil.DebugLog("Failed to create temp file for PCL: %v", err)
-// 			goto rawPDF
-// 		}
-// 		defer os.Remove(tempFile.Name()) // Clean up after use
-// 		if _, err := tempFile.Write(buf.Bytes()); err != nil {
-// 			logutil.DebugLog("Failed to write temp PDF for PCL: %v", err)
-// 			tempFile.Close()
-// 			goto rawPDF
-// 		}
-// 		tempFile.Close()
-
-// 		// Convert to PCL with mutool (using default PCL settings for simplicity)
-// 		cmd := exec.Command("mutool", "convert", "-o", "-", "-F", "pcl", tempFile.Name())
-// 		cmd.Stdout = w
-// 		if err := cmd.Run(); err != nil {
-// 			logutil.DebugLog("mutool PCL conversion failed: %v, falling back to raw PDF", err)
-// 			goto rawPDF
-// 		}
-// 		logutil.DebugLog("Sent PCL via mutool")
-// 		return nil
-// 	} else if supportsPCL {
-// 		logutil.DebugLog("Printer supports PCL, but mutool not found, falling back to raw PDF")
-// 	}
-
-// rawPDF:
-// 	// Fallback to sending raw PDF
-// 	logutil.DebugLog("Sending raw PDF")
-// 	_, err := w.Write(buf.Bytes())
-// 	if err != nil {
-// 		return fmt.Errorf("failed to write PDF to printer: %v", err)
-// 	}
-// 	return nil
-// }
