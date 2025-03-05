@@ -1,7 +1,5 @@
 #!/bin/bash
 set -x
-set -e
-
 PDF_DIR="/home/cmyk/PDF"
 OUTPUT_FILE="$PDF_DIR/test.pdf"
 USBDEV="${1:-/dev/ttyACM1}"
@@ -18,8 +16,8 @@ echo "Buffer cleared" >&2
 
 # Capture with timeout
 echo "Waiting for print job at $(date '+%H:%M:%S')..." >&2
-mkdir -p "$PDF_DIR"  # Ensure dir exists
-timeout 5 tee "$OUTPUT_FILE" < "$USBDEV"  # Write directly to /home/cmyk/PDF/test.pdf
+mkdir -p "$PDF_DIR"
+timeout 5 tee "$OUTPUT_FILE" < "$USBDEV" > /dev/null || true
 
 # Process
 if [ -s "$OUTPUT_FILE" ]; then
