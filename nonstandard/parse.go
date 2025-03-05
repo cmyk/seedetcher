@@ -5,6 +5,7 @@ package nonstandard
 import (
 	"crypto/hmac"
 	"crypto/sha512"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
+	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
 )
 
@@ -35,6 +37,42 @@ func ElectrumSeed(phrase string) bool {
 }
 
 func OutputDescriptor(enc []byte) (urtypes.OutputDescriptor, error) {
+	// Try Sparrow base64 format (starts with B$)
+	cleaned := strings.TrimPrefix(string(enc), "B$")
+	if cleaned != string(enc) { // Check if B$ prefix was removed
+		decoded, err := base64.StdEncoding.DecodeString(cleaned)
+		if err == nil {
+			// Try parsing decoded bytes as UR
+			uqr := strings.ToUpper(string(decoded))
+			if strings.HasPrefix(uqr, "UR:") {
+				decoder := ur.Decoder{}
+				if err := decoder.Add(uqr); err != nil {
+					return urtypes.OutputDescriptor{}, fmt.Errorf("UR decode failed: %v", err)
+				}
+				typ, enc, err := decoder.Result()
+				if err != nil {
+					return urtypes.OutputDescriptor{}, fmt.Errorf("UR result failed: %v", err)
+				}
+				if enc == nil {
+					return urtypes.OutputDescriptor{}, fmt.Errorf("no UR encoding")
+				}
+				v, err := urtypes.Parse(typ, enc)
+				if err != nil {
+					return urtypes.OutputDescriptor{}, fmt.Errorf("UR parse failed: %v", err)
+				}
+				if desc, ok := v.(urtypes.OutputDescriptor); ok {
+					return desc, nil
+				}
+				return urtypes.OutputDescriptor{}, fmt.Errorf("not an OutputDescriptor")
+			}
+			// Fall back to text parsing on decoded bytes
+			if desc, err := parseTextOutputDescriptor(string(decoded)); err == nil {
+				return desc, nil
+			}
+		}
+	}
+
+	// Existing logic for other formats
 	if bw, err := parseBlueWalletDescriptor(string(enc)); err == nil && bw.Title != "" {
 		return bw, nil
 	}

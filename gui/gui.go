@@ -529,17 +529,42 @@ func (d *QRDecoder) parseNonStandard(qr []byte) (any, bool) {
 func (d *QRDecoder) parseQR(qr []byte) (any, bool) {
 	uqr := strings.ToUpper(string(qr))
 	if !strings.HasPrefix(uqr, "UR:") {
+		// Try parsing as non-standard, including Sparrow base64
 		d.decoder = ur.Decoder{}
 		return d.parseNonStandard(qr)
 	}
 	d.nsdecoder = nonstandard.Decoder{}
 	if err := d.decoder.Add(uqr); err != nil {
-		// Incompatible fragment. Reset decoder and try again.
-		d.decoder = ur.Decoder{}
-		d.decoder.Add(uqr)
+		// Handle fragmented UR (common in high-density QRs)
+		logutil.DebugLog("UR decode error (fragment?), retrying: %v", err)
+		// Reset and retry with partial accumulation
+		d.decoder = ur.Decoder{} // Reset
+		d.decoder.Add(uqr)       // Try again
+		// Allow partial progress—store fragments for later
+		typ, enc, partialErr := d.decoder.Result()
+		if partialErr != nil && partialErr != io.EOF {
+			logutil.DebugLog("Partial UR result error: %v", partialErr)
+			d.decoder = ur.Decoder{} // Reset again if still broken
+			return nil, false
+		}
+		if enc == nil {
+			return nil, false // Still building—wait for more fragments
+		}
+		// Try parsing the partial or full result
+		v, err := urtypes.Parse(typ, enc)
+		if err == nil {
+			if desc, ok := v.(urtypes.OutputDescriptor); ok {
+				logutil.DebugLog("Parsed descriptor (partial/full): %+v", desc)
+				return desc, true
+			}
+			return v, true
+		}
+		logutil.DebugLog("UR parse failed, trying nonstandard: %v", err)
+		return d.parseNonStandard(qr)
 	}
 	typ, enc, err := d.decoder.Result()
 	if err != nil {
+		logutil.DebugLog("UR result error: %v", err)
 		d.decoder = ur.Decoder{}
 		return nil, false
 	}
@@ -548,10 +573,15 @@ func (d *QRDecoder) parseQR(qr []byte) (any, bool) {
 	}
 	d.decoder = ur.Decoder{}
 	v, err := urtypes.Parse(typ, enc)
-	if err != nil {
-		return nil, true
+	if err == nil {
+		if desc, ok := v.(urtypes.OutputDescriptor); ok {
+			logutil.DebugLog("Parsed descriptor: %+v", desc)
+			return desc, true
+		}
+		return v, true
 	}
-	return v, true
+	logutil.DebugLog("UR parse failed, trying nonstandard: %v", err)
+	return d.parseNonStandard(qr)
 }
 
 type ErrorScreen struct {
@@ -2113,6 +2143,9 @@ func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mn
 				if b, isbytes := res.([]byte); isbytes {
 					d, err := nonstandard.OutputDescriptor(b)
 					desc, ok = d, err == nil
+					if !ok {
+						logutil.DebugLog("Nonstandard parse failed, raw bytes: %s, error: %v", string(b), err)
+					}
 				}
 			}
 			if !ok {
@@ -2122,6 +2155,8 @@ func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mn
 				})
 				continue
 			}
+			// Log the full descriptor for debugging
+			logutil.DebugLog("Scanned descriptor: Type=%v, Script=%s, Keys=%d, Threshold=%d", desc.Type, desc.Script.String(), len(desc.Keys), desc.Threshold)
 			if !address.Supported(desc) {
 				showErr(&ErrorScreen{
 					Title: "Invalid Descriptor",
