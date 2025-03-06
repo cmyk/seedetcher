@@ -269,8 +269,9 @@ func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescrip
 	}
 	logutil.DebugLog("Printer acquired, preparing to write PDF")
 	var buf bytes.Buffer
-	// Call printer.PrintPDF with package prefix
-	if err := printer.PrintPDF(&buf, mnemonic, desc, keyIdx, paperFormat, p.supportsPCL, p.supportsPostScript); err != nil {
+	// Pass a slice of three identical mnemonics
+	mnemonics := []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}
+	if err := printer.PrintPDF(&buf, mnemonics, desc, keyIdx, paperFormat, p.supportsPCL, p.supportsPostScript); err != nil {
 		logutil.DebugLog("PDF generation failed: %v", err)
 		return err
 	}

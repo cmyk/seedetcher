@@ -319,7 +319,11 @@
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/font/martianmono/MartianMono_Condensed-Regular.ttf
     
                 # Create essential initramfs directories
-                mkdir -p initramfs/{bin,lib,share,dev,proc,sys,run}
+                mkdir -p initramfs/{bin,lib,share,dev,proc,sys,run,tmp} # Added tmp here
+
+                # Set permissions for /tmp (1777: readable/writable by all, sticky bit)
+                chmod 1777 initramfs/tmp
+                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/tmp
 
                 # Create /dev/console as an empty file (kernel will handle it)
                 touch initramfs/dev/console
@@ -562,7 +566,7 @@
 
               outputHashMode = "recursive";
               outputHashAlgo = "sha256";
-              outputHash = "9T8y/0OLBW+kGUISMgM1RaPy3EsM8Ip6yIy1UuAs21E=";
+              outputHash = "K1aLQiZvP4p3ptJAIsD67u4C7m4WyLCzMw+kjrdcP5w=";
             };
             controller = self.lib.${system}.mkcontroller false;
             controller-debug = self.lib.${system}.mkcontroller true;
