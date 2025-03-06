@@ -190,6 +190,7 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 		pdf.Text(5.0, y, line)
 		y += 5.0 // Adjust line spacing
 	}
+
 	// pdf.SetFont(fontName, "", 8)
 	// pdf.SetXY(4.0, 10.0)
 	// key := desc.Keys[keyIdx]
@@ -243,7 +244,7 @@ func createDescriptorQR(desc *urtypes.OutputDescriptor) string {
 
 // PrintPDF generates individual 85x85mm PDFs and merges them into an A4/Letter PDF.
 func PrintPDF(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize, supportsPCL, supportsPostScript bool) error {
-	logutil.DebugLog("Starting PrintPDF with %d mnemonics, desc=%v, keyIdx=%d, paperFormat=%s", len(mnemonics), desc != nil, keyIdx, paperFormat)
+	fmt.Printf("Starting PrintPDF with %d mnemonics, desc=%v, keyIdx=%d, paperFormat=%s\n", len(mnemonics), desc != nil, keyIdx, paperFormat)
 	if len(mnemonics) != 3 {
 		return fmt.Errorf("expected exactly 3 mnemonics, got %d", len(mnemonics))
 	}
@@ -252,17 +253,18 @@ func PrintPDF(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescr
 	if desc != nil && len(desc.Keys) > 1 {
 		totalShares = len(desc.Keys)
 	}
-	logutil.DebugLog("Total shares: %d", totalShares)
+	fmt.Printf("Calculated totalShares: %d based on desc.Keys length: %d\n", totalShares, len(desc.Keys))
 
-	// Use a fixed temporary directory
 	tempDir := "/tmp/seedetcher-plates-test"
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return fmt.Errorf("failed to create temp directory %s: %v", tempDir, err)
 	}
-	logutil.DebugLog("Using directory: %s", tempDir)
+	fmt.Printf("Using directory: %s\n", tempDir)
 
-	// Generate and save seed plate PDFs
-	for i, mnemonic := range mnemonics {
+	// Generate and save seed plate PDFs based on totalShares
+	for i := 0; i < totalShares; i++ {
+		mnemonic := mnemonics[i] // Use only the required number of mnemonics
+		fmt.Printf("Generating seed plate %d\n", i+1)
 		seedPDF, buf, err := createSeedPlate(mnemonic, i+1, totalShares)
 		if err != nil {
 			return fmt.Errorf("failed to create seed plate %d: %v", i+1, err)
@@ -274,14 +276,19 @@ func PrintPDF(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescr
 		if err := os.WriteFile(seedFile, buf.Bytes(), 0644); err != nil {
 			return fmt.Errorf("failed to write seed PDF %d to %s: %v", i+1, seedFile, err)
 		}
-		logutil.DebugLog("Generated seed plate %d at %s, size: %d bytes", i+1, seedFile, buf.Len())
-		logutil.DebugLog("First 100 bytes of seed_%d.pdf: %x", i, buf.Bytes()[:min(100, buf.Len())])
-		// Avoid memory leak by closing the PDF
+		fmt.Printf("Generated seed plate %d at %s, size: %d bytes\n", i+1, seedFile, buf.Len())
+		fmt.Printf("First 100 bytes of seed_%d.pdf: %x\n", i, buf.Bytes()[:min(100, buf.Len())])
 		seedPDF.Close()
 	}
 
-	// Generate and save descriptor plate PDFs
-	for i := 0; i < 3; i++ {
+	// Generate descriptor plates based on totalShares
+	numDescPlates := 1
+	if totalShares > 1 {
+		numDescPlates = totalShares
+	}
+	fmt.Printf("Generating %d descriptor plates for totalShares %d\n", numDescPlates, totalShares)
+	for i := 0; i < numDescPlates; i++ {
+		fmt.Printf("Generating descriptor plate %d\n", i+1)
 		var descFile string
 		var buf bytes.Buffer
 		if desc != nil {
@@ -323,8 +330,8 @@ func PrintPDF(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescr
 			}
 			pdf.Close()
 		}
-		logutil.DebugLog("Generated descriptor plate %d at %s, size: %d bytes", i+1, descFile, buf.Len())
-		logutil.DebugLog("First 100 bytes of desc_%d.pdf: %x", i, buf.Bytes()[:min(100, buf.Len())])
+		fmt.Printf("Generated descriptor plate %d at %s, size: %d bytes\n", i+1, descFile, buf.Len())
+		fmt.Printf("First 100 bytes of desc_%d.pdf: %x\n", i, buf.Bytes()[:min(100, buf.Len())])
 	}
 
 	return nil
