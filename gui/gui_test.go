@@ -84,9 +84,9 @@ func TestDescriptorScreenError(t *testing.T) {
 	}
 }
 
-func (p *testPlatform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
+func (p *testPlatform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
 	// Mock implementation for tests
-	return nil // or log.Println("PrintPDF called in testPlatform")
+	return nil
 }
 
 func (p *testPlatform) Printer() io.Writer {

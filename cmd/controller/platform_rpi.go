@@ -78,10 +78,11 @@ type Platform struct {
 	printerCached      io.Writer
 	supportsPCL        bool
 	supportsPostScript bool
+	printing           bool // Add flag to track printing state
 }
 
 func Init() (*Platform, error) {
-	log.Println("Running platform_rpi.go") // Add this to platform_rpi.go
+	log.Println("Running platform_rpi.go")
 	_ = mountFS()
 	p := &Platform{
 		events:  make(chan gui.Event, 10),
@@ -90,11 +91,16 @@ func Init() (*Platform, error) {
 	c := &p.camera
 	c.frames = make(chan gui.FrameEvent)
 	c.out = make(chan gui.FrameEvent)
+	// Set printing temporarily during initialization to prevent debug redirection
+	p.printing = true
 	if initHook != nil {
 		if err := initHook(p); err != nil {
+			p.printing = false
 			log.Printf("debug: %v", err)
+			return nil, err
 		}
 	}
+	p.printing = false // Reset after initHook
 	if err := p.initSDCardNotifier(); err != nil {
 		return nil, err
 	}
@@ -260,32 +266,66 @@ func (p *Platform) Printer() io.Writer {
 	return printer
 }
 
-func (p *Platform) PrintPDF(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
-	logutil.DebugLog("Entering PrintPDF with mnemonic length: %d, desc: %v, keyIdx: %d, paper: %s", len(mnemonic), desc != nil, keyIdx, paperFormat)
+func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
+	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d, paper: %s", len(mnemonic), desc != nil, keyIdx, paperFormat)
 	printerDev := p.Printer()
 	if printerDev == nil {
 		logutil.DebugLog("Printer is nil")
 		return fmt.Errorf("no printer available")
 	}
 	logutil.DebugLog("Printer acquired, preparing to write PDF")
+
+	p.printing = true                     // Set printing flag
+	defer func() { p.printing = false }() // Reset on exit
+
 	var buf bytes.Buffer
-	// Pass a slice of three identical mnemonics
-	mnemonics := []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}
-	if err := printer.PrintPDF(&buf, mnemonics, desc, keyIdx, paperFormat, p.supportsPCL, p.supportsPostScript); err != nil {
+	if err := printer.CreatePlates(&buf, []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}, desc, keyIdx, paperFormat, p.supportsPCL, p.supportsPostScript); err != nil {
 		logutil.DebugLog("PDF generation failed: %v", err)
 		return err
 	}
-	logutil.DebugLog("Generated PDF buffer, size: %d bytes, first 20 bytes: %x", buf.Len(), buf.Bytes()[:20])
+	logutil.DebugLog("Generated PDF buffer, size: %d bytes", buf.Len())
+	if buf.Len() > 0 {
+		logutil.DebugLog("First 20 bytes of generated PDF: %x", buf.Bytes()[:min(20, buf.Len())])
+	} else {
+		logutil.DebugLog("Generated PDF buffer is empty (expected, as files are written to disk)")
+	}
 	if err := os.WriteFile("/log/debug_pdf.bin", buf.Bytes(), 0644); err != nil {
 		logutil.DebugLog("Failed to write debug PDF file: %v", err)
 	}
-	data := buf.Bytes()
-	n, err := printerDev.Write(data)
-	if err != nil {
-		logutil.DebugLog("Write failed: %v", err)
-		return err
+
+	data := make([]byte, buf.Len())
+	copy(data, buf.Bytes())
+	logutil.DebugLog("Copied PDF data, size: %d bytes", len(data))
+	if len(data) > 0 {
+		logutil.DebugLog("First 20 bytes of copied PDF data: %x", data[:min(20, len(data))])
+	} else {
+		logutil.DebugLog("Copied PDF data is empty (expected, as files are written to disk)")
 	}
-	logutil.DebugLog("Wrote %d bytes to /dev/ttyGS1", n)
+	if len(data) == 0 {
+		logutil.DebugLog("Data is empty, cannot write to printer")
+		return fmt.Errorf("no data to write to printer")
+	}
+
+	const chunkSize = 1024
+	for i := 0; i < len(data); i += chunkSize {
+		end := i + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		chunk := data[i:end]
+		logutil.DebugLog("Preparing chunk %d, size: %d bytes", i/chunkSize, len(chunk))
+		if len(chunk) > 0 {
+			logutil.DebugLog("First 20 bytes of chunk %d: %x", i/chunkSize, chunk[:min(20, len(chunk))])
+		} else {
+			logutil.DebugLog("Chunk %d is empty", i/chunkSize)
+		}
+		n, err := printerDev.Write(chunk)
+		if err != nil {
+			logutil.DebugLog("Write chunk %d failed: %v, wrote %d bytes", i/chunkSize, err, n)
+			return err
+		}
+		logutil.DebugLog("Wrote chunk %d, %d bytes", i/chunkSize, n)
+	}
 	time.Sleep(2 * time.Second)
 	return nil
 }

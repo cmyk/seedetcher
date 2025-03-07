@@ -131,8 +131,12 @@ func main() {
 		defer file.Close()
 
 		// Generate PDF
-		if err := printer.PrintPDF(file, mnemonics, desc, 0, printer.PaperSize(*paperSize), false, false); err != nil {
+		if err := printer.CreatePlates(file, mnemonics, desc, 0, printer.PaperSize(*paperSize), false, false); err != nil {
 			fmt.Printf("Error generating PDF %s: %v\n", config.outputFile, err)
+			os.Exit(1)
+		}
+		if err := printer.CreatePageLayout(file, "/tmp/seedetcher-plates-test", printer.PaperSize(*paperSize)); err != nil {
+			fmt.Printf("Error merging PDF %s: %v\n", config.outputFile, err)
 			os.Exit(1)
 		}
 		if *verbose {

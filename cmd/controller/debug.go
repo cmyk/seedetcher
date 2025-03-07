@@ -30,6 +30,10 @@ func click(btn gui.Button) []gui.ButtonEvent {
 }
 
 func debugCommand(cmd string) []gui.ButtonEvent {
+	if platform != nil && platform.printing {
+		logutil.DebugLog("Skipping debug command during printing: %q", cmd)
+		return nil
+	}
 
 	var evts []gui.ButtonEvent
 	switch {

@@ -13,6 +13,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/jung-kurt/gofpdf/v2"
 	"github.com/kortschak/qr"
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/logutil"
@@ -243,28 +246,30 @@ func createDescriptorQR(desc *urtypes.OutputDescriptor) string {
 }
 
 // PrintPDF generates individual 85x85mm PDFs and merges them into an A4/Letter PDF.
-func PrintPDF(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize, supportsPCL, supportsPostScript bool) error {
-	fmt.Printf("Starting PrintPDF with %d mnemonics, desc=%v, keyIdx=%d, paperFormat=%s\n", len(mnemonics), desc != nil, keyIdx, paperFormat)
+func CreatePlates(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat PaperSize, supportsPCL, supportsPostScript bool) error {
+	logutil.DebugLog("Starting CreatePlates with %d mnemonics, desc=%v, keyIdx=%d, paperFormat=%s", len(mnemonics), desc != nil, keyIdx, paperFormat)
 	if len(mnemonics) != 3 {
 		return fmt.Errorf("expected exactly 3 mnemonics, got %d", len(mnemonics))
 	}
 
-	totalShares := 1
-	if desc != nil && len(desc.Keys) > 1 {
+	// Default totalShares to number of mnemonics if desc is nil
+	totalShares := len(mnemonics)
+	if desc != nil && len(desc.Keys) > 0 {
 		totalShares = len(desc.Keys)
+		logutil.DebugLog("Calculated totalShares: %d based on desc.Keys length: %d", totalShares, len(desc.Keys))
+	} else {
+		logutil.DebugLog("Descriptor is nil or Keys is empty, defaulting totalShares to %d (number of mnemonics)", totalShares)
 	}
-	fmt.Printf("Calculated totalShares: %d based on desc.Keys length: %d\n", totalShares, len(desc.Keys))
 
 	tempDir := "/tmp/seedetcher-plates-test"
 	if err := os.MkdirAll(tempDir, 0755); err != nil {
 		return fmt.Errorf("failed to create temp directory %s: %v", tempDir, err)
 	}
-	fmt.Printf("Using directory: %s\n", tempDir)
+	logutil.DebugLog("Using directory: %s", tempDir)
 
-	// Generate and save seed plate PDFs based on totalShares
 	for i := 0; i < totalShares; i++ {
-		mnemonic := mnemonics[i] // Use only the required number of mnemonics
-		fmt.Printf("Generating seed plate %d\n", i+1)
+		mnemonic := mnemonics[i%len(mnemonics)] // Cycle through mnemonics if totalShares > 3
+		logutil.DebugLog("Generating seed plate %d", i+1)
 		seedPDF, buf, err := createSeedPlate(mnemonic, i+1, totalShares)
 		if err != nil {
 			return fmt.Errorf("failed to create seed plate %d: %v", i+1, err)
@@ -276,22 +281,19 @@ func PrintPDF(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescr
 		if err := os.WriteFile(seedFile, buf.Bytes(), 0644); err != nil {
 			return fmt.Errorf("failed to write seed PDF %d to %s: %v", i+1, seedFile, err)
 		}
-		fmt.Printf("Generated seed plate %d at %s, size: %d bytes\n", i+1, seedFile, buf.Len())
-		fmt.Printf("First 100 bytes of seed_%d.pdf: %x\n", i, buf.Bytes()[:min(100, buf.Len())])
+		logutil.DebugLog("Generated seed plate %d at %s, size: %d bytes", i+1, seedFile, buf.Len())
+		logutil.DebugLog("First 100 bytes of seed_%d.pdf: %x", i, buf.Bytes()[:min(100, buf.Len())])
 		seedPDF.Close()
 	}
 
-	// Generate descriptor plates based on totalShares
-	numDescPlates := 1
-	if totalShares > 1 {
+	numDescPlates := 0
+	if desc != nil && len(desc.Keys) > 0 {
 		numDescPlates = totalShares
-	}
-	fmt.Printf("Generating %d descriptor plates for totalShares %d\n", numDescPlates, totalShares)
-	for i := 0; i < numDescPlates; i++ {
-		fmt.Printf("Generating descriptor plate %d\n", i+1)
-		var descFile string
-		var buf bytes.Buffer
-		if desc != nil {
+		logutil.DebugLog("Generating %d descriptor plates for totalShares %d", numDescPlates, totalShares)
+		for i := 0; i < numDescPlates; i++ {
+			logutil.DebugLog("Generating descriptor plate %d", i+1)
+			var descFile string
+			var buf bytes.Buffer
 			descPDF, err := createDescriptorPlate(desc, keyIdx, i+1, totalShares)
 			if err != nil {
 				return fmt.Errorf("failed to create descriptor plate %d: %v", i+1, err)
@@ -306,34 +308,116 @@ func PrintPDF(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescr
 			if err := os.WriteFile(descFile, buf.Bytes(), 0644); err != nil {
 				return fmt.Errorf("failed to write descriptor PDF %d to %s: %v", i+1, descFile, err)
 			}
+			logutil.DebugLog("Generated descriptor plate %d at %s, size: %d bytes", i+1, descFile, buf.Len())
+			logutil.DebugLog("First 100 bytes of desc_%d.pdf: %x", i, buf.Bytes()[:min(100, buf.Len())])
 			descPDF.Close()
-		} else {
-			pdf := gofpdf.NewCustom(&gofpdf.InitType{
-				UnitStr: "mm",
-				Size:    gofpdf.SizeType{Wd: 85, Ht: 85},
-			})
-			pdf.AddPage()
-			pdf.SetMargins(0, 0, 0)
-			pdf.SetLineWidth(0.2)
-			pdf.Rect(0, 0, 85.0, 85.0, "D")
-			pdf.SetFont("Courier", "", 8)
-			pdf.Text(5.0, 5.0, "No Descriptor")
-			if err := pdf.Output(&buf); err != nil {
-				return fmt.Errorf("failed to generate placeholder PDF %d: %v", i+1, err)
-			}
-			if buf.Len() == 0 {
-				return fmt.Errorf("placeholder PDF %d is empty after Output", i+1)
-			}
-			descFile = filepath.Join(tempDir, fmt.Sprintf("desc_%d.pdf", i))
-			if err := os.WriteFile(descFile, buf.Bytes(), 0644); err != nil {
-				return fmt.Errorf("failed to write placeholder PDF %d to %s: %v", i+1, descFile, err)
-			}
-			pdf.Close()
 		}
-		fmt.Printf("Generated descriptor plate %d at %s, size: %d bytes\n", i+1, descFile, buf.Len())
-		fmt.Printf("First 100 bytes of desc_%d.pdf: %x\n", i, buf.Bytes()[:min(100, buf.Len())])
+	} else {
+		logutil.DebugLog("Descriptor is nil or Keys is empty, skipping descriptor plate generation")
 	}
 
+	return nil
+}
+
+// createPageLayout merges the generated plates into an A4 PDF with a 2x3 layout and writes to w.
+func CreatePageLayout(w io.Writer, tempDir string, paperFormat PaperSize) error {
+	logutil.DebugLog("Starting CreatePageLayout with tempDir: %s, paperFormat: %s", tempDir, paperFormat)
+
+	// Collect seed and descriptor plates separately
+	var seedFiles, descFiles []string
+	for i := 0; i < 3; i++ {
+		seedFile := filepath.Join(tempDir, fmt.Sprintf("seed_%d.pdf", i))
+		if _, err := os.Stat(seedFile); err == nil {
+			seedFiles = append(seedFiles, seedFile)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(tempDir, "desc_0.pdf")); err == nil {
+		files, err := filepath.Glob(filepath.Join(tempDir, "desc_*.pdf"))
+		if err != nil {
+			return fmt.Errorf("failed to glob descriptor files: %v", err)
+		}
+		descFiles = append(descFiles, files...)
+	}
+	logutil.DebugLog("Found %d seed files: %v", len(seedFiles), seedFiles)
+	logutil.DebugLog("Found %d desc files: %v", len(descFiles), descFiles)
+
+	if len(seedFiles) == 0 && len(descFiles) == 0 {
+		logutil.DebugLog("No PDF files found to merge")
+		return fmt.Errorf("no PDF files generated to merge")
+	}
+
+	// Arrange files for 2x3 grid: seed plates in left column, descriptor plates in right column
+	// Position: 1 2  (seed_0, desc_0)
+	//           3 4  (seed_1, desc_1)
+	//           5 6  (seed_2, desc_2)
+	allFiles := make([]string, 0, 6)
+	for i := 0; i < 3; i++ {
+		if i < len(seedFiles) {
+			allFiles = append(allFiles, seedFiles[i]) // Left column: seed
+		} else {
+			allFiles = append(allFiles, "") // Empty slot if no seed plate
+		}
+		if i < len(descFiles) {
+			allFiles = append(allFiles, descFiles[i]) // Right column: desc
+		} else {
+			allFiles = append(allFiles, "") // Empty slot if no desc plate
+		}
+	}
+	logutil.DebugLog("Arranged files for NUp: %v", allFiles)
+
+	// Map paperFormat to dimensions
+	var pageSize string
+	switch paperFormat {
+	case PaperA4:
+		pageSize = "A4"
+	case PaperLetter:
+		pageSize = "Letter"
+	default:
+		return fmt.Errorf("unsupported paper size: %v", paperFormat)
+	}
+
+	// Concatenate all PDFs into a single temporary PDF
+	tempConcatFile := filepath.Join(tempDir, "concat.pdf")
+	if err := api.MergeCreateFile(allFiles, tempConcatFile, false, nil); err != nil {
+		logutil.DebugLog("Failed to merge PDFs: %v", err)
+		return fmt.Errorf("failed to merge PDFs: %v", err)
+	}
+	defer os.Remove(tempConcatFile)
+	if info, err := os.Stat(tempConcatFile); err == nil {
+		logutil.DebugLog("Size of concat.pdf: %d bytes", info.Size())
+	} else {
+		logutil.DebugLog("Failed to stat concat.pdf: %v", err)
+	}
+
+	// Arrange in 3x2 grid on one page
+	tempNUpFile := filepath.Join(tempDir, "nup.pdf")
+	nupConfig := model.DefaultNUpConfig()
+	nupConfig.PageSize = pageSize
+	nupConfig.Grid = &types.Dim{Width: 2, Height: 3} // 3 rows, 2 columns
+	nupConfig.UserDim = true                         // Force page size to be respected
+	nupConfig.PageDim = types.PaperSize[pageSize]    // Set A4/Letter dimensions
+	if err := api.NUpFile([]string{tempConcatFile}, tempNUpFile, nil, nupConfig, nil); err != nil {
+		logutil.DebugLog("Failed to create NUp layout: %v", err)
+		return fmt.Errorf("failed to create NUp layout: %v", err)
+	}
+	defer os.Remove(tempNUpFile)
+	if info, err := os.Stat(tempNUpFile); err == nil {
+		logutil.DebugLog("Size of nup.pdf: %d bytes", info.Size())
+	} else {
+		logutil.DebugLog("Failed to stat nup.pdf: %v", err)
+	}
+
+	// Write the NUp PDF to w
+	nupBytes, err := os.ReadFile(tempNUpFile)
+	if err != nil {
+		return fmt.Errorf("failed to read NUp PDF: %v", err)
+	}
+	logutil.DebugLog("nupBytes length before write: %d", len(nupBytes))
+	if _, err := w.Write(nupBytes); err != nil {
+		return fmt.Errorf("failed to write NUp PDF: %v", err)
+	}
+
+	logutil.DebugLog("Wrote NUp PDF to output, size: %d bytes", len(nupBytes))
 	return nil
 }
 

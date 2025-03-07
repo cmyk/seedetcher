@@ -9,7 +9,6 @@ import (
 	"image"
 	"image/png"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +25,7 @@ const dmesg = false
 var screenshotCounter int
 
 func init() {
-	log.Printf("Debug mode active debug_rpi.go")
+	logutil.DebugLog("DEBUG: Init function executed, debug mode enabled")
 	// Set debug hooks for platform_rpi.go
 	engraverHook = func() io.ReadWriteCloser {
 		return mjolnir.NewSimulator()
@@ -41,9 +40,12 @@ func dbgInit(p *Platform) error {
 	if err != nil {
 		return err
 	}
-	// Redirect stderr and stdout
-	unix.Dup2(int(s.Fd()), syscall.Stderr)
-	unix.Dup2(int(s.Fd()), syscall.Stdout)
+	// Only redirect stdout/stderr if not printing
+	if !p.printing {
+		unix.Dup2(int(s.Fd()), syscall.Stderr)
+		unix.Dup2(int(s.Fd()), syscall.Stdout)
+		logutil.DebugLog("Redirected stdout/stderr to /dev/ttyGS1")
+	}
 	go func() {
 		defer s.Close()
 		if err := runSerial(p, s); err != nil {
@@ -94,8 +96,12 @@ func runSerial(p *Platform, s io.Reader) error {
 			name := fmt.Sprintf("screenshot%d.png", screenshotCounter)
 			dumpImage(name, p.display.Framebuffer())
 		default:
-			for _, e := range debugCommand(line) {
-				p.events <- e.Event()
+			if !p.printing {
+				for _, e := range debugCommand(line) {
+					p.events <- e.Event()
+				}
+			} else {
+				logutil.DebugLog("Skipping command during printing: %q", line)
 			}
 		}
 	}
@@ -118,14 +124,14 @@ func writeReloader(s io.Reader, binFile string, size int64) (ferr error) {
 func dumpImage(name string, img image.Image) {
 	buf := new(bytes.Buffer)
 	if err := png.Encode(buf, img); err != nil {
-		log.Printf("screenshot: failed to encode: %v", err)
+		logutil.DebugLog("screenshot: failed to encode: %v", err)
 		return
 	}
 	if err := dumpFile(name, buf); err != nil {
-		log.Printf("screenshot: %s: %v", name, err)
+		logutil.DebugLog("screenshot: %s: %v", name, err)
 		return
 	}
-	log.Printf("screenshot: dumped %s", name)
+	logutil.DebugLog("screenshot: dumped %s", name)
 }
 
 func dumpFile(path string, r io.Reader) (ferr error) {
