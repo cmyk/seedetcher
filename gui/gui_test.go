@@ -28,7 +28,6 @@ import (
 	"seedetcher.com/font/constant"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/nonstandard"
-	"seedetcher.com/printer"
 	"seedetcher.com/seedqr"
 )
 
@@ -84,7 +83,7 @@ func TestDescriptorScreenError(t *testing.T) {
 	}
 }
 
-func (p *testPlatform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
+func (p *testPlatform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
 	// Mock implementation for tests
 	return nil
 }
