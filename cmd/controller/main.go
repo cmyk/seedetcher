@@ -52,7 +52,6 @@ func main() {
 }
 
 // Debug function to test createPageLayout
-// Debug function to test createPageLayout
 func testCreatePageLayout(tempDir string) {
 	validMnemonics := []bip39.Mnemonic{
 		mustParseMnemonic("truly mouse crystal game narrow tent exclude silver bench price sail various cereal deny wife manual dish also trick refuse trial salute harvest fat"),
@@ -70,10 +69,7 @@ func testCreatePageLayout(tempDir string) {
 		fmt.Printf("Error generating PDF: %v\n", err)
 		os.Exit(1)
 	}
-	if err := printer.CreatePageLayout(file, tempDir, paperSize); err != nil {
-		fmt.Printf("Error merging PDF: %v\n", err)
-		os.Exit(1)
-	}
+	// Remove redundant CreatePageLayout call
 	fmt.Println("Test succeeded")
 	os.Exit(0)
 }

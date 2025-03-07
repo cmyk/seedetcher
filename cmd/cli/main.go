@@ -135,10 +135,7 @@ func main() {
 			fmt.Printf("Error generating PDF %s: %v\n", config.outputFile, err)
 			os.Exit(1)
 		}
-		if err := printer.CreatePageLayout(file, "/tmp/seedetcher-plates-test", printer.PaperSize(*paperSize)); err != nil {
-			fmt.Printf("Error merging PDF %s: %v\n", config.outputFile, err)
-			os.Exit(1)
-		}
+		// Remove redundant CreatePageLayout call
 		if *verbose {
 			fmt.Printf("Generated %s\n", config.outputFile)
 		}
