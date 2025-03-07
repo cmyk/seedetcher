@@ -266,8 +266,8 @@ func (p *Platform) Printer() io.Writer {
 	return printer
 }
 
-func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error {
-	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d, paper: %s", len(mnemonic), desc != nil, keyIdx, paperFormat)
+func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
+	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 	printerDev := p.Printer()
 	if printerDev == nil {
 		logutil.DebugLog("Printer is nil")
@@ -279,7 +279,8 @@ func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDes
 	defer func() { p.printing = false }() // Reset on exit
 
 	var buf bytes.Buffer
-	if err := printer.CreatePlates(&buf, []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}, desc, keyIdx, paperFormat, p.supportsPCL, p.supportsPostScript); err != nil {
+	seedPaths, descPaths, tempDir, err := printer.CreatePlates(&buf, []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}, desc, keyIdx, p.supportsPCL, p.supportsPostScript)
+	if err != nil {
 		logutil.DebugLog("PDF generation failed: %v", err)
 		return err
 	}
@@ -305,6 +306,24 @@ func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDes
 		logutil.DebugLog("Data is empty, cannot write to printer")
 		return fmt.Errorf("no data to write to printer")
 	}
+
+	if err := printer.CreatePageLayout(printerDev, tempDir, printer.PaperA4, seedPaths, descPaths); err != nil { // Default to PaperA4
+		logutil.DebugLog("Failed to merge PDF: %v", err)
+		return err
+	}
+
+	// Clean up temp files after CreatePageLayout
+	for _, path := range seedPaths {
+		if path != "" {
+			os.Remove(path)
+		}
+	}
+	for _, path := range descPaths {
+		if path != "" {
+			os.Remove(path)
+		}
+	}
+	os.RemoveAll(tempDir)
 
 	const chunkSize = 1024
 	for i := 0; i < len(data); i += chunkSize {
@@ -401,4 +420,11 @@ func mountFS() error {
 		}
 	}
 	return nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

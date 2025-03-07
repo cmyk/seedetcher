@@ -130,12 +130,30 @@ func main() {
 		}
 		defer file.Close()
 
-		// Generate PDF
-		if err := printer.CreatePlates(file, mnemonics, desc, 0, printer.PaperSize(*paperSize), false, false); err != nil {
-			fmt.Printf("Error generating PDF %s: %v\n", config.outputFile, err)
+		// Generate plates and merge
+		seedPaths, descPaths, tempDir, err := printer.CreatePlates(file, mnemonics, desc, 0, false, false)
+		if err != nil {
+			fmt.Printf("Error generating plates for %s: %v\n", config.outputFile, err)
 			os.Exit(1)
 		}
-		// Remove redundant CreatePageLayout call
+		if err := printer.CreatePageLayout(file, tempDir, printer.PaperSize(*paperSize), seedPaths, descPaths); err != nil {
+			fmt.Printf("Error merging PDF %s: %v\n", config.outputFile, err)
+			os.Exit(1)
+		}
+
+		// Clean up temp files after CreatePageLayout
+		for _, path := range seedPaths {
+			if path != "" {
+				os.Remove(path)
+			}
+		}
+		for _, path := range descPaths {
+			if path != "" {
+				os.Remove(path)
+			}
+		}
+		os.RemoveAll(tempDir)
+
 		if *verbose {
 			fmt.Printf("Generated %s\n", config.outputFile)
 		}

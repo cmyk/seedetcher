@@ -2810,7 +2810,7 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 	var printErr error
 	go func() {
 		// Run print in background
-		if err := ctx.Platform.CreatePlates(mnemonic, desc, keyIdx, paperFormat); err != nil {
+		if err := ctx.Platform.CreatePlates(mnemonic, desc, keyIdx); err != nil {
 			logutil.DebugLog("Print failed in progress: %v", err)
 			printErr = err
 		}
@@ -2879,7 +2879,7 @@ type Platform interface {
 	ScanQR(qr *image.Gray) ([][]byte, error)
 	Debug() bool
 	Printer() io.Writer
-	CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) error
+	CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error
 }
 
 type Engraver interface {

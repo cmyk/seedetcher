@@ -1,5 +1,3 @@
-// command controller is the user interface for printing SeedEtcher backup plates.
-// It runs on a Raspberry Pi Zero, in the same configuration as SeedSigner.
 package main
 
 import (
@@ -12,7 +10,7 @@ import (
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui"
 	"seedetcher.com/logutil"
-	"seedetcher.com/printer" // Ensure printer package is imported for CreatePlates and createPageLayout
+	"seedetcher.com/printer"
 )
 
 var platform *Platform // Global platform variable
@@ -65,11 +63,29 @@ func testCreatePageLayout(tempDir string) {
 	}
 	defer file.Close()
 	paperSize := printer.PaperA4 // Default to A4 for testing
-	if err := printer.CreatePlates(file, validMnemonics, nil, 0, paperSize, false, false); err != nil {
+	seedPaths, descPaths, tempDir, err := printer.CreatePlates(file, validMnemonics, nil, 0, false, false)
+	if err != nil {
 		fmt.Printf("Error generating PDF: %v\n", err)
 		os.Exit(1)
 	}
-	// Remove redundant CreatePageLayout call
+	if err := printer.CreatePageLayout(file, tempDir, paperSize, seedPaths, descPaths); err != nil {
+		fmt.Printf("Error merging PDF: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Clean up temp files after CreatePageLayout
+	for _, path := range seedPaths {
+		if path != "" {
+			os.Remove(path)
+		}
+	}
+	for _, path := range descPaths {
+		if path != "" {
+			os.Remove(path)
+		}
+	}
+	os.RemoveAll(tempDir)
+
 	fmt.Println("Test succeeded")
 	os.Exit(0)
 }
