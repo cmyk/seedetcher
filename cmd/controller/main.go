@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -10,8 +11,8 @@ import (
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui"
 	"seedetcher.com/logutil"
-	"seedetcher.com/nonstandard"
 	"seedetcher.com/printer"
+	"seedetcher.com/testutils"
 )
 
 var platform *Platform // Global platform variable
@@ -35,13 +36,15 @@ func initPlatform() (*Platform, error) {
 }
 
 func main() {
+	f := testutils.DefineFlags()
+	flag.Parse()
+
 	if len(os.Args) > 1 && os.Args[1] == "--test-createPageLayout" {
 		if len(os.Args) != 3 {
 			fmt.Fprintf(os.Stderr, "Usage: %s --test-createPageLayout <tempDir>\n", os.Args[0])
 			os.Exit(1)
 		}
-		tempDir := os.Args[2]
-		testCreatePageLayout(tempDir)
+		testCreatePageLayout(f, os.Args[2])
 		os.Exit(0)
 	}
 	if err := run(); err != nil {
@@ -51,16 +54,15 @@ func main() {
 }
 
 // Debug function to test createPageLayout
-func testCreatePageLayout(tempDir string) {
-	mnemonics := []bip39.Mnemonic{
-		mustParseMnemonic("truly mouse crystal game narrow tent exclude silver bench price sail various cereal deny wife manual dish also trick refuse trial salute harvest fat"),
-		mustParseMnemonic("output wife day wrap office depend reduce mention lemon always proof body unit arrow wisdom clock because bar first decorate novel elbow curve split"),
-		mustParseMnemonic("retreat lab leg hammer turkey affair actor raven resist dose advance pretty vague choice tube credit catalog secret usage bean album detect empty drip"),
+func testCreatePageLayout(f *testutils.Flags, tempDir string) {
+	config, ok := testutils.WalletConfigs[f.WalletType]
+	if !ok {
+		fmt.Printf("Invalid wallet type: %s\n", f.WalletType)
+		os.Exit(1)
 	}
-	descriptor := "wsh(sortedmulti(2,[3a40e049/48h/1h/0h/2h]tpubDEjEpeK6KLHjAQ5cKbxZncFjR6jXUqQfiLpDyKtpNJrJCsqj2LeiMjRUjwduWPUnSngsTjEs58WJX5rnMkLCMdKb8Eed3z32g5d99Nfi6Wz/<0;1>/*,[9b36c8e8/48h/1h/0h/2h]tpubDEWg8TmjbEhCdj3zbYytQrPtS141uPxN2m3msBJokZCDawHFvWG78mmithyEN92jez6588ATkBE2pkPNAct9MmPx94GahYqEa8Xq7j2eoPw/<0;1>/*,[a5972a4e/48h/1h/0h/2h]tpubDDwEPDnfMxf2tuGMrLoQmdY3L8xmoTtUVBkHkagPq1xLvNs6CfXui74mYtauBd8eKXkSQo6dQyzh7UtvnmsppyuuKqXMjvRCqfDyA8DvcHb/<0;1>/*))#vhd8qaqn"
-	desc, err := nonstandard.OutputDescriptor([]byte(descriptor))
+	mnemonics, desc, err := testutils.ParseWallet(config, f.Mnemonic, f.Descriptor)
 	if err != nil {
-		fmt.Printf("Error parsing descriptor: %v\n", err)
+		fmt.Printf("Error parsing wallet: %v\n", err)
 		os.Exit(1)
 	}
 	var m runtime.MemStats
@@ -72,8 +74,8 @@ func testCreatePageLayout(tempDir string) {
 		os.Exit(1)
 	}
 	defer file.Close()
-	paperSize := printer.PaperA4
-	seedPaths, descPaths, tempDir, err := printer.CreatePlates(file, mnemonics, &desc, 0, false, false)
+	paperSize := printer.PaperSize(f.PaperSize)
+	seedPaths, descPaths, tempDir, err := printer.CreatePlates(file, mnemonics, desc, 0, false, false)
 	if err != nil {
 		fmt.Printf("Error generating PDF: %v\n", err)
 		os.Exit(1)
