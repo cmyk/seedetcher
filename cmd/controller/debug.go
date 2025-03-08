@@ -83,7 +83,7 @@ func debugCommand(cmd string) []gui.ButtonEvent {
 	case cmd == "goroutines":
 		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
 	default:
-		logutil.DebugLog("debug: unrecognized command: %q", cmd)
+		//logutil.DebugLog("debug: unrecognized command: %q", cmd)
 	}
 	return evts
 }
