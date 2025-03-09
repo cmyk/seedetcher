@@ -79,6 +79,10 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 	pdf.Rect(0, 0, plateSize, plateSize, "D")
 
 	pdf.SetFont(fontName, "", 5)
+	// Fix: Use 1/1 if totalShares > 1 but no descriptor context (singlesig case)
+	if totalShares > 1 {
+		totalShares = 1 // Singlesig without descriptor
+	}
 	shareText := fmt.Sprintf("%d/%d", shareNum, totalShares)
 	pdf.Text(5.0, 5.0, shareText)
 
@@ -258,7 +262,8 @@ func CreatePlates(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputD
 		totalShares = len(desc.Keys)
 		logutil.DebugLog("Calculated totalShares: %d based on desc.Keys length: %d", totalShares, len(desc.Keys))
 	} else {
-		logutil.DebugLog("Descriptor is nil or Keys is empty, defaulting totalShares to %d (number of mnemonics)", totalShares)
+		totalShares = 1 // Force 1 for singlesig without descriptor
+		logutil.DebugLog("Descriptor is nil or Keys is empty, setting totalShares to %d (singlesig)", totalShares)
 	}
 
 	tempDir := "/tmp/seedetcher-plates-test"
@@ -337,7 +342,6 @@ func CreatePageLayout(w io.Writer, tempDir string, paperFormat PaperSize, seedPa
 		return fmt.Errorf("no plates to merge")
 	}
 
-	// Map paperFormat to dimensions
 	var pageSize string
 	switch paperFormat {
 	case PaperA4:
@@ -348,71 +352,79 @@ func CreatePageLayout(w io.Writer, tempDir string, paperFormat PaperSize, seedPa
 		return fmt.Errorf("unsupported paper size: %v", paperFormat)
 	}
 
-	// Paginate into 2x3 grids (6 slots per page)
-	slotsPerPage := 6       // 2x3 grid
-	numPages := (3 + 2) / 3 // Always 1 page for singlesig (3 shares), more for multisig
+	slotsPerPage := 6
+	numPages := (3 + 2) / 3
 	logutil.DebugLog("Total shares: %d, generating %d pages", totalShares, numPages)
 
 	for page := 0; page < numPages; page++ {
-		// Determine slots for this page (always 3 shares for singlesig, more for multisig)
-		startIdx := 0                 // Singlesig uses first plate, duplicated
-		endIdx := min(3, totalShares) // 3 shares per page for singlesig, actual shares for multisig
+		startIdx := 0
+		endIdx := min(3, totalShares)
 		pageShares := endIdx - startIdx
 		logutil.DebugLog("Page %d: shares %d to %d (%d shares)", page+1, startIdx+1, endIdx, pageShares)
 
-		// Arrange files for this page: duplicate first seed and desc for singlesig, use all for multisig
 		allFiles := make([]string, 0, slotsPerPage)
-		if totalShares == 1 { // Singlesig case, duplicate first plate
-			for i := 0; i < 3; i++ {
-				allFiles = append(allFiles, seedPaths[0]) // Repeat seed 3 times
-				allFiles = append(allFiles, descPaths[0]) // Repeat desc 3 times (or "" if no desc)
-			}
-		} else { // Multisig case, use actual shares
-			for i := startIdx; i < endIdx; i++ {
-				allFiles = append(allFiles, seedPaths[i]) // Left column: seed
-				allFiles = append(allFiles, descPaths[i]) // Right column: desc
+		hasDesc := false
+		for _, path := range descPaths[startIdx:endIdx] {
+			if path != "" {
+				hasDesc = true
+				break
 			}
 		}
-		// Pad with empty slots if needed
-		for i := len(allFiles); i < slotsPerPage; i++ {
-			allFiles = append(allFiles, "")
+		if hasDesc {
+			if totalShares == 1 {
+				for i := 0; i < 3; i++ {
+					allFiles = append(allFiles, seedPaths[0])
+					allFiles = append(allFiles, descPaths[0])
+				}
+			} else {
+				for i := startIdx; i < endIdx; i++ {
+					allFiles = append(allFiles, seedPaths[i])
+					allFiles = append(allFiles, descPaths[i])
+				}
+				for i := len(allFiles); i < slotsPerPage; i++ {
+					allFiles = append(allFiles, "")
+				}
+			}
+		} else {
+			if totalShares == 1 {
+				for i := 0; i < 3; i++ {
+					allFiles = append(allFiles, seedPaths[0]) // Duplicate single seed
+				}
+			} else {
+				for i := startIdx; i < endIdx; i++ {
+					allFiles = append(allFiles, seedPaths[i])
+				}
+			}
 		}
 		logutil.DebugLog("Page %d files: %v", page+1, allFiles)
 
-		// Concatenate PDFs for this page with cleanup
 		tempConcatFile := filepath.Join(tempDir, fmt.Sprintf("concat_page_%d.pdf", page))
 		if err := api.MergeCreateFile(allFiles, tempConcatFile, false, nil); err != nil {
-			os.Remove(tempConcatFile) // Clean up on error
+			os.Remove(tempConcatFile)
 			logutil.DebugLog("Failed to merge PDFs for page %d: %v", page+1, err)
 			return fmt.Errorf("failed to merge PDFs for page %d: %v", page+1, err)
 		}
 		defer os.Remove(tempConcatFile)
 		if info, err := os.Stat(tempConcatFile); err == nil {
 			logutil.DebugLog("Size of concat_page_%d.pdf: %d bytes", page, info.Size())
-		} else {
-			logutil.DebugLog("Failed to stat concat_page_%d.pdf: %v", page, err)
 		}
 
-		// Arrange in 2x3 grid
 		tempNUpFile := filepath.Join(tempDir, fmt.Sprintf("nup_page_%d.pdf", page))
 		nupConfig := model.DefaultNUpConfig()
 		nupConfig.PageSize = pageSize
-		nupConfig.Grid = &types.Dim{Width: 2, Height: 3} // 3 rows, 2 columns
-		nupConfig.UserDim = true                         // Force page size to be respected
-		nupConfig.PageDim = types.PaperSize[pageSize]    // Set A4/Letter dimensions
+		nupConfig.Grid = &types.Dim{Width: 2, Height: 3}
+		nupConfig.UserDim = true
+		nupConfig.PageDim = types.PaperSize[pageSize]
 		if err := api.NUpFile([]string{tempConcatFile}, tempNUpFile, nil, nupConfig, nil); err != nil {
-			os.Remove(tempNUpFile) // Clean up on error
+			os.Remove(tempNUpFile)
 			logutil.DebugLog("Failed to create NUp layout for page %d: %v", page+1, err)
 			return fmt.Errorf("failed to create NUp layout for page %d: %v", page+1, err)
 		}
 		defer os.Remove(tempNUpFile)
 		if info, err := os.Stat(tempNUpFile); err == nil {
 			logutil.DebugLog("Size of nup_page_%d.pdf: %d bytes", page, info.Size())
-		} else {
-			logutil.DebugLog("Failed to stat nup_page_%d.pdf: %v", page, err)
 		}
 
-		// Append to w
 		nupBytes, err := os.ReadFile(tempNUpFile)
 		if err != nil {
 			return fmt.Errorf("failed to read NUp PDF for page %d: %v", page+1, err)
