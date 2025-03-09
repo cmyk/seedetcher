@@ -265,7 +265,7 @@ func (p *Platform) Printer() io.Writer {
 	logutil.DebugLog("Printer initialized without query, PCL: %v, PS: %v", p.supportsPCL, p.supportsPostScript)
 	return printer
 }
-func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
+func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 	printerDev := p.Printer()
 	if printerDev == nil {
@@ -277,38 +277,48 @@ func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDes
 	p.printing = true
 	defer func() { p.printing = false }()
 
-	var buf bytes.Buffer
-	seedPaths, descPaths, tempDir, err := printer.CreatePlates(&buf, []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}, desc, keyIdx, p.supportsPCL, p.supportsPostScript)
+	tempFile, err := os.CreateTemp("", "seedetcher-output-*.pdf")
+	if err != nil {
+		logutil.DebugLog("Failed to create temp file: %v", err)
+		return err
+	}
+	defer os.Remove(tempFile.Name())
+	defer tempFile.Close()
+
+	var mnemonics []bip39.Mnemonic
+	if desc == nil {
+		mnemonics = []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}
+	} else {
+		mnemonics = make([]bip39.Mnemonic, len(desc.Keys))
+		i := 0
+		for _, k := range desc.Keys {
+			if m, ok := ctx.Keystores[k.MasterFingerprint]; ok {
+				mnemonics[i] = m
+				i++
+			}
+		}
+	}
+
+	seedPaths, descPaths, tempDir, err := printer.CreatePlates(tempFile, mnemonics, desc, keyIdx, p.supportsPCL, p.supportsPostScript)
 	if err != nil {
 		logutil.DebugLog("PDF generation failed: %v", err)
 		return err
 	}
-	logutil.DebugLog("Generated PDF buffer, size: %d bytes", buf.Len())
-	if buf.Len() > 0 {
-		logutil.DebugLog("First 20 bytes of generated PDF: %x", buf.Bytes()[:min(20, buf.Len())])
-	} else {
-		logutil.DebugLog("Generated PDF buffer is empty (expected, as files are written to disk)")
-	}
+	logutil.DebugLog("Generated %d seed plates and %d desc plates in %s", len(seedPaths), len(descPaths), tempDir)
 
-	if err := printer.CreatePageLayout(&buf, tempDir, printer.PaperA4, seedPaths, descPaths); err != nil {
+	if err := printer.CreatePageLayout(tempFile, tempDir, printer.PaperA4, seedPaths, descPaths); err != nil {
 		logutil.DebugLog("Failed to merge PDF: %v", err)
 		return err
 	}
-	logutil.DebugLog("Merged PDF buffer, size: %d bytes", buf.Len())
-	if buf.Len() > 0 {
-		logutil.DebugLog("First 20 bytes of merged PDF: %x", buf.Bytes()[:min(20, buf.Len())])
-	}
 
-	data := make([]byte, buf.Len())
-	copy(data, buf.Bytes())
-	logutil.DebugLog("Copied PDF data, size: %d bytes", len(data))
-	if len(data) > 0 {
-		logutil.DebugLog("First 20 bytes of copied PDF data: %x", data[:min(20, len(data))])
-	} else {
-		logutil.DebugLog("Copied PDF data is empty (expected, as files are written to disk)")
+	data, err := os.ReadFile(tempFile.Name())
+	if err != nil {
+		logutil.DebugLog("Failed to read temp file: %v", err)
+		return err
 	}
+	logutil.DebugLog("Merged PDF file, size: %d bytes", len(data))
 	if len(data) == 0 {
-		logutil.DebugLog("Data is empty, cannot write to printer")
+		logutil.DebugLog("Merged PDF is empty")
 		return fmt.Errorf("no data to write to printer")
 	}
 
@@ -319,10 +329,6 @@ func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDes
 			end = len(data)
 		}
 		chunk := data[i:end]
-		logutil.DebugLog("Preparing chunk %d, size: %d bytes", i/chunkSize, len(chunk))
-		if len(chunk) > 0 {
-			logutil.DebugLog("First 20 bytes of chunk %d: %x", i/chunkSize, chunk[:min(20, len(chunk))])
-		}
 		n, err := printerDev.Write(chunk)
 		if err != nil {
 			logutil.DebugLog("Write chunk %d failed: %v, wrote %d bytes", i/chunkSize, err, n)

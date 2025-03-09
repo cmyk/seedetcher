@@ -252,80 +252,55 @@ func createDescriptorQR(desc *urtypes.OutputDescriptor) string {
 // PrintPDF generates individual 85x85mm PDFs and returns paths to the generated plates.
 func CreatePlates(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, supportsPCL, supportsPostScript bool) ([]string, []string, string, error) {
 	logutil.DebugLog("Starting CreatePlates with %d mnemonics, desc=%v, keyIdx=%d", len(mnemonics), desc != nil, keyIdx)
-	if len(mnemonics) != 3 {
-		return nil, nil, "", fmt.Errorf("expected exactly 3 mnemonics, got %d", len(mnemonics))
+	tempDir, err := os.MkdirTemp("", "seedetcher-plates-*")
+	if err != nil {
+		return nil, nil, "", err
 	}
-
-	// Set totalShares based on descriptor keys, default to mnemonics if no descriptor
-	totalShares := len(mnemonics)
-	if desc != nil && len(desc.Keys) > 0 {
-		totalShares = len(desc.Keys)
-		logutil.DebugLog("Calculated totalShares: %d based on desc.Keys length: %d", totalShares, len(desc.Keys))
-	} else {
-		totalShares = 1 // Force 1 for singlesig without descriptor
-		logutil.DebugLog("Descriptor is nil or Keys is empty, setting totalShares to %d (singlesig)", totalShares)
-	}
-
-	tempDir := "/tmp/seedetcher-plates-test"
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		return nil, nil, "", fmt.Errorf("failed to create temp directory %s: %v", tempDir, err)
-	}
+	defer os.RemoveAll(tempDir)
 	logutil.DebugLog("Using directory: %s", tempDir)
 
-	// Generate seed and descriptor plates for each unique share
+	totalShares := len(mnemonics)
+	if desc != nil && len(desc.Keys) > 0 {
+		totalShares = len(desc.Keys) // Multisig locks to desc.Keys
+		logutil.DebugLog("Calculated totalShares: %d based on desc.Keys length: %d", totalShares, len(desc.Keys))
+	} else if totalShares > 1 {
+		totalShares = 1 // Singlesig without desc
+		logutil.DebugLog("No descriptor, forcing totalShares to %d (singlesig)", totalShares)
+	}
+
 	seedPaths := make([]string, totalShares)
 	descPaths := make([]string, totalShares)
 	for i := 0; i < totalShares; i++ {
-		mnemonic := mnemonics[i%len(mnemonics)] // Cycle through mnemonics if totalShares > 3
+		mnemonic := mnemonics[i%len(mnemonics)]
 		logutil.DebugLog("Generating seed plate %d", i+1)
-		seedPDF, buf, err := createSeedPlate(mnemonic, i+1, totalShares)
+		_, seedBuf, err := createSeedPlate(mnemonic, i+1, totalShares)
 		if err != nil {
-			return nil, nil, "", fmt.Errorf("failed to create seed plate %d: %v", i+1, err)
+			return nil, nil, tempDir, fmt.Errorf("failed to generate seed plate %d: %v", i, err)
 		}
 		seedFile := filepath.Join(tempDir, fmt.Sprintf("seed_%d.pdf", i))
-		if buf.Len() == 0 {
-			return nil, nil, "", fmt.Errorf("seed PDF %d is empty after Output", i+1)
+		if err := os.WriteFile(seedFile, seedBuf.Bytes(), 0644); err != nil {
+			return nil, nil, tempDir, fmt.Errorf("failed to write seed plate %d: %v", i, err)
 		}
-		if err := os.WriteFile(seedFile, buf.Bytes(), 0644); err != nil {
-			return nil, nil, "", fmt.Errorf("failed to write seed PDF %d to %s: %v", i+1, seedFile, err)
-		}
-		logutil.DebugLog("Generated seed plate %d at %s, size: %d bytes", i+1, seedFile, buf.Len())
-		logutil.DebugLog("First 100 bytes of seed_%d.pdf: %x", i, buf.Bytes()[:min(100, buf.Len())])
-		seedPDF.Close()
 		seedPaths[i] = seedFile
-
-		// Generate descriptor plate if desc exists
+		logutil.DebugLog("Generated seed plate %d at %s, size: %d bytes", i+1, seedFile, seedBuf.Len())
 		if desc != nil && len(desc.Keys) > 0 {
 			logutil.DebugLog("Generating descriptor plate %d", i+1)
-			var descFile string
-			var buf bytes.Buffer
-			descKeyIdx := i % len(desc.Keys) // Cycle keyIdx if totalShares > len(desc.Keys)
-			descPDF, err := createDescriptorPlate(desc, descKeyIdx, i+1, totalShares)
+			pdf, err := createDescriptorPlate(desc, keyIdx, i+1, totalShares)
 			if err != nil {
-				return nil, nil, "", fmt.Errorf("failed to create descriptor plate %d: %v", i+1, err)
+				return nil, nil, tempDir, fmt.Errorf("failed to generate descriptor plate %d: %v", i, err)
 			}
-			if err := descPDF.Output(&buf); err != nil {
-				return nil, nil, "", fmt.Errorf("failed to generate descriptor PDF %d: %v", i+1, err)
-			}
-			if buf.Len() == 0 {
-				return nil, nil, "", fmt.Errorf("descriptor PDF %d is empty after Output", i+1)
-			}
-			descFile = filepath.Join(tempDir, fmt.Sprintf("desc_%d.pdf", i))
-			if err := os.WriteFile(descFile, buf.Bytes(), 0644); err != nil {
-				return nil, nil, "", fmt.Errorf("failed to write descriptor PDF %d to %s: %v", i+1, descFile, err)
-			}
-			if info, err := os.Stat(descFile); err != nil {
-				return nil, nil, "", fmt.Errorf("failed to stat descriptor PDF %d at %s: %v", i+1, descFile, err)
-			} else {
-				logutil.DebugLog("Generated descriptor plate %d at %s, size: %d bytes", i+1, descFile, info.Size())
-				logutil.DebugLog("First 100 bytes of desc_%d.pdf: %x", i, buf.Bytes()[:min(100, buf.Len())])
+			descFile := filepath.Join(tempDir, fmt.Sprintf("desc_%d.pdf", i))
+			if err := pdf.OutputFileAndClose(descFile); err != nil {
+				return nil, nil, tempDir, fmt.Errorf("failed to write descriptor plate %d: %v", i, err)
 			}
 			descPaths[i] = descFile
+			if info, err := os.Stat(descFile); err == nil {
+				logutil.DebugLog("Generated descriptor plate %d at %s, size: %d bytes", i+1, descFile, info.Size())
+			}
 		} else {
-			descPaths[i] = "" // Blank slot if no descriptor
+			descPaths[i] = ""
 		}
 	}
-
 	return seedPaths, descPaths, tempDir, nil
 }
 

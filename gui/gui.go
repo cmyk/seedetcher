@@ -45,6 +45,17 @@ func min(a, b int) int {
 	return b
 }
 
+func mnemonicString(m bip39.Mnemonic) string {
+	var sb strings.Builder
+	for i, w := range m {
+		if i > 0 {
+			sb.WriteString(" ")
+		}
+		sb.WriteString(bip39.LabelFor(w))
+	}
+	return sb.String()
+}
+
 type Context struct {
 	Platform Platform
 	Styles   Styles
@@ -57,14 +68,15 @@ type Context struct {
 	EmptySDSlot    bool
 	RotateCamera   bool
 	LastDescriptor *urtypes.OutputDescriptor
-
-	events []Event
+	Keystores      map[uint32]bip39.Mnemonic // Fingerprint -> Mnemonic
+	events         []Event
 }
 
 func NewContext(pl Platform) *Context {
 	c := &Context{
-		Platform: pl,
-		Styles:   NewStyles(),
+		Platform:  pl,
+		Styles:    NewStyles(),
+		Keystores: make(map[uint32]bip39.Mnemonic),
 	}
 	return c
 }
@@ -1822,41 +1834,35 @@ func layoutMainPager(ops op.Ctx, th *Colors, page program) image.Point {
 	return image.Pt((sz.X+space)*npages-space, sz.Y)
 }
 
-func backupWalletFlow(ctx *Context, ops op.Ctx, th *Colors) {
-	mnemonic, ok := newMnemonicFlow(ctx, ops, th)
-	if !ok {
-		return
-	}
-	ss := new(SeedScreen)
+func confirmWarning(ctx *Context, ops op.Ctx, th *Colors, w *ConfirmWarningScreen) bool {
 	for {
-		if !ss.Confirm(ctx, ops, th, mnemonic) {
-			return
+		dims := ctx.Platform.DisplaySize()
+		switch w.Layout(ctx, ops, th, dims) {
+		case ConfirmYes:
+			return true
+		case ConfirmNo:
+			return false
 		}
-		desc, ok := inputDescriptorFlow(ctx, ops, th, mnemonic)
-		if !ok {
-			continue
-		}
-		printScreen := &PrintSeedScreen{}
-		var keyIdx int
-		if desc != nil {
-			ds := &DescriptorScreen{Descriptor: *desc, Mnemonic: mnemonic}
-			var confirmed bool
-			keyIdx, confirmed = ds.Confirm(ctx, ops, th)
-			if !confirmed {
-				continue
-			}
-		}
-		if printScreen.Print(ctx, ops, th, mnemonic, desc, keyIdx, printer.PaperA4) { // or printer.PaperLetter
-			return
-		}
+		ctx.Frame()
 	}
 }
 
-func newMnemonicFlow(ctx *Context, ops op.Ctx, th *Colors) (bip39.Mnemonic, bool) {
+func showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
+	scr := NewErrorScreen(err)
+	for {
+		dims := ctx.Platform.DisplaySize()
+		if scr.Layout(ctx, ops, th, dims) {
+			break
+		}
+		ctx.Frame()
+	}
+}
+
+func newMnemonicFlow(ctx *Context, ops op.Ctx, th *Colors, current, total int) (bip39.Mnemonic, bool) {
 	cs := &ChoiceScreen{
-		Title:   "Input Seed",
+		Title:   fmt.Sprintf("Input Seed %d/%d", current, total), // Display "Seed X/Y"
 		Lead:    "Choose input method",
-		Choices: []string{"KEYBOARD", "CAMERA"},
+		Choices: []string{"CAMERA", "KEYBOARD"},
 	}
 	showErr := func(errScreen *ErrorScreen) {
 		for {
@@ -1878,26 +1884,9 @@ outer:
 			return nil, false
 		}
 		switch choice {
-		case 0: // Keyboard.
-			cs := &ChoiceScreen{
-				Title:   "Input Seed",
-				Lead:    "Choose number of words",
-				Choices: []string{"12 WORDS", "24 WORDS"},
-			}
-			for {
-				choice, ok := cs.Choose(ctx, ops, th)
-				if !ok {
-					continue outer
-				}
-				mnemonic := emptyMnemonic([]int{12, 24}[choice])
-				inputWordsFlow(ctx, ops, th, mnemonic, 0)
-				if !isEmptyMnemonic(mnemonic) {
-					return mnemonic, true
-				}
-			}
-		case 1: // Camera.
+		case 0: // Camera.
 			res, ok := (&ScanScreen{
-				Title: "Scan",
+				Title: fmt.Sprintf("Scan Seed %d/%d", current, total), // Update ScanScreen title
 				Lead:  "SeedQR or Mnemonic",
 			}).Scan(ctx, ops)
 			if !ok {
@@ -1919,6 +1908,24 @@ outer:
 				continue
 			}
 			return seed, true
+
+		case 1: // Keyboard.
+			cs := &ChoiceScreen{
+				Title:   fmt.Sprintf("Input Seed %d/%d", current, total), // Update keyboard choice title
+				Lead:    "Choose number of words",
+				Choices: []string{"12 WORDS", "24 WORDS"},
+			}
+			for {
+				choice, ok := cs.Choose(ctx, ops, th)
+				if !ok {
+					continue outer
+				}
+				mnemonic := emptyMnemonic([]int{12, 24}[choice])
+				inputWordsFlow(ctx, ops, th, mnemonic, 0)
+				if !isEmptyMnemonic(mnemonic) {
+					return mnemonic, true
+				}
+			}
 		}
 	}
 }
@@ -2101,41 +2108,30 @@ func (s *SeedScreen) Draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Point
 }
 
 func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic) (*urtypes.OutputDescriptor, bool) {
+	originalDesc := ctx.LastDescriptor // Save original
 	cs := &ChoiceScreen{
 		Title:   "Descriptor",
 		Lead:    "Choose input method",
 		Choices: []string{"SCAN", "SKIP"},
 	}
 	if ctx.LastDescriptor != nil {
-		if _, match := descriptorKeyIdx(*ctx.LastDescriptor, mnemonic, ""); match {
-			cs.Choices = append(cs.Choices, "RE-USE")
-		}
-	}
-	showErr := func(errScreen *ErrorScreen) {
-		for {
-			dims := ctx.Platform.DisplaySize()
-			dismissed := errScreen.Layout(ctx, ops.Begin(), th, dims)
-			d := ops.End()
-			if dismissed {
-				break
-			}
-			cs.Draw(ctx, ops, th, dims)
-			d.Add(ops)
-			ctx.Frame()
-		}
+		cs.Choices = append(cs.Choices, "RE-USE")
 	}
 	for {
 		choice, ok := cs.Choose(ctx, ops, th)
 		if !ok {
+			logutil.DebugLog("inputDescriptorFlow: Choose returned false")
+			ctx.LastDescriptor = originalDesc // Restore on back
 			return nil, false
 		}
 		switch choice {
-		case 0: // Scan.
+		case 0: // Scan
 			res, ok := (&ScanScreen{
 				Title: "Scan",
 				Lead:  "Wallet Output Descriptor",
 			}).Scan(ctx, ops)
 			if !ok {
+				logutil.DebugLog("inputDescriptorFlow: Scan returned false")
 				continue
 			}
 			desc, ok := res.(urtypes.OutputDescriptor)
@@ -2143,25 +2139,15 @@ func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mn
 				if b, isbytes := res.([]byte); isbytes {
 					d, err := nonstandard.OutputDescriptor(b)
 					desc, ok = d, err == nil
-					if !ok {
-						logutil.DebugLog("Nonstandard parse failed, raw bytes: %s, error: %v", string(b), err)
-					}
 				}
 			}
 			if !ok {
-				showErr(&ErrorScreen{
-					Title: "Invalid Descriptor",
-					Body:  "The scanned data does not represent a wallet output descriptor or XPUB key.",
-				})
+				showError(ctx, ops, th, errors.New("Invalid Descriptor: Not a wallet output descriptor or XPUB key"))
 				continue
 			}
-			// Log the full descriptor for debugging
 			logutil.DebugLog("Scanned descriptor: Type=%v, Script=%s, Keys=%d, Threshold=%d", desc.Type, desc.Script.String(), len(desc.Keys), desc.Threshold)
 			if !address.Supported(desc) {
-				showErr(&ErrorScreen{
-					Title: "Invalid Descriptor",
-					Body:  "The scanned descriptor is not supported.",
-				})
+				showError(ctx, ops, th, errors.New("Unsupported Descriptor"))
 				continue
 			}
 			if len(desc.Keys) == 1 && desc.Keys[0].MasterFingerprint == 0 {
@@ -2170,11 +2156,157 @@ func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mn
 			}
 			desc.Title = backup.TitleString(constant.Font, desc.Title)
 			ctx.LastDescriptor = &desc
+			logutil.DebugLog("inputDescriptorFlow: Returning desc with %d keys", len(desc.Keys))
 			return &desc, true
-		case 1: // Skip descriptor.
+		case 1: // Skip
+			logutil.DebugLog("inputDescriptorFlow: Skipping descriptor")
 			return nil, true
-		case 2: // Re-use.
+		case 2: // Re-use
+			logutil.DebugLog("inputDescriptorFlow: Re-using last descriptor")
 			return ctx.LastDescriptor, true
+		}
+	}
+}
+
+func backupWalletFlow(ctx *Context, ops op.Ctx, th *Colors) {
+	logutil.DebugLog("backupWalletFlow: Starting")
+descLoop:
+	for {
+		desc, ok := inputDescriptorFlow(ctx, ops, th, nil)
+		logutil.DebugLog("backupWalletFlow: After inputDescriptorFlow, desc=%v, ok=%v", desc != nil, ok)
+		if !ok {
+			logutil.DebugLog("backupWalletFlow: inputDescriptorFlow failed, exiting")
+			return
+		}
+
+		if desc == nil && ctx.LastDescriptor == nil {
+			mnemonic, ok := newMnemonicFlow(ctx, ops, th, 1, 1) // Singlesig: 1/1
+			if !ok {
+				logutil.DebugLog("backupWalletFlow: newMnemonicFlow failed")
+				continue descLoop
+			}
+			logutil.DebugLog("backupWalletFlow: Seed flow done")
+			if !new(SeedScreen).Confirm(ctx, ops, th, mnemonic) {
+				logutil.DebugLog("backupWalletFlow: SeedScreen.Confirm failed")
+				continue descLoop
+			}
+			logutil.DebugLog("backupWalletFlow: Seed confirmed")
+			mfp, err := masterFingerprintFor(mnemonic, &chaincfg.MainNetParams)
+			if err != nil {
+				logutil.DebugLog("backupWalletFlow: Fingerprint error: %v", err)
+				showError(ctx, ops, th, fmt.Errorf("Failed to compute fingerprint: %v", err))
+				continue descLoop
+			}
+			ctx.Keystores[mfp] = mnemonic
+			logutil.DebugLog("backupWalletFlow: Keystore updated, printing singlesig")
+			printScreen := &PrintSeedScreen{}
+			if printScreen.Print(ctx, ops, th, mnemonic, nil, 0, printer.PaperA4) {
+				logutil.DebugLog("backupWalletFlow: Print succeeded")
+				return
+			}
+			logutil.DebugLog("backupWalletFlow: Print failed")
+			continue descLoop
+		}
+
+		if desc == nil && ctx.LastDescriptor != nil {
+			desc = ctx.LastDescriptor
+		}
+
+		logutil.DebugLog("backupWalletFlow: Descriptor present with %d keys", len(desc.Keys))
+		totalSeeds := len(desc.Keys)
+		for i := 1; i <= totalSeeds; i++ {
+		seedLoop:
+			for {
+				mnemonic, ok := newMnemonicFlow(ctx, ops, th, i, totalSeeds)
+				if !ok {
+					logutil.DebugLog("backupWalletFlow: newMnemonicFlow failed, retrying seed %d", i)
+					confirm := &ConfirmWarningScreen{
+						Title: "Restart Process?",
+						Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
+						Icon:  assets.IconDiscard,
+					}
+					if confirmWarning(ctx, ops, th, confirm) {
+						logutil.DebugLog("backupWalletFlow: User confirmed restart, clearing data")
+						ctx.LastDescriptor = nil
+						ctx.Keystores = make(map[uint32]bip39.Mnemonic)
+						continue descLoop
+					}
+					logutil.DebugLog("backupWalletFlow: User declined restart, continuing seed input")
+					continue seedLoop
+				}
+				logutil.DebugLog("backupWalletFlow: Seed flow done for seed %d", i)
+				if !new(SeedScreen).Confirm(ctx, ops, th, mnemonic) {
+					logutil.DebugLog("backupWalletFlow: SeedScreen.Confirm failed for seed %d", i)
+					confirm := &ConfirmWarningScreen{
+						Title: "Restart Process?",
+						Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
+						Icon:  assets.IconDiscard,
+					}
+					if confirmWarning(ctx, ops, th, confirm) {
+						logutil.DebugLog("backupWalletFlow: User confirmed restart, clearing data")
+						ctx.LastDescriptor = nil
+						ctx.Keystores = make(map[uint32]bip39.Mnemonic)
+						continue descLoop
+					}
+					logutil.DebugLog("backupWalletFlow: User declined restart, continuing seed input")
+					continue seedLoop
+				}
+				logutil.DebugLog("backupWalletFlow: Seed confirmed for seed %d", i)
+				mfp, err := masterFingerprintFor(mnemonic, &chaincfg.MainNetParams)
+				if err != nil {
+					logutil.DebugLog("backupWalletFlow: Fingerprint error: %v", err)
+					showError(ctx, ops, th, fmt.Errorf("Failed to compute fingerprint: %v", err))
+					continue seedLoop
+				}
+				if _, exists := ctx.Keystores[mfp]; exists {
+					logutil.DebugLog("backupWalletFlow: Duplicate seed %.8x detected", mfp)
+					showError(ctx, ops, th, fmt.Errorf("Seed was entered already"))
+					continue seedLoop
+				}
+				_, matched := descriptorKeyIdx(*desc, mnemonic, "")
+				if !matched {
+					logutil.DebugLog("backupWalletFlow: Seed fingerprint %.8x doesn’t match descriptor", mfp)
+					showError(ctx, ops, th, fmt.Errorf("Seed doesn’t match wallet descriptor"))
+					continue seedLoop
+				}
+				ctx.Keystores[mfp] = mnemonic
+				logutil.DebugLog("backupWalletFlow: Keystore updated, seeds scanned: %d/%d", len(ctx.Keystores), len(desc.Keys))
+				break seedLoop
+			}
+			if len(ctx.Keystores) >= len(desc.Keys) {
+				break
+			}
+		}
+
+	confirmLoop:
+		for {
+			ds := &DescriptorScreen{Descriptor: *desc, Mnemonic: ctx.Keystores[desc.Keys[0].MasterFingerprint]}
+			confirmKeyIdx, ok := ds.Confirm(ctx, ops, th)
+			logutil.DebugLog("backupWalletFlow: Confirm returned keyIdx=%d, ok=%v", confirmKeyIdx, ok)
+			if !ok {
+				logutil.DebugLog("backupWalletFlow: Descriptor not confirmed, prompting restart")
+				confirm := &ConfirmWarningScreen{
+					Title: "Restart Process?",
+					Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
+					Icon:  assets.IconDiscard,
+				}
+				if confirmWarning(ctx, ops, th, confirm) {
+					logutil.DebugLog("backupWalletFlow: User confirmed restart, clearing data")
+					ctx.LastDescriptor = nil
+					ctx.Keystores = make(map[uint32]bip39.Mnemonic)
+					continue descLoop
+				}
+				logutil.DebugLog("backupWalletFlow: User declined restart, returning to confirm")
+				continue confirmLoop
+			}
+			logutil.DebugLog("backupWalletFlow: All %d seeds collected, printing with keyIdx=%d", len(desc.Keys), confirmKeyIdx)
+			printScreen := &PrintSeedScreen{}
+			if printScreen.Print(ctx, ops, th, ds.Mnemonic, desc, confirmKeyIdx, printer.PaperA4) {
+				logutil.DebugLog("backupWalletFlow: Print succeeded")
+				return
+			}
+			logutil.DebugLog("backupWalletFlow: Print failed")
+			continue confirmLoop // Back to Confirm Wallet, not descLoop
 		}
 	}
 }
@@ -2599,7 +2731,6 @@ type PrintSeedScreen struct {
 
 func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) bool {
 	inp := &s.inp
-	// Add paper size selection dialog
 	paperChoice := &ChoiceScreen{
 		Title:   "Select Paper Size",
 		Lead:    "Choose your printer's paper size",
@@ -2607,7 +2738,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	}
 	choice, ok := paperChoice.Choose(ctx, ops, th)
 	if !ok {
-		return false // User canceled
+		return false
 	}
 	selectedPaper := printer.PaperA4
 	if choice == 1 {
@@ -2632,14 +2763,12 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 						s.showError(ctx, ops, th, err)
 					}
 					if err != nil && err.Error() == "print canceled" {
-						continue // Back to print screen
+						continue
 					}
 					result := &PrintResultScreen{success: success}
-					// Show result screen and handle choice
 					if result.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper) {
-						continue // Print Again loops back
+						continue
 					}
-					// Delete Seed: return with empty mnemonic
 					return true
 				}
 			}
@@ -2663,17 +2792,6 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		}...)
 		ctx.Frame()
 	}
-}
-
-func (s *PrintSeedScreen) PrintSeed(ctx *Context, ops op.Ctx, th *Colors) {
-	defer func() {
-		if r := recover(); r != nil {
-			logutil.DebugLog("PANIC RECOVERED in PrintSeed: %v", r)
-			s.showError(ctx, ops, th, fmt.Errorf("Printing failed: %v", r))
-		}
-	}()
-	logutil.DebugLog("Print button pressed, starting print job")
-	ctx.Frame()
 }
 
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
@@ -2806,11 +2924,10 @@ type PrintProgressScreen struct {
 
 func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) (bool, error) {
 	start := ctx.Platform.Now()
-	duration := 2 * time.Second // Tighter estimate based on 7.1K write
+	duration := 2 * time.Second
 	var printErr error
 	go func() {
-		// Run print in background
-		if err := ctx.Platform.CreatePlates(mnemonic, desc, keyIdx); err != nil {
+		if err := ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx); err != nil {
 			logutil.DebugLog("Print failed in progress: %v", err)
 			printErr = err
 		}
@@ -2838,7 +2955,6 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 			return printErr == nil, printErr
 		}
 
-		// Refresh every 100ms
 		ctx.WakeupAt(ctx.Platform.Now().Add(100 * time.Millisecond))
 
 		content := layout.Rectangle{Max: dims}.Shrink(leadingSize, 0, leadingSize, 0)
@@ -2851,7 +2967,6 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		sz := widget.Labelf(ops.Begin(), ctx.Styles.progress, th.Text, "%d%%", int(progress*100))
 		op.Position(ops, ops.End(), content.Center(sz))
 
-		// Add "Printing..." label below circle
 		labelSz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "Printing...")
 		op.Position(ops, ops.End(), content.Center(labelSz).Add(image.Pt(0, assets.ProgressCircle.Bounds().Dy()/2+12)))
 
@@ -2879,7 +2994,7 @@ type Platform interface {
 	ScanQR(qr *image.Gray) ([][]byte, error)
 	Debug() bool
 	Printer() io.Writer
-	CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error
+	CreatePlates(ctx *Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error // Updated
 }
 
 type Engraver interface {
