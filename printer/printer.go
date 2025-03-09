@@ -252,19 +252,19 @@ func createDescriptorQR(desc *urtypes.OutputDescriptor) string {
 // PrintPDF generates individual 85x85mm PDFs and returns paths to the generated plates.
 func CreatePlates(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, supportsPCL, supportsPostScript bool) ([]string, []string, string, error) {
 	logutil.DebugLog("Starting CreatePlates with %d mnemonics, desc=%v, keyIdx=%d", len(mnemonics), desc != nil, keyIdx)
-	tempDir, err := os.MkdirTemp("", "seedetcher-plates-*")
-	if err != nil {
-		return nil, nil, "", err
+	tempDir := filepath.Join(os.TempDir(), "seedetcher-plates")
+	if err := os.Mkdir(tempDir, 0700); err != nil && !os.IsExist(err) {
+		return nil, nil, "", fmt.Errorf("failed to create temp dir %s: %v", tempDir, err)
 	}
-	defer os.RemoveAll(tempDir)
 	logutil.DebugLog("Using directory: %s", tempDir)
+	// No defer os.RemoveAll(tempDir) here—caller will handle cleanup
 
 	totalShares := len(mnemonics)
 	if desc != nil && len(desc.Keys) > 0 {
-		totalShares = len(desc.Keys) // Multisig locks to desc.Keys
+		totalShares = len(desc.Keys)
 		logutil.DebugLog("Calculated totalShares: %d based on desc.Keys length: %d", totalShares, len(desc.Keys))
 	} else if totalShares > 1 {
-		totalShares = 1 // Singlesig without desc
+		totalShares = 1
 		logutil.DebugLog("No descriptor, forcing totalShares to %d (singlesig)", totalShares)
 	}
 
@@ -328,12 +328,12 @@ func CreatePageLayout(w io.Writer, tempDir string, paperFormat PaperSize, seedPa
 	}
 
 	slotsPerPage := 6
-	numPages := (3 + 2) / 3
+	numPages := (totalShares*2 + slotsPerPage - 1) / slotsPerPage
 	logutil.DebugLog("Total shares: %d, generating %d pages", totalShares, numPages)
 
 	for page := 0; page < numPages; page++ {
-		startIdx := 0
-		endIdx := min(3, totalShares)
+		startIdx := page * (slotsPerPage / 2)
+		endIdx := min(startIdx+(slotsPerPage/2), totalShares)
 		pageShares := endIdx - startIdx
 		logutil.DebugLog("Page %d: shares %d to %d (%d shares)", page+1, startIdx+1, endIdx, pageShares)
 
@@ -346,43 +346,49 @@ func CreatePageLayout(w io.Writer, tempDir string, paperFormat PaperSize, seedPa
 			}
 		}
 		if hasDesc {
-			if totalShares == 1 {
-				for i := 0; i < 3; i++ {
-					allFiles = append(allFiles, seedPaths[0])
-					allFiles = append(allFiles, descPaths[0])
-				}
-			} else {
-				for i := startIdx; i < endIdx; i++ {
-					allFiles = append(allFiles, seedPaths[i])
-					allFiles = append(allFiles, descPaths[i])
-				}
-				for i := len(allFiles); i < slotsPerPage; i++ {
-					allFiles = append(allFiles, "")
-				}
+			for i := startIdx; i < endIdx; i++ {
+				allFiles = append(allFiles, seedPaths[i], descPaths[i])
 			}
+			// No padding with empty strings here
 		} else {
-			if totalShares == 1 {
-				for i := 0; i < 3; i++ {
-					allFiles = append(allFiles, seedPaths[0]) // Duplicate single seed
-				}
-			} else {
-				for i := startIdx; i < endIdx; i++ {
-					allFiles = append(allFiles, seedPaths[i])
-				}
+			for i := startIdx; i < endIdx; i++ {
+				allFiles = append(allFiles, seedPaths[i])
 			}
 		}
-		logutil.DebugLog("Page %d files: %v", page+1, allFiles)
+		logutil.DebugLog("Page %d files (before filter): %v", page+1, allFiles)
+
+		// Filter out empty strings
+		var filteredFiles []string
+		for _, f := range allFiles {
+			if f != "" {
+				filteredFiles = append(filteredFiles, f)
+			}
+		}
+		logutil.DebugLog("Page %d files (after filter): %v", page+1, filteredFiles)
+
+		// Debug: Verify files exist before merge
+		for _, f := range filteredFiles {
+			if info, err := os.Stat(f); err == nil {
+				logutil.DebugLog("Before merge: %s exists, size: %d bytes", f, info.Size())
+			} else {
+				logutil.DebugLog("Before merge: %s error: %v", f, err)
+			}
+		}
 
 		tempConcatFile := filepath.Join(tempDir, fmt.Sprintf("concat_page_%d.pdf", page))
-		if err := api.MergeCreateFile(allFiles, tempConcatFile, false, nil); err != nil {
-			os.Remove(tempConcatFile)
+		logutil.DebugLog("Attempting to merge into %s", tempConcatFile)
+		if err := api.MergeCreateFile(filteredFiles, tempConcatFile, false, nil); err != nil {
 			logutil.DebugLog("Failed to merge PDFs for page %d: %v", page+1, err)
+			os.Remove(tempConcatFile)
 			return fmt.Errorf("failed to merge PDFs for page %d: %v", page+1, err)
 		}
-		defer os.Remove(tempConcatFile)
+		logutil.DebugLog("Merged PDFs into %s", tempConcatFile)
 		if info, err := os.Stat(tempConcatFile); err == nil {
 			logutil.DebugLog("Size of concat_page_%d.pdf: %d bytes", page, info.Size())
+		} else {
+			logutil.DebugLog("Failed to stat merged file %s: %v", tempConcatFile, err)
 		}
+		defer os.Remove(tempConcatFile)
 
 		tempNUpFile := filepath.Join(tempDir, fmt.Sprintf("nup_page_%d.pdf", page))
 		nupConfig := model.DefaultNUpConfig()
@@ -391,14 +397,15 @@ func CreatePageLayout(w io.Writer, tempDir string, paperFormat PaperSize, seedPa
 		nupConfig.UserDim = true
 		nupConfig.PageDim = types.PaperSize[pageSize]
 		if err := api.NUpFile([]string{tempConcatFile}, tempNUpFile, nil, nupConfig, nil); err != nil {
-			os.Remove(tempNUpFile)
 			logutil.DebugLog("Failed to create NUp layout for page %d: %v", page+1, err)
+			os.Remove(tempNUpFile)
 			return fmt.Errorf("failed to create NUp layout for page %d: %v", page+1, err)
 		}
-		defer os.Remove(tempNUpFile)
+		logutil.DebugLog("Created NUp layout at %s", tempNUpFile)
 		if info, err := os.Stat(tempNUpFile); err == nil {
 			logutil.DebugLog("Size of nup_page_%d.pdf: %d bytes", page, info.Size())
 		}
+		defer os.Remove(tempNUpFile)
 
 		nupBytes, err := os.ReadFile(tempNUpFile)
 		if err != nil {

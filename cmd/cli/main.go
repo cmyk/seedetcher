@@ -50,26 +50,17 @@ func main() {
 		os.Exit(1)
 	}
 	defer file.Close()
+
 	seedPaths, descPaths, tempDir, err := printer.CreatePlates(file, mnemonics, desc, 0, false, false)
 	if err != nil {
 		fmt.Printf("Error generating plates: %v\n", err)
 		os.Exit(1)
 	}
+	defer os.RemoveAll(tempDir) // Move cleanup here
 	if err := printer.CreatePageLayout(file, tempDir, printer.PaperSize(f.PaperSize), seedPaths, descPaths); err != nil {
 		fmt.Printf("Error merging PDF: %v\n", err)
 		os.Exit(1)
 	}
-	for _, path := range seedPaths {
-		if path != "" {
-			os.Remove(path)
-		}
-	}
-	for _, path := range descPaths {
-		if path != "" {
-			os.Remove(path)
-		}
-	}
-	os.RemoveAll(tempDir)
 	if f.Verbose {
 		fmt.Printf("Generated %s.pdf\n", config.Name)
 	}

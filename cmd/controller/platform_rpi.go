@@ -304,6 +304,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		logutil.DebugLog("PDF generation failed: %v", err)
 		return err
 	}
+	defer os.RemoveAll(tempDir) // Move cleanup here
 	logutil.DebugLog("Generated %d seed plates and %d desc plates in %s", len(seedPaths), len(descPaths), tempDir)
 
 	if err := printer.CreatePageLayout(tempFile, tempDir, printer.PaperA4, seedPaths, descPaths); err != nil {
