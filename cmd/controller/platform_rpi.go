@@ -265,7 +265,6 @@ func (p *Platform) Printer() io.Writer {
 	logutil.DebugLog("Printer initialized without query, PCL: %v, PS: %v", p.supportsPCL, p.supportsPostScript)
 	return printer
 }
-
 func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 	printerDev := p.Printer()
@@ -275,8 +274,8 @@ func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDes
 	}
 	logutil.DebugLog("Printer acquired, preparing to write PDF")
 
-	p.printing = true                     // Set printing flag
-	defer func() { p.printing = false }() // Reset on exit
+	p.printing = true
+	defer func() { p.printing = false }()
 
 	var buf bytes.Buffer
 	seedPaths, descPaths, tempDir, err := printer.CreatePlates(&buf, []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}, desc, keyIdx, p.supportsPCL, p.supportsPostScript)
@@ -290,8 +289,14 @@ func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDes
 	} else {
 		logutil.DebugLog("Generated PDF buffer is empty (expected, as files are written to disk)")
 	}
-	if err := os.WriteFile("/log/debug_pdf.bin", buf.Bytes(), 0644); err != nil {
-		logutil.DebugLog("Failed to write debug PDF file: %v", err)
+
+	if err := printer.CreatePageLayout(&buf, tempDir, printer.PaperA4, seedPaths, descPaths); err != nil {
+		logutil.DebugLog("Failed to merge PDF: %v", err)
+		return err
+	}
+	logutil.DebugLog("Merged PDF buffer, size: %d bytes", buf.Len())
+	if buf.Len() > 0 {
+		logutil.DebugLog("First 20 bytes of merged PDF: %x", buf.Bytes()[:min(20, buf.Len())])
 	}
 
 	data := make([]byte, buf.Len())
@@ -307,24 +312,6 @@ func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDes
 		return fmt.Errorf("no data to write to printer")
 	}
 
-	if err := printer.CreatePageLayout(printerDev, tempDir, printer.PaperA4, seedPaths, descPaths); err != nil { // Default to PaperA4
-		logutil.DebugLog("Failed to merge PDF: %v", err)
-		return err
-	}
-
-	// Clean up temp files after CreatePageLayout
-	for _, path := range seedPaths {
-		if path != "" {
-			os.Remove(path)
-		}
-	}
-	for _, path := range descPaths {
-		if path != "" {
-			os.Remove(path)
-		}
-	}
-	os.RemoveAll(tempDir)
-
 	const chunkSize = 1024
 	for i := 0; i < len(data); i += chunkSize {
 		end := i + chunkSize
@@ -335,8 +322,6 @@ func (p *Platform) CreatePlates(mnemonic bip39.Mnemonic, desc *urtypes.OutputDes
 		logutil.DebugLog("Preparing chunk %d, size: %d bytes", i/chunkSize, len(chunk))
 		if len(chunk) > 0 {
 			logutil.DebugLog("First 20 bytes of chunk %d: %x", i/chunkSize, chunk[:min(20, len(chunk))])
-		} else {
-			logutil.DebugLog("Chunk %d is empty", i/chunkSize)
 		}
 		n, err := printerDev.Write(chunk)
 		if err != nil {
