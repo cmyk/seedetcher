@@ -37,20 +37,51 @@ func initPlatform() (*Platform, error) {
 
 func main() {
 	f := testutils.DefineFlags()
+	testMode := flag.Bool("test-createPageLayout", false, "Run test mode") // Bool flag, no arg
 	flag.Parse()
 
-	if len(os.Args) > 1 && os.Args[1] == "--test-createPageLayout" {
-		if len(os.Args) != 3 {
-			fmt.Fprintf(os.Stderr, "Usage: %s --test-createPageLayout <tempDir>\n", os.Args[0])
-			os.Exit(1)
+	if *testMode { // Just check the flag
+		if err := runCLI(f); err != nil {
+			fmt.Fprintf(os.Stderr, "controller CLI: %v\n", err)
+			os.Exit(2)
 		}
-		testCreatePageLayout(f, os.Args[2])
 		os.Exit(0)
 	}
+
 	if err := run(); err != nil {
 		fmt.Fprintf(os.Stderr, "controller: %v\n", err)
 		os.Exit(2)
 	}
+}
+
+func runCLI(f *testutils.Flags) error {
+	p, err := initPlatform()
+	if err != nil {
+		return err
+	}
+	config, ok := testutils.WalletConfigs[f.WalletType]
+	if !ok {
+		return fmt.Errorf("invalid wallet type: %s", f.WalletType)
+	}
+	mnemonics, desc, err := testutils.ParseWallet(config, f.Mnemonic, f.Descriptor)
+	if err != nil {
+		return fmt.Errorf("error parsing wallet: %v", err)
+	}
+	if f.Verbose {
+		logutil.DebugLog("Processing %s wallet", config.Name)
+	}
+
+	tempFile, err := os.Create("/tmp/seedetcher-output.pdf") // Match here
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %v", err)
+	}
+	defer tempFile.Close()
+
+	if err := p.CreatePlates(nil, mnemonics[0], desc, 0); err != nil {
+		return fmt.Errorf("error generating PDF: %v", err)
+	}
+	logutil.DebugLog("PDF generated at %s", tempFile.Name())
+	return nil
 }
 
 // Debug function to test createPageLayout

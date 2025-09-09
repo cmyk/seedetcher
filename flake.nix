@@ -721,7 +721,12 @@
               echo "reload $(wc -c < "$PROG")" > "$USBDEV"
               cat "$PROG" > "$USBDEV"
               exec cat "$USBDEV"
-            '';
+            '' // {
+              buildInputs = with pkgs; [
+                bash  # Explicitly include Bash
+                (glibcLocales.override { allLocales = false; locales = [ "C.utf8" ]; })
+              ];
+            };
             # reload-fast is a faster, but impure, way of reloading the controller binary
             # from a developer shell.
             reload-fast = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "reload-fast" ''

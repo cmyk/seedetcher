@@ -109,9 +109,12 @@ func Init() (*Platform, error) {
 	}
 	d, err := drm.Open()
 	if err != nil {
-		return nil, err
+		logutil.DebugLog("Failed to initialize display: %v; continuing in headless mode", err)
+		p.display = nil // Set display to nil but proceed
+	} else {
+		p.display = d
+		logutil.DebugLog("Display initialized successfully")
 	}
-	p.display = d
 	return p, nil
 }
 
@@ -177,14 +180,26 @@ func (p *Platform) AppendEvents(deadline time.Time, evts []gui.Event) []gui.Even
 }
 
 func (p *Platform) DisplaySize() image.Point {
+	if p.display == nil {
+		logutil.DebugLog("No display available, using default size 240x240")
+		return image.Point{X: 240, Y: 240} // Default size for headless mode
+	}
 	return p.display.Size()
 }
 
 func (p *Platform) Dirty(r image.Rectangle) error {
+	if p.display == nil {
+		logutil.DebugLog("No display, skipping Dirty call")
+		return nil
+	}
 	return p.display.Dirty(r)
 }
 
 func (p *Platform) NextChunk() (draw.RGBA64Image, bool) {
+	if p.display == nil {
+		logutil.DebugLog("No display, skipping NextChunk")
+		return nil, false
+	}
 	return p.display.NextChunk()
 }
 
@@ -277,17 +292,18 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	p.printing = true
 	defer func() { p.printing = false }()
 
-	tempFile, err := os.CreateTemp("", "seedetcher-output-*.pdf")
+	tempFile, err := os.Create("/tmp/seedetcher-output.pdf")
 	if err != nil {
 		logutil.DebugLog("Failed to create temp file: %v", err)
 		return err
 	}
-	defer os.Remove(tempFile.Name())
-	defer tempFile.Close()
+	defer tempFile.Close() // No os.Remove needed, will overwrite next run
 
 	var mnemonics []bip39.Mnemonic
 	if desc == nil {
 		mnemonics = []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}
+	} else if ctx == nil { // Add this
+		mnemonics = []bip39.Mnemonic{mnemonic} // Use passed mnemonic
 	} else {
 		mnemonics = make([]bip39.Mnemonic, len(desc.Keys))
 		i := 0
@@ -304,7 +320,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		logutil.DebugLog("PDF generation failed: %v", err)
 		return err
 	}
-	defer os.RemoveAll(tempDir) // Move cleanup here
+	//defer os.RemoveAll(tempDir) // Move cleanup here
 	logutil.DebugLog("Generated %d seed plates and %d desc plates in %s", len(seedPaths), len(descPaths), tempDir)
 
 	if err := printer.CreatePageLayout(tempFile, tempDir, printer.PaperA4, seedPaths, descPaths); err != nil {
