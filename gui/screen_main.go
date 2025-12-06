@@ -178,21 +178,19 @@ startFlow:
 			},
 		}
 	case stagePrint:
-		var mnemonic bip39.Mnemonic
+		var job PrintJob
 		if s.desc == nil {
-			mnemonic = s.printMnemonic
+			job = FromSinglesig(s.printMnemonic)
 		} else {
-			mnemonic = ctx.Keystores[s.desc.Keys[0].MasterFingerprint]
-		}
-		desc := s.desc
-		if desc == nil {
-			desc = s.printDesc
+			desc := s.desc
+			if desc == nil {
+				desc = s.printDesc
+			}
+			job = FromDescriptor(desc, ctx.Keystores[desc.Keys[0].MasterFingerprint], s.confirmKeyIdx)
 		}
 		return &PrintFlowScreen{
-			Theme:      th,
-			Mnemonic:   mnemonic,
-			Descriptor: desc,
-			KeyIdx:     s.confirmKeyIdx,
+			Theme: th,
+			Job:   job,
 			OnSuccess: func() Screen {
 				return &MainMenuScreen{}
 			},
