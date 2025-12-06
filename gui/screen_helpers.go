@@ -3,6 +3,7 @@ package gui
 import (
 	"image"
 	"image/color"
+	"math"
 
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui/op"
@@ -41,4 +42,27 @@ var scrollMask = op.RegisterParameterizedImage(func(args op.ImageArguments, x, y
 	}
 	a16 := uint16(alpha)
 	return color.RGBA64{A: a16}
+})
+
+type ProgressImage struct {
+	Progress float32
+	Src      image.RGBA64Image
+}
+
+func (p *ProgressImage) Add(ctx op.Ctx) {
+	op.ParamImageOp(ctx, ProgressImageGen, true, p.Src.Bounds(), []any{p.Src}, []uint32{math.Float32bits(p.Progress)})
+}
+
+var ProgressImageGen = op.RegisterParameterizedImage(func(args op.ImageArguments, x, y int) color.RGBA64 {
+	src := args.Refs[0].(image.RGBA64Image)
+	progress := math.Float32frombits(args.Args[0])
+	b := src.Bounds()
+	c := b.Max.Add(b.Min).Div(2)
+	d := image.Pt(x, y).Sub(c)
+	angle := float32(math.Atan2(float64(d.X), float64(d.Y)))
+	angle = math.Pi - angle
+	if angle > 2*math.Pi*progress {
+		return color.RGBA64{}
+	}
+	return src.RGBA64At(x, y)
 })

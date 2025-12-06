@@ -2,13 +2,10 @@
 package gui
 
 import (
-	"errors"
-	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"io"
-	"math"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
@@ -184,96 +181,6 @@ func descriptorKeyIdx(desc urtypes.OutputDescriptor, m bip39.Mnemonic, pass stri
 		}
 	}
 	return 0, false
-}
-
-// scaleRot is a specialized function for fast scaling and rotation of
-// the camera frames for display.
-func scaleRot(dst, src *image.Gray, rot180 bool) {
-	db := dst.Bounds()
-	sb := src.Bounds()
-	if db.Empty() {
-		return
-	}
-	scale := sb.Dx() / db.Dx()
-	for y := 0; y < db.Dy(); y++ {
-		sx := sb.Max.X - 1 - y*scale
-		dy := db.Max.Y - y
-		if rot180 {
-			dy = y + db.Min.Y
-		}
-		for x := 0; x < db.Dx(); x++ {
-			sy := x*scale + sb.Min.Y
-			c := src.GrayAt(sx, sy)
-			dx := db.Max.X - 1 - x
-			if rot180 {
-				dx = x + db.Min.X
-			}
-			dst.SetGray(dx, dy, c)
-		}
-	}
-}
-
-type ProgressImage struct {
-	Progress float32
-	Src      image.RGBA64Image
-}
-
-func (p *ProgressImage) Add(ctx op.Ctx) {
-	op.ParamImageOp(ctx, ProgressImageGen, true, p.Src.Bounds(), []any{p.Src}, []uint32{math.Float32bits(p.Progress)})
-}
-
-var ProgressImageGen = op.RegisterParameterizedImage(func(args op.ImageArguments, x, y int) color.RGBA64 {
-	src := args.Refs[0].(image.RGBA64Image)
-	progress := math.Float32frombits(args.Args[0])
-	b := src.Bounds()
-	c := b.Max.Add(b.Min).Div(2)
-	d := image.Pt(x, y).Sub(c)
-	angle := float32(math.Atan2(float64(d.X), float64(d.Y)))
-	angle = math.Pi - angle
-	if angle > 2*math.Pi*progress {
-		return color.RGBA64{}
-	}
-	return src.RGBA64At(x, y)
-})
-
-type errDuplicateKey struct {
-	Fingerprint uint32
-}
-
-func (e *errDuplicateKey) Error() string {
-	return fmt.Sprintf("descriptor contains a duplicate share: %.8x", e.Fingerprint)
-}
-
-func (e *errDuplicateKey) Is(target error) bool {
-	_, ok := target.(*errDuplicateKey)
-	return ok
-}
-
-func NewErrorScreen(err error) *ErrorScreen {
-	var errDup *errDuplicateKey
-	switch {
-	case errors.As(err, &errDup):
-		return &ErrorScreen{
-			Title: "Duplicated Share",
-			Body:  fmt.Sprintf("The share %.8x is listed more than once in the wallet.", errDup.Fingerprint),
-		}
-	default:
-		return &ErrorScreen{
-			Title: "Error",
-			Body:  err.Error(),
-		}
-	}
-}
-
-func showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
-	scr := NewErrorScreen(err)
-	for {
-		dims := ctx.Platform.DisplaySize()
-		if scr.Layout(ctx, ops, th, dims) {
-			break
-		}
-		ctx.Frame()
-	}
 }
 
 type Platform interface {

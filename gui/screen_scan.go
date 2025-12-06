@@ -16,6 +16,33 @@ import (
 	"seedetcher.com/nonstandard"
 )
 
+// scaleRot is a specialized function for fast scaling and rotation of
+// the camera frames for display.
+func scaleRot(dst, src *image.Gray, rot180 bool) {
+	db := dst.Bounds()
+	sb := src.Bounds()
+	if db.Empty() {
+		return
+	}
+	scale := sb.Dx() / db.Dx()
+	for y := 0; y < db.Dy(); y++ {
+		sx := sb.Max.X - 1 - y*scale
+		dy := db.Max.Y - y
+		if rot180 {
+			dy = y + db.Min.Y
+		}
+		for x := 0; x < db.Dx(); x++ {
+			sy := x*scale + sb.Min.Y
+			c := src.GrayAt(sx, sy)
+			dx := db.Max.X - 1 - x
+			if rot180 {
+				dx = x + db.Min.X
+			}
+			dst.SetGray(dx, dy, c)
+		}
+	}
+}
+
 type QRDecoder struct {
 	decoder   ur.Decoder
 	nsdecoder nonstandard.Decoder

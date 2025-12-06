@@ -1,6 +1,8 @@
 package gui
 
 import (
+	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"strings"
@@ -10,6 +12,46 @@ import (
 	"seedetcher.com/gui/op"
 	"seedetcher.com/gui/widget"
 )
+
+type errDuplicateKey struct {
+	Fingerprint uint32
+}
+
+func (e *errDuplicateKey) Error() string {
+	return fmt.Sprintf("descriptor contains a duplicate share: %.8x", e.Fingerprint)
+}
+
+func (e *errDuplicateKey) Is(target error) bool {
+	_, ok := target.(*errDuplicateKey)
+	return ok
+}
+
+func NewErrorScreen(err error) *ErrorScreen {
+	var errDup *errDuplicateKey
+	switch {
+	case errors.As(err, &errDup):
+		return &ErrorScreen{
+			Title: "Duplicated Share",
+			Body:  fmt.Sprintf("The share %.8x is listed more than once in the wallet.", errDup.Fingerprint),
+		}
+	default:
+		return &ErrorScreen{
+			Title: "Error",
+			Body:  err.Error(),
+		}
+	}
+}
+
+func showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
+	scr := NewErrorScreen(err)
+	for {
+		dims := ctx.Platform.DisplaySize()
+		if scr.Layout(ctx, ops, th, dims) {
+			break
+		}
+		ctx.Frame()
+	}
+}
 
 type ErrorScreen struct {
 	Title string
