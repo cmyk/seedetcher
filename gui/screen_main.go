@@ -64,7 +64,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		}
 		for {
 			dims := ctx.Platform.DisplaySize()
-			switch ws.Layout(ctx, ops.Begin(), th, dims) {
+			switch ws.Layout(ctx, ops, th, dims) {
 			case ConfirmYes:
 				ctx.EmptySDSlot = true
 				goto startFlow
