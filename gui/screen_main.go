@@ -164,6 +164,26 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	if th == nil {
 		th = &descriptorTheme
 	}
+	// Require SD card removal before proceeding, matching the legacy main flow.
+	if !ctx.EmptySDSlot {
+		ws := &ConfirmWarningScreen{
+			Title: "Remove SD card",
+			Body:  "Remove SD card to continue.\n\nHold button to ignore this warning.",
+			Icon:  assets.IconRight,
+		}
+		for {
+			dims := ctx.Platform.DisplaySize()
+			switch ws.Layout(ctx, ops.Begin(), th, dims) {
+			case ConfirmYes:
+				ctx.EmptySDSlot = true
+				goto startFlow
+			case ConfirmNo:
+				return &MainMenuScreen{}
+			}
+			ctx.Frame()
+		}
+	}
+startFlow:
 	backupWalletFlow(ctx, ops, th)
 	return &MainMenuScreen{}
 }
