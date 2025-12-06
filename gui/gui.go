@@ -261,10 +261,12 @@ func Run(pl Platform, version string) func(yield func() bool) {
 				active bool
 				state  saver.State
 			}
+			screen Screen
 		}{
 			ctx: ctx,
 		}
 		a.idle.start = pl.Now()
+		a.screen = FlowScreen{}
 
 		for {
 			it := func(yield func() bool) {
@@ -279,7 +281,7 @@ func Run(pl Platform, version string) func(yield func() bool) {
 						panic(err)
 					}
 				}()
-				mainFlow(ctx, a.root.Context())
+				a.screen = runScreen(ctx, a.root.Context(), a.screen)
 			}
 			var evts []Event
 			for range it {
@@ -347,6 +349,17 @@ func rgb(c uint32) color.NRGBA {
 
 func argb(c uint32) color.NRGBA {
 	return color.NRGBA{A: uint8(c >> 24), R: uint8(c >> 16), G: uint8(c >> 8), B: uint8(c)}
+}
+
+func runScreen(ctx *Context, ops op.Ctx, scr Screen) Screen {
+	for scr != nil {
+		if next := scr.Update(ctx, ops); next != nil {
+			scr = next
+		} else {
+			break
+		}
+	}
+	return scr
 }
 
 func (f FrameEvent) Event() Event {
