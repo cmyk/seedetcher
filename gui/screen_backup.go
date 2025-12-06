@@ -267,27 +267,28 @@ func (s *SeedInputScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		}
 	}
 	if !new(SeedScreen).Confirm(ctx, ops, th, mnemonic) {
-		// Stay on this seed, keep draft for editing.
-		s.Draft = mnemonic
-		return s
+		// Back out of confirm: honor restart handler if provided.
+		if s.AllowRestart != nil {
+			return s.AllowRestart()
+		}
+		return &MainMenuScreen{}
 	}
-	mfp, err := masterFingerprintFor(mnemonic, &chaincfg.MainNetParams)
+	network := &chaincfg.MainNetParams
+	if s.Descriptor != nil && len(s.Descriptor.Keys) > 0 {
+		network = s.Descriptor.Keys[0].Network
+	}
+	mfp, err := validateSeedAgainstDescriptor(s.Descriptor, mnemonic, ctx.Keystores, network)
 	if err != nil {
-		showError(ctx, ops, th, fmt.Errorf("Failed to compute fingerprint: %v", err))
+		switch err {
+		case errSeedDuplicate:
+			showError(ctx, ops, th, fmt.Errorf("Seed was entered already"))
+		case errSeedMismatch:
+			showError(ctx, ops, th, fmt.Errorf("Seed doesn’t match wallet descriptor"))
+		default:
+			showError(ctx, ops, th, fmt.Errorf("Failed to compute fingerprint: %v", err))
+		}
 		s.Draft = mnemonic
 		return s
-	}
-	if s.Descriptor != nil {
-		if _, exists := ctx.Keystores[mfp]; exists {
-			showError(ctx, ops, th, fmt.Errorf("Seed was entered already"))
-			s.Draft = mnemonic
-			return s
-		}
-		if _, matched := descriptorKeyIdx(*s.Descriptor, mnemonic, ""); !matched {
-			showError(ctx, ops, th, fmt.Errorf("Seed doesn’t match wallet descriptor"))
-			s.Draft = mnemonic
-			return s
-		}
 	}
 	// Success path: clear draft.
 	s.Draft = nil
