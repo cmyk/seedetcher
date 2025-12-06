@@ -1,7 +1,7 @@
 # Release checklist (b0.1 WIP)
 
 - [ ] GUI: fully Screen-structured backup flow
-  - [ ] Descriptor input as Screen (scan/skip/reuse, validation encapsulated)
+  - [x] Descriptor input as Screen (scan/skip/reuse, validation encapsulated)
   - [ ] Seed input as Screen(s) (camera/manual, descriptor match, dup-fp guard)
   - [ ] Wallet confirm as Screen (descriptor + seed, choose key index)
   - [ ] Print flow as Screen (retry on failure, return to menu on success)

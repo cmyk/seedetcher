@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
@@ -238,4 +239,62 @@ outer:
 			}
 		}
 	}
+}
+
+// SeedInputScreen wraps seed capture/validation for one seed in the flow.
+type SeedInputScreen struct {
+	Theme        *Colors
+	Index        int
+	Total        int
+	Descriptor   *urtypes.OutputDescriptor
+	OnDone       func(mnemonic bip39.Mnemonic, mfp uint32, ok bool) Screen
+	AllowRestart func() Screen
+}
+
+func (s *SeedInputScreen) Update(ctx *Context, ops op.Ctx) Screen {
+	th := s.Theme
+	if th == nil {
+		th = &descriptorTheme
+	}
+	mnemonic, ok := newMnemonicFlow(ctx, ops, th, s.Index, s.Total)
+	if !ok {
+		if s.AllowRestart != nil {
+			return s.AllowRestart()
+		}
+		return &MainMenuScreen{}
+	}
+	if !new(SeedScreen).Confirm(ctx, ops, th, mnemonic) {
+		if s.AllowRestart != nil {
+			return s.AllowRestart()
+		}
+		return &MainMenuScreen{}
+	}
+	mfp, err := masterFingerprintFor(mnemonic, &chaincfg.MainNetParams)
+	if err != nil {
+		showError(ctx, ops, th, fmt.Errorf("Failed to compute fingerprint: %v", err))
+		if s.AllowRestart != nil {
+			return s.AllowRestart()
+		}
+		return &MainMenuScreen{}
+	}
+	if s.Descriptor != nil {
+		if _, exists := ctx.Keystores[mfp]; exists {
+			showError(ctx, ops, th, fmt.Errorf("Seed was entered already"))
+			if s.AllowRestart != nil {
+				return s.AllowRestart()
+			}
+			return &MainMenuScreen{}
+		}
+		if _, matched := descriptorKeyIdx(*s.Descriptor, mnemonic, ""); !matched {
+			showError(ctx, ops, th, fmt.Errorf("Seed doesn’t match wallet descriptor"))
+			if s.AllowRestart != nil {
+				return s.AllowRestart()
+			}
+			return &MainMenuScreen{}
+		}
+	}
+	if s.OnDone != nil {
+		return s.OnDone(mnemonic, mfp, true)
+	}
+	return &MainMenuScreen{}
 }
