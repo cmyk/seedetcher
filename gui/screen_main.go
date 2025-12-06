@@ -33,9 +33,8 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			case Button1:
 				return s // No-op back on root
 			case Button3:
-				// Enter backup/print flow.
-				backupWalletFlow(ctx, ops, &singleTheme)
-				return s
+				// Enter backup/print flow as its own screen.
+				return &BackupFlowScreen{Theme: &singleTheme}
 			}
 		}
 		dims := ctx.Platform.DisplaySize()
@@ -153,4 +152,18 @@ func drawMainScreen(ctx *Context, ops op.Ctx, dims image.Point, page program) {
 	op.Position(ops, ops.End(), r.SE(versz.Add(image.Pt(4, 0))))
 	shsz := widget.Labelwf(ops.Begin(), ctx.Styles.debug, 100, th.Text, "SeedEtcher")
 	op.Position(ops, ops.End(), r.SW(shsz).Add(image.Pt(3, 0)))
+}
+
+// BackupFlowScreen wraps the legacy backup flow inside the Screen loop.
+type BackupFlowScreen struct {
+	Theme *Colors
+}
+
+func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
+	th := s.Theme
+	if th == nil {
+		th = &descriptorTheme
+	}
+	backupWalletFlow(ctx, ops, th)
+	return &MainMenuScreen{}
 }
