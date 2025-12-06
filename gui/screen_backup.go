@@ -207,6 +207,28 @@ func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors) (*urtypes.OutputD
 	}
 }
 
+// DescriptorInputScreen wraps descriptor input as a Screen.
+type DescriptorInputScreen struct {
+	Theme  *Colors
+	OnDone func(*urtypes.OutputDescriptor, bool) Screen
+}
+
+func (s *DescriptorInputScreen) Update(ctx *Context, ops op.Ctx) Screen {
+	th := s.Theme
+	if th == nil {
+		th = &descriptorTheme
+	}
+	desc, ok := inputDescriptorFlow(ctx, ops, th)
+	if s.OnDone != nil {
+		return s.OnDone(desc, ok)
+	}
+	if !ok {
+		return &MainMenuScreen{}
+	}
+	// Default: go back to menu.
+	return &MainMenuScreen{}
+}
+
 func newMnemonicFlow(ctx *Context, ops op.Ctx, th *Colors, current, total int) (bip39.Mnemonic, bool) {
 	cs := &ChoiceScreen{
 		Title:   fmt.Sprintf("Input Seed %d/%d", current, total), // Display "Seed X/Y"
