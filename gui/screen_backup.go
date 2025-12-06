@@ -59,13 +59,6 @@ descLoop:
 			}
 		}
 
-		if desc == nil && ctx.LastDescriptor != nil {
-			desc = ctx.LastDescriptor
-		}
-		if desc == nil {
-			continue descLoop
-		}
-
 		logutil.DebugLog("backupWalletFlow: Descriptor present with %d keys", len(desc.Keys))
 		totalSeeds := len(desc.Keys)
 		for i := 1; i <= totalSeeds; i++ {
