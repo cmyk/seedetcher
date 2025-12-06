@@ -9,4 +9,4 @@
   - [x] Run loop uses Screen state machine starting at MainMenu
 - [ ] Device sanity: menu → backup flow (SeedQR + manual) → print on hardware
 - [ ] Docs: AGENTS.md, GUI flowchart updated
-- [ ] Tests: `GOCACHE=/tmp/gocache ./scripts/test-lite.sh` clean
+- [x] Tests: `GOCACHE=/tmp/gocache ./scripts/test-lite.sh` clean
