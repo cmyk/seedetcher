@@ -2,8 +2,8 @@
 
 - [ ] GUI: fully Screen-structured backup flow
   - [x] Descriptor input as Screen (scan/skip/reuse, validation encapsulated)
-  - [ ] Seed input as Screen(s) (camera/manual, descriptor match, dup-fp guard)
-  - [ ] Wallet confirm as Screen (descriptor + seed, choose key index)
+  - [x] Seed input as Screen (camera/manual, descriptor match, dup-fp guard)
+  - [x] Wallet confirm as Screen (descriptor + seed, choose key index)
   - [ ] Print flow as Screen (retry on failure, return to menu on success)
   - [x] Remove SD warning before backup (Button3 hold)
   - [x] Run loop uses Screen state machine starting at MainMenu
