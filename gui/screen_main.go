@@ -9,7 +9,6 @@ import (
 	"seedetcher.com/gui/layout"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/logutil"
-	"seedetcher.com/printer"
 )
 
 // MainMenuScreen renders the landing page and routes into the backup flow.
@@ -193,16 +192,23 @@ startFlow:
 		} else {
 			mnemonic = ctx.Keystores[s.desc.Keys[0].MasterFingerprint]
 		}
-		printScreen := &PrintSeedScreen{}
 		desc := s.desc
 		if desc == nil {
 			desc = s.printDesc
 		}
-		if printScreen.Print(ctx, ops, th, mnemonic, desc, s.confirmKeyIdx, printer.PaperA4) {
-			return &MainMenuScreen{}
+		return &PrintFlowScreen{
+			Theme:      th,
+			Mnemonic:   mnemonic,
+			Descriptor: desc,
+			KeyIdx:     s.confirmKeyIdx,
+			OnSuccess: func() Screen {
+				return &MainMenuScreen{}
+			},
+			OnRetry: func() Screen {
+				s.stage = stageConfirm
+				return s
+			},
 		}
-		s.stage = stageConfirm
-		return s
 	default:
 		logutil.DebugLog("BackupFlowScreen: unknown stage, resetting")
 		return &MainMenuScreen{}
