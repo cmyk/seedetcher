@@ -55,17 +55,6 @@ func sanitizeTitle(title string) string {
 	return b.String()
 }
 
-func mnemonicString(m bip39.Mnemonic) string {
-	var sb strings.Builder
-	for i, w := range m {
-		if i > 0 {
-			sb.WriteString(" ")
-		}
-		sb.WriteString(bip39.LabelFor(w))
-	}
-	return sb.String()
-}
-
 type Context struct {
 	Platform Platform
 	Styles   Styles

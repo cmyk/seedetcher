@@ -21,7 +21,7 @@ func backupWalletFlow(ctx *Context, ops op.Ctx, th *Colors) {
 
 descLoop:
 	for {
-		desc, ok := inputDescriptorFlow(ctx, ops, th, nil)
+		desc, ok := inputDescriptorFlow(ctx, ops, th)
 		logutil.DebugLog("backupWalletFlow: After inputDescriptorFlow, desc=%v, ok=%v", desc != nil, ok)
 		if !ok {
 			logutil.DebugLog("backupWalletFlow: inputDescriptorFlow failed, exiting")
@@ -61,6 +61,9 @@ descLoop:
 
 		if desc == nil && ctx.LastDescriptor != nil {
 			desc = ctx.LastDescriptor
+		}
+		if desc == nil {
+			continue descLoop
 		}
 
 		logutil.DebugLog("backupWalletFlow: Descriptor present with %d keys", len(desc.Keys))
@@ -162,7 +165,7 @@ descLoop:
 	}
 }
 
-func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic) (*urtypes.OutputDescriptor, bool) {
+func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors) (*urtypes.OutputDescriptor, bool) {
 	originalDesc := ctx.LastDescriptor // Save original
 	cs := &ChoiceScreen{
 		Title:   "Descriptor",
