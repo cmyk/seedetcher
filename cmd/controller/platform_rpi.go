@@ -18,14 +18,11 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"seedetcher.com/backup"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/driver/drm"
 	"seedetcher.com/driver/libcamera"
-	"seedetcher.com/driver/mjolnir"
 	"seedetcher.com/driver/wshat"
-	"seedetcher.com/engrave"
 	"seedetcher.com/gui"
 	"seedetcher.com/logutil"
 	"seedetcher.com/printer"
@@ -34,8 +31,7 @@ import (
 
 // Debug hooks (ensure unique per build tag if needed, but keep as is for now).
 var (
-	engraverHook func() io.ReadWriteCloser
-	initHook     func(p *Platform) error
+	initHook func(p *Platform) error
 )
 
 // queryPrinterCapabilities sends a PJL query and parses the response for PCL/PostScript support
@@ -201,48 +197,6 @@ func (p *Platform) NextChunk() (draw.RGBA64Image, bool) {
 		return nil, false
 	}
 	return p.display.NextChunk()
-}
-
-func (p *Platform) PlateSizes() []backup.PlateSize {
-	return []backup.PlateSize{backup.SquarePlate, backup.LargePlate}
-}
-
-func (p *Platform) EngraverParams() engrave.Params {
-	return mjolnir.Params
-}
-
-func (p *Platform) Engraver() (gui.Engraver, error) {
-	var dev io.ReadWriteCloser
-	if engraverHook == nil {
-		var err error
-		dev, err = mjolnir.Open("")
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		dev = engraverHook()
-	}
-	return &engraver{dev: dev}, nil
-}
-
-type engraver struct {
-	dev io.ReadWriteCloser
-}
-
-func (e *engraver) Engrave(sz backup.PlateSize, plan engrave.Plan, quit <-chan struct{}) error {
-	const x = 97
-	y := 0
-	switch sz {
-	case backup.SquarePlate:
-		y = 49
-	}
-	mm := mjolnir.Params.Millimeter
-	plan = engrave.Offset(x*mm, y*mm, plan)
-	return mjolnir.Engrave(e.dev, mjolnir.Options{}, plan, quit)
-}
-
-func (e *engraver) Close() {
-	e.dev.Close()
 }
 
 var frameCounter int

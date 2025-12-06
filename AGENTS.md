@@ -30,7 +30,7 @@
 - `seedqr/` – SeedQR & CompactSeedQR encode/decode.
 - `bip39/`, `bc/` – mnemonic and descriptor parsing/validation.
 - `printer/` – plate rendering and page layout (pdfcpu/gofpdf).
-- `driver/` – libcamera, zbar, DRM LCD, mjolnir engraver, wshat buttons.
+- `driver/` – libcamera, zbar, DRM LCD, wshat buttons (no engraver stack).
 - `scripts/` – flash, capture print, printer helpers.
 - `docs/` – overview and development notes (build/debug/Nix tips).
 

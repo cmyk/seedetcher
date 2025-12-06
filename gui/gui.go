@@ -8,7 +8,6 @@ import (
 	"image/color"
 	"image/draw"
 	"io"
-	"log"
 	"math"
 	"strings"
 	"time"
@@ -17,13 +16,10 @@ import (
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/btcsuite/btcd/chaincfg"
 	"seedetcher.com/address"
-	"seedetcher.com/backup"
 	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip32"
 	"seedetcher.com/bip39"
-	"seedetcher.com/engrave"
-	"seedetcher.com/font/constant"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/layout"
 	"seedetcher.com/gui/op"
@@ -43,6 +39,23 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+const maxTitleLen = 18
+
+func sanitizeTitle(title string) string {
+	title = strings.ToUpper(title)
+	var b strings.Builder
+	for _, r := range title {
+		if b.Len() >= maxTitleLen {
+			break
+		}
+		if !utf8.ValidRune(r) {
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func mnemonicString(m bip39.Mnemonic) string {
@@ -371,6 +384,18 @@ func deriveMasterKey(m bip39.Mnemonic, net *chaincfg.Params) (*hdkeychain.Extend
 	//
 	// [0] https://bitcoin.stackexchange.com/questions/53180/bip-32-seed-resulting-in-an-invalid-private-key
 	return mk, err == nil
+}
+
+func masterFingerprintFor(m bip39.Mnemonic, network *chaincfg.Params) (uint32, error) {
+	mk, ok := deriveMasterKey(m, network)
+	if !ok {
+		return 0, errors.New("failed to derive mnemonic master key")
+	}
+	mfp, _, err := bip32.Derive(mk, urtypes.Path{0})
+	if err != nil {
+		return 0, err
+	}
+	return mfp, nil
 }
 
 type ScanScreen struct {
@@ -804,11 +829,6 @@ func NewErrorScreen(err error) *ErrorScreen {
 			Title: "Duplicated Share",
 			Body:  fmt.Sprintf("The share %.8x is listed more than once in the wallet.", errDup.Fingerprint),
 		}
-	case errors.Is(err, backup.ErrDescriptorTooLarge):
-		return &ErrorScreen{
-			Title: "Too Large",
-			Body:  "The descriptor cannot fit any plate size.",
-		}
 	default:
 		return &ErrorScreen{
 			Title: "Error",
@@ -817,262 +837,17 @@ func NewErrorScreen(err error) *ErrorScreen {
 	}
 }
 
-func validateDescriptor(params engrave.Params, desc urtypes.OutputDescriptor) error {
+func validateDescriptor(desc urtypes.OutputDescriptor) error {
 	keys := make(map[string]bool)
 	for _, k := range desc.Keys {
 		xpub := k.String()
 		if keys[xpub] {
-			return &errDuplicateKey{
-				Fingerprint: k.MasterFingerprint,
-			}
+			return &errDuplicateKey{Fingerprint: k.MasterFingerprint}
 		}
 		keys[xpub] = true
 	}
-	// Do a dummy engrave to see whether the backup fits any plate.
-	descPlate := backup.Descriptor{
-		Descriptor: desc,
-		KeyIdx:     0,
-		Font:       constant.Font,
-		Size:       backup.LargePlate,
-	}
-	_, err := backup.EngraveDescriptor(params, descPlate)
-	if err != nil {
-		return err
-	}
-	// Verify that every permutation of desc.Threshold shares can recover the
-	// descriptor. Note that this is impossible by construction and by exhaustive
-	// tests, but it's good to be paranoid.
-	if !backup.Recoverable(desc) {
-		return errors.New("descriptor is not recoverable this is a bug in the program please report it")
-	}
 	return nil
 }
-
-type Plate struct {
-	Size              backup.PlateSize
-	MasterFingerprint uint32
-	Sides             []engrave.Plan
-}
-
-func engraveSeed(sizes []backup.PlateSize, params engrave.Params, m bip39.Mnemonic) (Plate, error) {
-	mfp, err := masterFingerprintFor(m, &chaincfg.MainNetParams)
-	if err != nil {
-		return Plate{}, err
-	}
-	var lastErr error
-	for _, sz := range sizes {
-		seedDesc := backup.Seed{
-			KeyIdx:            0,
-			Mnemonic:          m,
-			Keys:              1,
-			MasterFingerprint: mfp,
-			Font:              constant.Font,
-			Size:              sz,
-		}
-		seedSide, err := backup.EngraveSeed(params, seedDesc)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		return Plate{
-			Sides:             []engrave.Plan{seedSide},
-			Size:              sz,
-			MasterFingerprint: mfp,
-		}, nil
-	}
-	return Plate{}, lastErr
-}
-
-func masterFingerprintFor(m bip39.Mnemonic, network *chaincfg.Params) (uint32, error) {
-	mk, ok := deriveMasterKey(m, network)
-	if !ok {
-		return 0, errors.New("failed to derive mnemonic master key")
-	}
-	mfp, _, err := bip32.Derive(mk, urtypes.Path{0})
-	if err != nil {
-		return 0, err
-	}
-	return mfp, nil
-}
-
-func engravePlate(sizes []backup.PlateSize, params engrave.Params, desc urtypes.OutputDescriptor, keyIdx int, m bip39.Mnemonic) (Plate, error) {
-	mfp, err := masterFingerprintFor(m, desc.Keys[keyIdx].Network)
-	if err != nil {
-		return Plate{}, err
-	}
-	var lastErr error
-	for _, sz := range sizes {
-		descPlate := backup.Descriptor{
-			Descriptor: desc,
-			KeyIdx:     keyIdx,
-			Font:       constant.Font,
-			Size:       sz,
-		}
-		descSide, err := backup.EngraveDescriptor(params, descPlate)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		seedDesc := backup.Seed{
-			Title:             desc.Title,
-			KeyIdx:            keyIdx,
-			Mnemonic:          m,
-			Keys:              len(desc.Keys),
-			MasterFingerprint: mfp,
-			Font:              constant.Font,
-			Size:              sz,
-		}
-		seedSide, err := backup.EngraveSeed(params, seedDesc)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		return Plate{
-			Size:              sz,
-			MasterFingerprint: mfp,
-			Sides:             []engrave.Plan{descSide, seedSide},
-		}, nil
-	}
-	return Plate{}, lastErr
-}
-
-func plateImage(p backup.PlateSize) image.RGBA64Image {
-	switch p {
-	case backup.SquarePlate:
-		return assets.Sh02
-	case backup.LargePlate:
-		return assets.Sh03
-	default:
-		panic("unsupported plate")
-	}
-}
-
-func plateName(p backup.PlateSize) string {
-	switch p {
-	case backup.SquarePlate:
-		return "SH02"
-	case backup.LargePlate:
-		return "SH03"
-	default:
-		panic("unsupported plate")
-	}
-}
-
-type InstructionType int
-
-const (
-	PrepareInstruction InstructionType = iota
-	ConnectInstruction
-	EngraveInstruction
-)
-
-type Instruction struct {
-	Body  string
-	Lead  string
-	Type  InstructionType
-	Side  int
-	Image image.RGBA64Image
-
-	resolvedBody string
-}
-
-var (
-	EngraveFirstSideA = []Instruction{
-		{
-			Body: "Make sure the fingerprint above represents the intended share.",
-			Lead: "seedetcher.com/tip#1",
-		},
-		{
-			Body: "Turn off the engraver and disconnect it from this device.",
-			Lead: "seedetcher.com/tip#2",
-		},
-		{
-			Body: "Manually move the hammerhead to the far upper left position.",
-			Lead: "seedetcher.com/tip#3",
-		},
-		{
-			Body:  "Place a {{.Name}} on the machine.",
-			Image: assets.Sh02,
-			Lead:  "seedetcher.com/tip#4",
-		},
-		{
-			Body: "Tighten the nuts firmly.",
-			Lead: "seedetcher.com/tip#4",
-		},
-		{
-			Body: "Loosen the hammerhead finger screw. Adjust needle distance to ~1.5 mm above the plate.",
-			Lead: "seedetcher.com/tip#5",
-		},
-		{
-			Body: "Tighten the hammerhead finger screw and make sure the depth selector is set to \"Strong\".",
-			Lead: "seedetcher.com/tip#6",
-		},
-		{
-			Body: "Turn on the engraving machine and connect this device via the middle port.",
-			Lead: "seedetcher.com/tip#7",
-		},
-		{
-			Body: "Hold button to start the engraving process. The process is loud, use hearing protection.",
-			Type: ConnectInstruction,
-			Lead: "seedetcher.com/tip#8",
-		},
-		{
-			Lead: "Engraving plate",
-			Type: EngraveInstruction,
-			Side: 0,
-		},
-	}
-
-	EngraveSideA = []Instruction{
-		{
-			Body: "Make sure the fingerprint above represents the intended share.",
-			Lead: "seedetcher.com/tip#1",
-		},
-		{
-			Body:  "Place a {{.Name}} on the machine.",
-			Image: assets.Sh02,
-			Lead:  "seedetcher.com/tip#4",
-		},
-		{
-			Body: "Tighten the nuts firmly.",
-			Lead: "seedetcher.com/tip#4",
-		},
-		{
-			Body: "Hold button to start the engraving process. The process is loud, use hearing protection.",
-			Type: ConnectInstruction,
-			Lead: "seedetcher.com/tip#8",
-		},
-		{
-			Lead: "Engraving plate",
-			Type: EngraveInstruction,
-			Side: 0,
-		},
-	}
-
-	EngraveSideB = []Instruction{
-		{
-			Body: "Unscrew the 4 nuts and flip the top metal plate horizontally.",
-		},
-		{
-			Body: "Tighten the nuts firmly.",
-		},
-		{
-			Body: "Hold button to start the engraving process. The process is loud, use hearing protection.",
-			Type: ConnectInstruction,
-		},
-		{
-			Lead: "Engraving plate",
-			Type: EngraveInstruction,
-			Side: 1,
-		},
-	}
-
-	EngraveSuccess = []Instruction{
-		{
-			Body: "Engraving completed successfully.",
-		},
-	}
-)
 
 func isEmptyMnemonic(m bip39.Mnemonic) bool {
 	for _, w := range m {
@@ -2154,7 +1929,7 @@ func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mn
 				mfp, _ := masterFingerprintFor(mnemonic, &chaincfg.MainNetParams)
 				desc.Keys[0].MasterFingerprint = mfp
 			}
-			desc.Title = backup.TitleString(constant.Font, desc.Title)
+			desc.Title = sanitizeTitle(desc.Title)
 			ctx.LastDescriptor = &desc
 			logutil.DebugLog("inputDescriptorFlow: Returning desc with %d keys", len(desc.Keys))
 			return &desc, true
@@ -2351,7 +2126,7 @@ func (s *DescriptorScreen) Confirm(ctx *Context, ops op.Ctx, th *Colors) (int, b
 				if !inp.Clicked(e.Button) {
 					break
 				}
-				if err := validateDescriptor(ctx.Platform.EngraverParams(), s.Descriptor); err != nil {
+				if err := validateDescriptor(s.Descriptor); err != nil {
 					showErr(NewErrorScreen(err))
 					continue
 				}
@@ -2448,283 +2223,6 @@ func (s *DescriptorScreen) Draw(ctx *Context, ops op.Ctx, th *Colors, dims image
 	op.Position(ops, ops.End(), body.Min.Add(image.Pt(0, scrollFadeDist)))
 }
 
-func NewEngraveScreen(ctx *Context, plate Plate) *EngraveScreen {
-	var ins []Instruction
-	if !ctx.Calibrated {
-		ins = append(ins, EngraveFirstSideA...)
-	} else {
-		ins = append(ins, EngraveSideA...)
-	}
-	if len(plate.Sides) > 1 {
-		ins = append(ins, EngraveSideB...)
-	}
-	ins = append(ins, EngraveSuccess...)
-	s := &EngraveScreen{
-		plate:        plate,
-		instructions: ins,
-	}
-	for i, ins := range s.instructions {
-		repl := strings.NewReplacer(
-			"{{.Name}}", plateName(plate.Size),
-		)
-		s.instructions[i].resolvedBody = repl.Replace(ins.Body)
-		// As a special case, the Sh02 image is a placeholder for the plate-specific image.
-		if ins.Image == assets.Sh02 {
-			s.instructions[i].Image = plateImage(plate.Size)
-		}
-	}
-	return s
-}
-
-type EngraveScreen struct {
-	instructions []Instruction
-	plate        Plate
-
-	step   int
-	dryRun struct {
-		timeout time.Time
-		enabled bool
-	}
-	engrave engraveState
-}
-
-type engraveState struct {
-	dev          Engraver
-	cancel       chan struct{}
-	progress     chan float32
-	errs         chan error
-	lastProgress float32
-}
-
-func (s *EngraveScreen) showError(ctx *Context, ops op.Ctx, th *Colors, errScr *ErrorScreen) {
-	for {
-		dims := ctx.Platform.DisplaySize()
-		dismissed := errScr.Layout(ctx, ops.Begin(), th, dims)
-		d := ops.End()
-		if dismissed {
-			break
-		}
-		s.draw(ctx, ops, th, dims)
-		d.Add(ops)
-		ctx.Frame()
-	}
-}
-
-func (s *EngraveScreen) moveStep(ctx *Context, ops op.Ctx, th *Colors) bool {
-	ins := s.instructions[s.step]
-	if ins.Type == ConnectInstruction {
-		if s.engrave.dev != nil {
-			return false
-		}
-		s.engrave = engraveState{}
-		dev, err := ctx.Platform.Engraver()
-		if err != nil {
-			log.Printf("gui: failed to connect to engraver: %v", err)
-			s.showError(ctx, ops, th, &ErrorScreen{
-				Title: "Connection Error",
-				Body:  fmt.Sprintf("Ensure the engraver is turned on and verify that it is connected to the middle port of this device.\n\nError details: %v", err),
-			})
-			return false
-		}
-		s.engrave.dev = dev
-	}
-	s.step++
-	if s.step == len(s.instructions) {
-		return true
-	}
-	ins = s.instructions[s.step]
-	if ins.Type == EngraveInstruction {
-		plan := s.plate.Sides[ins.Side]
-		if s.dryRun.enabled {
-			plan = engrave.DryRun(plan)
-		}
-		totalDist := 0
-		pen := image.Point{}
-		for cmd := range plan {
-			totalDist += engrave.ManhattanDist(pen, cmd.Coord)
-			pen = cmd.Coord
-		}
-		cancel := make(chan struct{})
-		errs := make(chan error, 1)
-		progress := make(chan float32, 1)
-		s.engrave.cancel = cancel
-		s.engrave.errs = errs
-		s.engrave.progress = progress
-		dev := s.engrave.dev
-		wakeup := ctx.Platform.Wakeup
-		go func() {
-			defer wakeup()
-			defer dev.Close()
-			pplan := func(yield func(cmd engrave.Command) bool) {
-				dist := 0
-				completed := 0
-				pen := image.Point{}
-				for cmd := range plan {
-					if !yield(cmd) {
-						return
-					}
-					completed++
-					dist += engrave.ManhattanDist(pen, cmd.Coord)
-					pen = cmd.Coord
-					// Don't spam the progress channel.
-					if completed%10 != 0 && dist < totalDist {
-						continue
-					}
-					select {
-					case <-progress:
-					default:
-					}
-					p := float32(dist) / float32(totalDist)
-					progress <- p
-					wakeup()
-				}
-			}
-			errs <- dev.Engrave(s.plate.Size, pplan, cancel)
-		}()
-	}
-	return false
-}
-
-func (s *EngraveScreen) canPrev() bool {
-	return s.step > 0 && s.instructions[s.step-1].Type == PrepareInstruction
-}
-
-func (s *EngraveScreen) Engrave(ctx *Context, ops op.Ctx, th *Colors) bool {
-	defer func() {
-		if s.engrave.cancel != nil {
-			close(s.engrave.cancel)
-		}
-		s.engrave = engraveState{}
-	}()
-	inp := new(InputTracker)
-	for {
-	loop:
-		for {
-			select {
-			case p := <-s.engrave.progress:
-				s.engrave.lastProgress = p
-			case err := <-s.engrave.errs:
-				s.engrave = engraveState{}
-				if err != nil {
-					log.Printf("gui: connection lost to engraver: %v", err)
-					s.step--
-					s.showError(ctx, ops, th, &ErrorScreen{
-						Title: "Connection Error",
-						Body:  fmt.Sprintf("Turn off the engraver and disconnect this device from it. Wait 10 seconds, then turn on the engraver and reconnect.\n\nError details: %v", err),
-					})
-					break
-				}
-				ctx.Calibrated = true
-				s.step++
-				if s.step == len(s.instructions) {
-					return true
-				}
-			default:
-				break loop
-			}
-		}
-
-	outer:
-		for {
-			ins := s.instructions[s.step]
-			if !s.dryRun.timeout.IsZero() {
-				now := ctx.Platform.Now()
-				d := s.dryRun.timeout.Sub(now)
-				if d <= 0 {
-					s.dryRun.timeout = time.Time{}
-					s.dryRun.enabled = !s.dryRun.enabled
-				}
-			}
-			e, ok := inp.Next(ctx, Button1, Button2, Button3)
-			if !ok {
-				break
-			}
-			switch e.Button {
-			case Button1:
-				if !inp.Clicked(e.Button) {
-					break
-				}
-				if s.canPrev() {
-					s.step--
-				} else {
-					confirm := &ConfirmWarningScreen{
-						Title: "Cancel?",
-						Body:  "This will cancel the engraving process.\n\nHold button to confirm.",
-						Icon:  assets.IconDiscard,
-					}
-				loop2:
-					for {
-						dims := ctx.Platform.DisplaySize()
-						res := confirm.Layout(ctx, ops.Begin(), th, dims)
-						d := ops.End()
-						switch res {
-						case ConfirmNo:
-							break loop2
-						case ConfirmYes:
-							return false
-						}
-						s.draw(ctx, ops, th, dims)
-						d.Add(ops)
-						ctx.Frame()
-					}
-				}
-			case Button2:
-				if e.Pressed {
-					t := ctx.Platform.Now().Add(confirmDelay)
-					s.dryRun.timeout = t
-					ctx.WakeupAt(t)
-				} else {
-					s.dryRun.timeout = time.Time{}
-				}
-			case Button3:
-				switch ins.Type {
-				case ConnectInstruction:
-					if !e.Pressed {
-						continue
-					}
-					confirm := new(ConfirmDelay)
-					confirm.Start(ctx, confirmDelay)
-					inp.Pressed[e.Button] = false
-					for {
-						p := confirm.Progress(ctx)
-						if p == 1. {
-							break
-						}
-						for {
-							e, ok := inp.Next(ctx, Button3)
-							if !ok {
-								break
-							}
-							if e.Button == Button3 && !e.Pressed {
-								continue outer
-							}
-						}
-						dims := ctx.Platform.DisplaySize()
-						s.draw(ctx, ops, th, dims)
-						s.drawNav(inp, ops, th, dims, p)
-						ctx.Frame()
-					}
-				case EngraveInstruction:
-					continue
-				default:
-					if !inp.Clicked(e.Button) {
-						continue
-					}
-				}
-				if s.moveStep(ctx, ops, th) {
-					return true
-				}
-			}
-		}
-
-		dims := ctx.Platform.DisplaySize()
-		s.draw(ctx, ops, th, dims)
-		s.drawNav(inp, ops, th, dims, 0)
-
-		ctx.Frame()
-	}
-}
-
 type PrintSeedScreen struct {
 	inp InputTracker
 }
@@ -2805,77 +2303,6 @@ func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err er
 			break
 		}
 		ctx.Frame()
-	}
-}
-
-func (s *EngraveScreen) draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Point) {
-	op.ColorOp(ops, th.Background)
-	layoutTitle(ctx, ops, dims.X, th.Text, "Engrave Plate")
-
-	r := layout.Rectangle{Max: dims}
-	_, subt := r.CutTop(leadingSize)
-	subtsz := widget.Labelf(ops.Begin(), ctx.Styles.body, th.Text, "%.8x", s.plate.MasterFingerprint)
-	op.Position(ops, ops.End(), subt.N(subtsz).Sub(image.Pt(0, 4)))
-
-	const margin = 8
-	_, content := r.CutTop(leadingSize)
-	ins := s.instructions[s.step]
-	if ins.Type == EngraveInstruction {
-		_, content = subt.CutTop(subtsz.Y)
-		middle, _ := content.CutBottom(leadingSize)
-		op.Offset(ops, middle.Center(assets.ProgressCircle.Bounds().Size()))
-		(&ProgressImage{
-			Progress: s.engrave.lastProgress,
-			Src:      assets.ProgressCircle,
-		}).Add(ops)
-		op.ColorOp(ops, th.Text)
-		sz := widget.Labelf(ops.Begin(), ctx.Styles.progress, th.Text, "%d%%", int(s.engrave.lastProgress*100))
-		op.Position(ops, ops.End(), middle.Center(sz))
-	}
-	content = content.Shrink(0, margin, 0, margin)
-	content, lead := content.CutBottom(leadingSize)
-	bodysz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, content.Dx(), th.Text, "%s", ins.resolvedBody)
-	if img := ins.Image; img != nil {
-		sz := img.Bounds().Size()
-		op.Offset(ops, image.Pt((bodysz.X-sz.X)/2, bodysz.Y))
-		op.ImageOp(ops, img, false)
-		if sz.X > bodysz.X {
-			bodysz.X = sz.X
-		}
-		bodysz.Y += sz.Y
-	}
-	op.Position(ops, ops.End(), content.Center(bodysz))
-	leadsz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-2*margin, th.Text, "%s", ins.Lead)
-	op.Position(ops, ops.End(), lead.Center(leadsz))
-
-	progressw := dims.X * (s.step + 1) / len(s.instructions)
-	op.ClipOp(image.Rectangle{Max: image.Pt(progressw, 2)}).Add(ops)
-	op.ColorOp(ops, th.Text)
-
-	if s.dryRun.enabled {
-		sz := widget.Labelf(ops.Begin(), ctx.Styles.debug, th.Text, "dry-run")
-		op.Position(ops, ops.End(), r.SE(sz).Sub(image.Pt(4, 0)))
-	}
-}
-
-func (s *EngraveScreen) drawNav(inp *InputTracker, ops op.Ctx, th *Colors, dims image.Point, progress float32) {
-	icnBack := assets.IconBack
-	if s.canPrev() {
-		icnBack = assets.IconLeft
-	}
-	layoutNavigation(inp, ops, th, dims, []NavButton{{Button: Button1, Style: StyleSecondary, Icon: icnBack}}...)
-	ins := s.instructions[s.step]
-	switch ins.Type {
-	case EngraveInstruction:
-	case ConnectInstruction:
-		layoutNavigation(inp, ops, th, dims, []NavButton{{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer, Progress: progress}}...)
-	default:
-		layoutNavigation(inp, ops, th, dims, []NavButton{{
-			Button:   Button3,
-			Style:    StylePrimary,
-			Icon:     assets.IconRight,
-			Progress: progress,
-		}}...)
 	}
 }
 
@@ -2980,9 +2407,6 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 type Platform interface {
 	AppendEvents(deadline time.Time, evts []Event) []Event
 	Wakeup()
-	PlateSizes() []backup.PlateSize
-	Engraver() (Engraver, error)
-	EngraverParams() engrave.Params
 	CameraFrame(size image.Point)
 	Now() time.Time
 	DisplaySize() image.Point
@@ -2995,11 +2419,6 @@ type Platform interface {
 	Debug() bool
 	Printer() io.Writer
 	CreatePlates(ctx *Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error // Updated
-}
-
-type Engraver interface {
-	Engrave(sz backup.PlateSize, plan engrave.Plan, quit <-chan struct{}) error
-	Close()
 }
 
 type FrameEvent struct {
