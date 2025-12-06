@@ -123,16 +123,12 @@ startFlow:
 			Total:      s.totalSeeds,
 			Descriptor: s.desc,
 			AllowRestart: func() Screen {
-				confirm := &ConfirmWarningScreen{
-					Title: "Restart Process?",
-					Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
-					Icon:  assets.IconDiscard,
-				}
-				if confirmWarning(ctx, ops, th, confirm) {
+				if maybeRestart(ctx, ops, th, func() {
 					ctx.LastDescriptor = nil
 					ctx.Keystores = make(map[uint32]bip39.Mnemonic)
 					s.desc = nil
 					s.stage = stageDescriptor
+				}) {
 					return s
 				}
 				return s
@@ -162,16 +158,12 @@ startFlow:
 			Descriptor: *s.desc,
 			Mnemonic:   ctx.Keystores[s.desc.Keys[0].MasterFingerprint],
 			AllowRestart: func() Screen {
-				confirm := &ConfirmWarningScreen{
-					Title: "Restart Process?",
-					Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
-					Icon:  assets.IconDiscard,
-				}
-				if confirmWarning(ctx, ops, th, confirm) {
+				if maybeRestart(ctx, ops, th, func() {
 					ctx.LastDescriptor = nil
 					ctx.Keystores = make(map[uint32]bip39.Mnemonic)
 					s.desc = nil
 					s.stage = stageDescriptor
+				}) {
 					return s
 				}
 				return s
