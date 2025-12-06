@@ -13,4 +13,4 @@
 - [ ] GUI dedupe pass (refactor/gui-dedupe)
   - [x] Extract restart-confirm helper (reuse across descriptor/seed/confirm)
   - [x] Extract seed validation helper (dup fp / descriptor mismatch) with typed errors
-  - [ ] Tidy print job plumbing (desc/mnemonic/keyIdx holder) if feasible
+  - [x] Tidy print job plumbing (desc/mnemonic/keyIdx holder)
