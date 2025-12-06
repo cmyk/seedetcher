@@ -13,6 +13,8 @@ flowchart TD
     H --> A
 ```
 
+Manual entry UX: if the seed is invalid or mismatched, the confirm screen leaves you on the same seed input with your entered words prefilled for correction (no restart).
+
 Notes:
 - `Run` enters the Screen state machine at `MainMenuScreen`.
 - Colors: `singleTheme` on menu; `descriptorTheme` for backup flow and warnings.

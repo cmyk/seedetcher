@@ -226,14 +226,6 @@ outer:
 					continue outer
 				}
 				logutil.DebugLog("newMnemonicFlow: inputWordsFlow returned")
-				if !mn.Valid() {
-					logutil.DebugLog("newMnemonicFlow: Invalid mnemonic")
-					showErr(&ErrorScreen{
-						Title: "Invalid Seed",
-						Body:  "The seed phrase is invalid.",
-					})
-					continue
-				}
 				logutil.DebugLog("newMnemonicFlow: Returning seed")
 				return mn, true
 			}
@@ -249,6 +241,7 @@ type SeedInputScreen struct {
 	Descriptor   *urtypes.OutputDescriptor
 	OnDone       func(mnemonic bip39.Mnemonic, mfp uint32, ok bool) Screen
 	AllowRestart func() Screen
+	Draft        bip39.Mnemonic
 }
 
 func (s *SeedInputScreen) Update(ctx *Context, ops op.Ctx) Screen {
@@ -256,45 +249,59 @@ func (s *SeedInputScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	if th == nil {
 		th = &descriptorTheme
 	}
-	mnemonic, ok := newMnemonicFlow(ctx, ops, th, s.Index, s.Total)
-	if !ok {
-		if s.AllowRestart != nil {
-			return s.AllowRestart()
+	var (
+		mnemonic bip39.Mnemonic
+		ok       bool
+	)
+	if s.Draft != nil {
+		inputWordsFlow(ctx, ops, th, s.Draft, firstEmptyWord(s.Draft))
+		mnemonic = s.Draft
+		ok = true
+	} else {
+		mnemonic, ok = newMnemonicFlow(ctx, ops, th, s.Index, s.Total)
+		if !ok {
+			if s.AllowRestart != nil {
+				return s.AllowRestart()
+			}
+			return &MainMenuScreen{}
 		}
-		return &MainMenuScreen{}
 	}
 	if !new(SeedScreen).Confirm(ctx, ops, th, mnemonic) {
-		if s.AllowRestart != nil {
-			return s.AllowRestart()
-		}
-		return &MainMenuScreen{}
+		// Stay on this seed, keep draft for editing.
+		s.Draft = mnemonic
+		return s
 	}
 	mfp, err := masterFingerprintFor(mnemonic, &chaincfg.MainNetParams)
 	if err != nil {
 		showError(ctx, ops, th, fmt.Errorf("Failed to compute fingerprint: %v", err))
-		if s.AllowRestart != nil {
-			return s.AllowRestart()
-		}
-		return &MainMenuScreen{}
+		s.Draft = mnemonic
+		return s
 	}
 	if s.Descriptor != nil {
 		if _, exists := ctx.Keystores[mfp]; exists {
 			showError(ctx, ops, th, fmt.Errorf("Seed was entered already"))
-			if s.AllowRestart != nil {
-				return s.AllowRestart()
-			}
-			return &MainMenuScreen{}
+			s.Draft = mnemonic
+			return s
 		}
 		if _, matched := descriptorKeyIdx(*s.Descriptor, mnemonic, ""); !matched {
 			showError(ctx, ops, th, fmt.Errorf("Seed doesn’t match wallet descriptor"))
-			if s.AllowRestart != nil {
-				return s.AllowRestart()
-			}
-			return &MainMenuScreen{}
+			s.Draft = mnemonic
+			return s
 		}
 	}
+	// Success path: clear draft.
+	s.Draft = nil
 	if s.OnDone != nil {
 		return s.OnDone(mnemonic, mfp, true)
 	}
 	return &MainMenuScreen{}
+}
+
+func firstEmptyWord(m bip39.Mnemonic) int {
+	for i, w := range m {
+		if w == -1 {
+			return i
+		}
+	}
+	return 0
 }
