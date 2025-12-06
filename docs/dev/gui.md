@@ -1,23 +1,21 @@
 # GUI Flow (current)
 
-```
-MainMenuScreen (singleTheme)
-  Button3 → BackupFlowScreen
-
-BackupFlowScreen (descriptorTheme by default)
-  If SD present: ConfirmWarning "Remove SD card" (hold Button3 to continue, Button1 to cancel → MainMenu)
-  → backupWalletFlow (legacy inline)
-    - Descriptor input (scan/skip/reuse)
-    - For each key: Seed input (scan or manual), confirm seed, duplicate check against descriptor
-    - Confirm wallet (descriptor + seed), choose key index to print
-    - PrintSeedScreen (A4)
-  → returns to MainMenuScreen
+```mermaid
+flowchart TD
+    A[MainMenuScreen<br>singleTheme] -->|Button3| B[BackupFlowScreen<br>descriptorTheme]
+    B -->|If SD present| C[ConfirmWarning: Remove SD<br>Hold Button3 to continue<br>Button1 to cancel]
+    C -->|Yes| D
+    C -->|No| A
+    D[backupWalletFlow<br>legacy inline] --> E[Descriptor input<br>Scan/Skip/Re-use<br>validate descriptor+dups]
+    E --> F[Seeds loop<br>Scan or manual per key<br>confirm seed<br>check vs descriptor<br>no dup fingerprints]
+    F --> G[Confirm wallet<br>Descriptor+seed<br>choose key index]
+    G --> H[PrintSeedScreen<br>Paper A4]
+    H --> A
 ```
 
 Notes:
 - `Run` enters the Screen state machine at `MainMenuScreen`.
 - Colors: `singleTheme` on menu; `descriptorTheme` for backup flow and warnings.
-- Remove-SD warning uses `ConfirmWarningScreen` before entering the flow.
 - All helper logic lives alongside screens (`gui/screen_*.go` and `gui/screen_helpers.go`).
 
 Planned refactor steps:
