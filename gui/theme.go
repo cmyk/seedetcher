@@ -37,7 +37,6 @@ type Colors struct {
 var (
 	descriptorTheme Colors
 	singleTheme     Colors
-	engraveTheme    Colors
 	cameraTheme     Colors
 )
 
@@ -53,11 +52,6 @@ func init() {
 	singleTheme = Colors{
 		Background: rgb(0xdd9700),
 		Text:       rgb(0xfbf4e8),
-		Primary:    prim,
-	}
-	engraveTheme = Colors{
-		Background: rgb(0xffa000),
-		Text:       rgb(0xdffffff),
 		Primary:    prim,
 	}
 	cameraTheme = Colors{

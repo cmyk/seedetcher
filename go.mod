@@ -11,8 +11,6 @@ require (
 	github.com/jung-kurt/gofpdf/v2 v2.17.3
 	github.com/kortschak/qr v0.3.0
 	github.com/pdfcpu/pdfcpu v0.9.1
-	github.com/srwiley/rasterx v0.0.0-20220730225603-2ab79fcdd4ef
-	github.com/tarm/serial v0.0.0-20180830185346-98f6abe2eb07
 	golang.org/x/crypto v0.35.0
 	golang.org/x/image v0.24.0
 	golang.org/x/sys v0.30.0

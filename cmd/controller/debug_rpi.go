@@ -16,7 +16,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"seedetcher.com/driver/mjolnir"
 	"seedetcher.com/logutil"
 )
 
@@ -27,9 +26,6 @@ var screenshotCounter int
 func init() {
 	logutil.DebugLog("DEBUG: Init function executed, debug mode enabled")
 	// Set debug hooks for platform_rpi.go
-	engraverHook = func() io.ReadWriteCloser {
-		return mjolnir.NewSimulator()
-	}
 	initHook = func(p *Platform) error {
 		return dbgInit(p)
 	}

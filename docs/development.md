@@ -323,24 +323,12 @@ Analysis and Next Steps
 Now that I have all the files, I’ll analyze them to help you implement laser printer testing for SeedEtcher, printing a seed phrase and QR code in a 10x10cm area on A4 or letter paper. Here’s a high-level plan based on your setup:
 Key Observations
 	•	seedetcher/cmd/controller/main.go initializes a Platform (via Init() from platform_rpi.go) and runs the GUI loop using gui.Run, which uses /dev/ttyGS1 for output (as seen in debug_rpi.go).
-	•	The Platform interface (gui/gui.go) defines methods like Engraver() and EngraverParams(), currently used for engraving via mjolnir. We’ll replace this with a printer output method.
-	•	backup/backup.go and engrave/engrave.go generate the seed phrase and QR code layouts, which we’ll adapt for PCL (Printer Command Language) output.
+	•	Platform now targets printing only: plates are rendered in `printer/` and streamed to the printer over /dev/ttyGS1 or /dev/usb/lp0. Engraver support has been removed.
 	•	Your setup uses /dev/ttyGS0 for Busybox shell and /dev/ttyGS1 for controller I/O, ideal for testing via a virtual printer on your Ubuntu host.
 Implementation Plan
-	1	Modify seedetcher/cmd/controller/platform_rpi.go:
-	◦	Add a new method to Platform (e.g., Printer() io.Writer) to handle output to /dev/ttyGS1 or /dev/usb/lp0.
-	◦	Update Engraver to optionally return a printer interface or coexist with engraving.
-	2	Adapt engrave/engrave.go:
-	◦	Convert Plan (moves/lines) into PCL commands for text and QR codes, maintaining the 10x10cm layout from backup/testdata.
-	◦	Use PCL raster graphics for the QR code and position text (seed phrase) at 50mm x 50mm, QR at 50mm x 70mm (within 100x100mm).
-	3	Update gui/gui.go:
-	◦	Add a new screen or option (e.g., PrintSeedScreen) to trigger printing instead of engraving, using the new printer output.
-	◦	Reuse backup/backup.go for seed and descriptor data, but output to PCL instead of mjolnir commands.
-	4	Testing on Ubuntu:
-	◦	Capture /dev/ttyACM1 (mapped to /dev/ttyGS1) output on your host, save to test.pcl, and send to cups-pdf for virtual PDF testing.
-	◦	Verify the 10x10cm layout in ~/PDF/test.pdf.
-	5	Real Printer Integration:
-	◦	Switch output to /dev/usb/lp0 for physical printing, ensuring USB printer support in flake.nix (CONFIG_USB_PRINTER=y).
+	1	Use the printer path: `CreatePlates` generates PDFs, and data is streamed over /dev/ttyGS1 or /dev/usb/lp0.
+	2	Keep both SeedQR scanning and manual entry with descriptor flows (singlesig + multisig).
+	3	Test on Ubuntu by capturing output over USB, then flash and validate on the Pi Zero with a physical laser printer.
 
 
 
@@ -483,5 +471,4 @@ Long-Term Plan
 Dev Mode: Keep go-deps hashless while debugging. It’s flexible—deps update as you change go.mod.
 
 Release Mode: Once you’re stable, add the outputHash back for reproducibility. Run nix build .#go-deps, fail it with a dummy hash, grab the real one from the error, and lock it in.
-
 
