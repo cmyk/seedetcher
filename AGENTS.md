@@ -20,6 +20,10 @@
 - Capture print (PDF over USB serial): `scripts/capture_print.sh`
 - Test page layout without GUI: `./controller -test-createPageLayout ...` (see flags in `cmd/controller/main.go` and `testutils`).
 
+## Testing
+- Lightweight, hardware-free: `GOCACHE=/tmp/gocache ./scripts/test-lite.sh` (skips libcamera/wshat CGO deps; mostly sanity-builds packages).
+- Full hardware-dependent tests are not wired up; avoid `driver/libcamera` locally unless deps installed.
+
 ## Host CLI (no hardware)
 - Generate plates locally: `go run cmd/cli/main.go -w singlesig|multisig -o ~/outdir [-verbose]`
 
