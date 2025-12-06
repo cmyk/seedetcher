@@ -1,10 +1,8 @@
 package gui
 
 import (
-	"fmt"
 	"image"
 
-	"github.com/btcsuite/btcd/chaincfg"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui/assets"
@@ -60,6 +58,7 @@ type BackupFlowScreen struct {
 	currentSeed   int
 	printMnemonic bip39.Mnemonic
 	confirmKeyIdx int
+	printDesc     *urtypes.OutputDescriptor
 }
 
 type backupStage int
@@ -106,6 +105,7 @@ startFlow:
 				}
 				s.desc = desc
 				ctx.Keystores = make(map[uint32]bip39.Mnemonic)
+				s.printDesc = desc
 				if desc == nil {
 					s.totalSeeds = 1
 				} else {
@@ -118,88 +118,74 @@ startFlow:
 			},
 		}
 	case stageSeeds:
-		total := s.totalSeeds
-		idx := s.currentSeed
-		mnemonic, ok := newMnemonicFlow(ctx, ops, th, idx, total)
-		if !ok {
-			confirm := &ConfirmWarningScreen{
-				Title: "Restart Process?",
-				Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
-				Icon:  assets.IconDiscard,
-			}
-			if confirmWarning(ctx, ops, th, confirm) {
-				ctx.LastDescriptor = nil
-				ctx.Keystores = make(map[uint32]bip39.Mnemonic)
-				s.desc = nil
-				s.stage = stageDescriptor
+		return &SeedInputScreen{
+			Theme:      th,
+			Index:      s.currentSeed,
+			Total:      s.totalSeeds,
+			Descriptor: s.desc,
+			AllowRestart: func() Screen {
+				confirm := &ConfirmWarningScreen{
+					Title: "Restart Process?",
+					Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
+					Icon:  assets.IconDiscard,
+				}
+				if confirmWarning(ctx, ops, th, confirm) {
+					ctx.LastDescriptor = nil
+					ctx.Keystores = make(map[uint32]bip39.Mnemonic)
+					s.desc = nil
+					s.stage = stageDescriptor
+					return s
+				}
 				return s
-			}
-			return s
-		}
-		if !new(SeedScreen).Confirm(ctx, ops, th, mnemonic) {
-			confirm := &ConfirmWarningScreen{
-				Title: "Restart Process?",
-				Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
-				Icon:  assets.IconDiscard,
-			}
-			if confirmWarning(ctx, ops, th, confirm) {
-				ctx.LastDescriptor = nil
-				ctx.Keystores = make(map[uint32]bip39.Mnemonic)
-				s.desc = nil
-				s.stage = stageDescriptor
+			},
+			OnDone: func(mnemonic bip39.Mnemonic, mfp uint32, ok bool) Screen {
+				if !ok {
+					return s
+				}
+				ctx.Keystores[mfp] = mnemonic
+				if s.desc == nil {
+					s.printMnemonic = mnemonic
+					s.confirmKeyIdx = 0
+					s.stage = stagePrint
+					return s
+				}
+				if len(ctx.Keystores) >= s.totalSeeds {
+					s.stage = stageConfirm
+				} else {
+					s.currentSeed++
+				}
 				return s
-			}
-			return s
+			},
 		}
-		mfp, err := masterFingerprintFor(mnemonic, &chaincfg.MainNetParams)
-		if err != nil {
-			showError(ctx, ops, th, fmt.Errorf("Failed to compute fingerprint: %v", err))
-			return s
-		}
-		if s.desc != nil {
-			if _, exists := ctx.Keystores[mfp]; exists {
-				showError(ctx, ops, th, fmt.Errorf("Seed was entered already"))
-				return s
-			}
-			if _, matched := descriptorKeyIdx(*s.desc, mnemonic, ""); !matched {
-				showError(ctx, ops, th, fmt.Errorf("Seed doesn’t match wallet descriptor"))
-				return s
-			}
-		}
-		ctx.Keystores[mfp] = mnemonic
-		if s.desc == nil {
-			s.printMnemonic = mnemonic
-			s.confirmKeyIdx = 0
-			s.stage = stagePrint
-			return s
-		}
-		if len(ctx.Keystores) >= s.totalSeeds {
-			s.stage = stageConfirm
-		} else {
-			s.currentSeed++
-		}
-		return s
 	case stageConfirm:
-		ds := &DescriptorScreen{Descriptor: *s.desc, Mnemonic: ctx.Keystores[s.desc.Keys[0].MasterFingerprint]}
-		confirmKeyIdx, ok := ds.Confirm(ctx, ops, th)
-		if !ok {
-			confirm := &ConfirmWarningScreen{
-				Title: "Restart Process?",
-				Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
-				Icon:  assets.IconDiscard,
-			}
-			if confirmWarning(ctx, ops, th, confirm) {
-				ctx.LastDescriptor = nil
-				ctx.Keystores = make(map[uint32]bip39.Mnemonic)
-				s.desc = nil
-				s.stage = stageDescriptor
+		return &WalletConfirmScreen{
+			Theme:      th,
+			Descriptor: *s.desc,
+			Mnemonic:   ctx.Keystores[s.desc.Keys[0].MasterFingerprint],
+			AllowRestart: func() Screen {
+				confirm := &ConfirmWarningScreen{
+					Title: "Restart Process?",
+					Body:  "Do you want to restart and clear all scanned data?\n\nHold button to confirm.",
+					Icon:  assets.IconDiscard,
+				}
+				if confirmWarning(ctx, ops, th, confirm) {
+					ctx.LastDescriptor = nil
+					ctx.Keystores = make(map[uint32]bip39.Mnemonic)
+					s.desc = nil
+					s.stage = stageDescriptor
+					return s
+				}
 				return s
-			}
-			return s
+			},
+			OnDone: func(keyIdx int, ok bool) Screen {
+				if !ok {
+					return s
+				}
+				s.confirmKeyIdx = keyIdx
+				s.stage = stagePrint
+				return s
+			},
 		}
-		s.confirmKeyIdx = confirmKeyIdx
-		s.stage = stagePrint
-		return s
 	case stagePrint:
 		var mnemonic bip39.Mnemonic
 		if s.desc == nil {
@@ -208,7 +194,11 @@ startFlow:
 			mnemonic = ctx.Keystores[s.desc.Keys[0].MasterFingerprint]
 		}
 		printScreen := &PrintSeedScreen{}
-		if printScreen.Print(ctx, ops, th, mnemonic, s.desc, s.confirmKeyIdx, printer.PaperA4) {
+		desc := s.desc
+		if desc == nil {
+			desc = s.printDesc
+		}
+		if printScreen.Print(ctx, ops, th, mnemonic, desc, s.confirmKeyIdx, printer.PaperA4) {
 			return &MainMenuScreen{}
 		}
 		s.stage = stageConfirm
