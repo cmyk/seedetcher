@@ -8,7 +8,7 @@ reload.log
 .vscode/settings.json
 tmux-client-14578.log
 /log
-test.pcl
-test.pdf
-test_simple.pcl
+*.pcl
+*.pdf
 ~/PDF/seed1.pdf
+tmux-client*
