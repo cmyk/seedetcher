@@ -266,7 +266,7 @@ func Run(pl Platform, version string) func(yield func() bool) {
 			ctx: ctx,
 		}
 		a.idle.start = pl.Now()
-		a.screen = FlowScreen{}
+		a.screen = &MainMenuScreen{}
 
 		for {
 			it := func(yield func() bool) {
