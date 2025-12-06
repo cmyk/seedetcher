@@ -11,6 +11,6 @@
 - [x] Docs: AGENTS.md, GUI flowchart updated
 - [x] Tests: `GOCACHE=/tmp/gocache ./scripts/test-lite.sh` clean
 - [ ] GUI dedupe pass (refactor/gui-dedupe)
-  - [ ] Extract restart-confirm helper (reuse across descriptor/seed/confirm)
+  - [x] Extract restart-confirm helper (reuse across descriptor/seed/confirm)
   - [x] Extract seed validation helper (dup fp / descriptor mismatch) with typed errors
   - [ ] Tidy print job plumbing (desc/mnemonic/keyIdx holder) if feasible
