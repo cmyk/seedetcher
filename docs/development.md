@@ -160,7 +160,7 @@ nix build .#image-debug --print-build-logs
 
 Upload the new binary with while zero is running! (Rebuild if you modified flake for changes to take effect):
 nix build .#controller-debug --print-build-logs
-nix run .#reload $USBDEV0
+nix run .#reload $USBDEV1
 
 Keep an eye on real-time logs using:
 cat $USBDEV
@@ -330,102 +330,6 @@ Start Fresh: If I fail, create a new chat and paste only the latest files/change
 Summarize: Tell me, “Use the latest print.go and cmd/cli/main.go from [timestamp]” instead of re-explaining everything.
 Focus: Ask one thing at a time (like now), keeping replies short.
 
-
-
-https://www.seedetcher.com/src/LICENSE
-https://www.seedetcher.com/src/README.md
-https://www.seedetcher.com/src/capture_print.sh
-https://www.seedetcher.com/src/flake.lock
-https://www.seedetcher.com/src/flake.nix
-https://www.seedetcher.com/src/go.mod
-https://www.seedetcher.com/src/go.sum
-https://www.seedetcher.com/src/init.sh
-https://www.seedetcher.com/src/test.html
-https://www.seedetcher.com/src/testgodf.go
-https://www.seedetcher.com/src/address/address.go
-https://www.seedetcher.com/src/address/address_test.go
-https://www.seedetcher.com/src/backup/backup.go
-https://www.seedetcher.com/src/backup/backup_test.go
-https://www.seedetcher.com/src/backup/testdata/testseed.txt
-https://www.seedetcher.com/src/backup/testdata/sample_seed.txt
-https://www.seedetcher.com/src/bc/bytewords/bytewords.go
-https://www.seedetcher.com/src/bc/bytewords/bytewords_test.go
-https://www.seedetcher.com/src/bc/fountain/fountain.go
-https://www.seedetcher.com/src/bc/fountain/fountain_test.go
-https://www.seedetcher.com/src/bc/ur/ur.go
-https://www.seedetcher.com/src/bc/ur/ur_test.go
-https://www.seedetcher.com/src/bc/urtypes/urtypes.go
-https://www.seedetcher.com/src/bc/urtypes/urtypes_test.go
-https://www.seedetcher.com/src/bc/xoshiro256/xoshiro.go
-https://www.seedetcher.com/src/bc/xoshiro256/xoshiro_test.go
-https://www.seedetcher.com/src/bip32/bip32.go
-https://www.seedetcher.com/src/bip32/bip32_test.go
-https://www.seedetcher.com/src/bip39/bip39.go
-https://www.seedetcher.com/src/bip39/bip39_test.go
-https://www.seedetcher.com/src/cmd/markers/main.go
-https://www.seedetcher.com/src/cmd/cli/main.go
-https://www.seedetcher.com/src/cmd/controller/debug.go
-https://www.seedetcher.com/src/cmd/controller/debug_rpi.go
-https://www.seedetcher.com/src/cmd/controller/logger.go
-https://www.seedetcher.com/src/cmd/controller/main.go
-https://www.seedetcher.com/src/cmd/controller/platform_dummy.go
-https://www.seedetcher.com/src/cmd/controller/platform_rpi.go
-https://www.seedetcher.com/src/driver/qr_driver.go
-https://www.seedetcher.com/src/driver/blockchain_driver.go
-https://www.seedetcher.com/src/driver/libcamera/rpi_libcamera.go
-https://www.seedetcher.com/src/driver/libcamera/rpi_libcamera_test.go
-https://www.seedetcher.com/src/driver/libcamera/libcamera_config.json
-https://www.seedetcher.com/src/driver/libcamera/rpi_camera_test.sh
-https://www.seedetcher.com/src/engrave/engrave.go
-https://www.seedetcher.com/src/engrave/engrave_test.go
-https://www.seedetcher.com/src/engrave/testdata/test_seed.txt
-https://www.seedetcher.com/src/engrave/testdata/etch_sample.txt
-https://www.seedetcher.com/src/font/Arial.ttf
-https://www.seedetcher.com/src/font/CosmicFont.ttf
-https://www.seedetcher.com/src/gui/gui.go
-https://www.seedetcher.com/src/gui/gui_test.go
-https://www.seedetcher.com/src/gui/index.html
-https://www.seedetcher.com/src/gui/style.css
-https://www.seedetcher.com/src/gui/script.js
-https://www.seedetcher.com/src/gui/assets/arrow-down.bin
-https://www.seedetcher.com/src/gui/assets/arrow-down.png
-https://www.seedetcher.com/src/gui/assets/arrow-left.bin
-https://www.seedetcher.com/src/gui/assets/arrow-left.png
-https://www.seedetcher.com/src/gui/assets/arrow-right.bin
-https://www.seedetcher.com/src/gui/assets/arrow-right.png
-https://www.seedetcher.com/src/gui/assets/arrow-up.bin
-https://www.seedetcher.com/src/gui/assets/arrow-up.png
-https://www.seedetcher.com/src/gui/assets/button-focused.bin
-https://www.seedetcher.com/src/gui/assets/button-focused.png
-https://www.seedetcher.com/src/gui/assets/camera-corners.bin
-https://www.seedetcher.com/src/gui/assets/camera-corners.png
-https://www.seedetcher.com/src/gui/assets/circle-filled.bin
-https://www.seedetcher.com/src/gui/assets/circle-filled.png
-https://www.seedetcher.com/src/gui/assets/circle.bin
-https://www.seedetcher.com/src/gui/assets/circle.png
-https://www.seedetcher.com/src/gui/assets/embed.go
-https://www.seedetcher.com/src/gui/assets/gen.go
-https://www.seedetcher.com/src/gui/assets/generator.go
-https://www.seedetcher.com/src/gui/assets/hammer.bin
-https://www.seedetcher.com/src/gui/assets/hammer.png
-https://www.seedetcher.com/src/gui/assets/icon-back.bin
-https://www.seedetcher.com/src/gui/layout/layout.go
-https://www.seedetcher.com/src/gui/op/op.go
-https://www.seedetcher.com/src/gui/op/op_test.go
-https://www.seedetcher.com/src/gui/saver/saver.go
-https://www.seedetcher.com/src/gui/saver/saver_test.go
-https://www.seedetcher.com/src/gui/text/text.go
-https://www.seedetcher.com/src/gui/text/text_test.go
-https://www.seedetcher.com/src/gui/widget/label.go
-https://www.seedetcher.com/src/image/seedqr.png
-https://www.seedetcher.com/src/image/cosmos_bg.jpg
-https://www.seedetcher.com/src/nonstandard/custom_crypto.go
-https://www.seedetcher.com/src/nonstandard/experimental_vis.go
-https://www.seedetcher.com/src/patches/go-qrcode.patch
-https://www.seedetcher.com/src/patches/gofpdf.patch
-https://www.seedetcher.com/src/scripts/flash-sdcard.sh
-https://www.seedetcher.com/src/zbar/scan.go
-https://www.seedetcher.com/src/zbar/scan_test.go
 
 
 Converting Fonts
