@@ -36,7 +36,9 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		layoutTitle(ctx, ops, dims.X, singleTheme.Text, "SeedEtcher")
 		// Simple center icon/title; reuse existing assets/layout helpers.
 		center := layout.Rectangle{Max: dims}.Center(image.Pt(assets.Hammer.Bounds().Dx(), assets.Hammer.Bounds().Dy()))
-		op.Position(ops, op.ImageOp(ops.Begin(), assets.Hammer, false), center)
+		icon := ops.Begin()
+		op.ImageOp(icon, assets.Hammer, false)
+		op.Position(ops, ops.End(), center)
 		layoutNavigation(inp, ops, &singleTheme, dims, []NavButton{
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
 		}...)

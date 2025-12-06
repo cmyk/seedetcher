@@ -73,6 +73,7 @@ type Context struct {
 	Styles   Styles
 	Wakeup   time.Time
 	Frame    func()
+	Session  Session
 
 	// Global UI state.
 	Version        string
@@ -2308,10 +2309,21 @@ func (b Button) String() string {
 
 const idleTimeout = 3 * time.Minute
 
+// Screen defines the minimal contract for a UI screen.
+type Screen interface {
+	// Update processes events and may return a new Screen (transition).
+	Update(ctx *Context, ops op.Ctx) Screen
+}
+
 func Run(pl Platform, version string) func(yield func() bool) {
 	return func(yield func() bool) {
 		ctx := NewContext(pl)
 		ctx.Version = version
+		ctx.Session = Session{
+			Paper:     printer.PaperA4,
+			Keystores: make(map[uint32]bip39.Mnemonic),
+		}
+		current := Screen(&MainMenuScreen{})
 		a := struct {
 			root op.Ops
 			mask *image.Alpha
@@ -2326,22 +2338,19 @@ func Run(pl Platform, version string) func(yield func() bool) {
 		}
 		a.idle.start = pl.Now()
 
-		it := func(yield func() bool) {
-			stop := new(int)
-			ctx.Frame = func() {
-				if !yield() {
-					panic(stop)
-				}
-			}
-			defer func() {
-				if err := recover(); err != stop {
-					panic(err)
-				}
-			}()
-			mainFlow(ctx, a.root.Context())
-		}
 		var evts []Event
-		for range it {
+		stop := new(int)
+		ctx.Frame = func() {
+			if !yield() {
+				panic(stop)
+			}
+		}
+		defer func() {
+			if err := recover(); err != stop {
+				panic(err)
+			}
+		}()
+		for {
 			dirty := a.root.Clip(image.Rectangle{Max: a.ctx.Platform.DisplaySize()})
 			if err := a.ctx.Platform.Dirty(dirty); err != nil {
 				panic(err)
@@ -2394,6 +2403,8 @@ func Run(pl Platform, version string) func(yield func() bool) {
 				a.ctx.WakeupAt(idleWakeup)
 				break
 			}
+			// Run current screen; allow it to transition.
+			current = current.Update(a.ctx, a.root.Context())
 			a.root.Reset()
 		}
 	}
