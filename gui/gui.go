@@ -8,9 +8,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"seedetcher.com/bc/urtypes"
-	"seedetcher.com/bip32"
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/gui/saver"
@@ -18,13 +16,6 @@ import (
 )
 
 const nbuttons = 8
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
 
 type Context struct {
 	Platform Platform
@@ -158,29 +149,6 @@ func (t *InputTracker) Clicked(b Button) bool {
 	c := t.clicked[b]
 	t.clicked[b] = false
 	return c
-}
-func descriptorKeyIdx(desc urtypes.OutputDescriptor, m bip39.Mnemonic, pass string) (int, bool) {
-	if len(desc.Keys) == 0 {
-		return 0, false
-	}
-	network := desc.Keys[0].Network
-	seed := bip39.MnemonicSeed(m, pass)
-	mk, err := hdkeychain.NewMaster(seed, network)
-	if err != nil {
-		return 0, false
-	}
-	for i, k := range desc.Keys {
-		_, xpub, err := bip32.Derive(mk, k.DerivationPath)
-		if err != nil {
-			// A derivation that generates an invalid key is by itself very unlikely,
-			// but also means that the seed doesn't match this xpub.
-			continue
-		}
-		if k.String() == xpub.String() {
-			return i, true
-		}
-	}
-	return 0, false
 }
 
 type Platform interface {
