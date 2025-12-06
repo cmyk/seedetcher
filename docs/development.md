@@ -94,20 +94,6 @@ error: hash mismatch in fixed-output derivation '/nix/store/a0wafn6k91jahp9wwaqs
 Change line 569 in flake.nix to the new hash!
 
 
-OLD!!! nix is installed in single user mode on Ubuntu.
-=============================================
-nvim ~/.config/nix/nix.conf
-
-extra-experimental-features = nix-command flakes
-trusted-users = root cmyk
-keep-outputs = true
-keep-derivations = true   
-auto-optimise-store = true
-
-
-nix-env --delete-generations +10
-~
-
 
 
 NEW!!!!
@@ -161,17 +147,20 @@ sudo dd if=result/seedetcher-debug.img of=/dev/rdiskX bs=1m
 diskutil eject /dev/disk5
 
 Find the USB device 
-ls /dev/cu.usbmodem*
-ls /dev/tty.usbmodem* // probably better!
+sudo usbdev_checker.sh
+(ATTENTION: run source ~/.bashrc to update the USBDEVx shell vars)
 
 Serial Terminal to Zero
-minicom -D /dev/cu.usbmodem101 -b 115200 -o
+minicom -D $USBDEV0 -b 115200 -o
 
 Set env var: export USBDEV=/dev/tty.usbmodem101
 
+Build new image:
+nix build .#image-debug --print-build-logs
+
 Upload the new binary with while zero is running! (Rebuild if you modified flake for changes to take effect):
-nix build .#image-debug --impure --refresh --print-build-logs
-nix run .#reload $USBDEV1
+nix build .#controller-debug --print-build-logs
+nix run .#reload $USBDEV0
 
 Keep an eye on real-time logs using:
 cat $USBDEV
