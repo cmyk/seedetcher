@@ -1524,12 +1524,6 @@ func (b Button) String() string {
 
 const idleTimeout = 3 * time.Minute
 
-// Screen defines the minimal contract for a UI screen.
-type Screen interface {
-	// Update processes events and may return a new Screen (transition).
-	Update(ctx *Context, ops op.Ctx) Screen
-}
-
 func Run(pl Platform, version string) func(yield func() bool) {
 	return func(yield func() bool) {
 		ctx := NewContext(pl)
@@ -1538,6 +1532,7 @@ func Run(pl Platform, version string) func(yield func() bool) {
 			Paper:     printer.PaperA4,
 			Keystores: make(map[uint32]bip39.Mnemonic),
 		}
+		current := Screen(FlowScreen{})
 		a := struct {
 			root op.Ops
 			mask *image.Alpha
@@ -1552,76 +1547,74 @@ func Run(pl Platform, version string) func(yield func() bool) {
 		}
 		a.idle.start = pl.Now()
 
-		for {
-			it := func(yield func() bool) {
-				stop := new(int)
-				ctx.Frame = func() {
-					if !yield() {
-						panic(stop)
-					}
-				}
-				defer func() {
-					if err := recover(); err != stop {
-						panic(err)
-					}
-				}()
-				mainFlow(ctx, a.root.Context())
+		// Event/render loop driven by Screen.Update to allow gradual migration off mainFlow.
+		var evts []Event
+		stop := new(int)
+		ctx.Frame = func() {
+			if !yield() {
+				panic(stop)
 			}
-			var evts []Event
-			for range it {
-				dirty := a.root.Clip(image.Rectangle{Max: a.ctx.Platform.DisplaySize()})
-				if err := a.ctx.Platform.Dirty(dirty); err != nil {
-					panic(err)
+		}
+		defer func() {
+			if err := recover(); err != stop {
+				panic(err)
+			}
+		}()
+		for {
+			// Collect events.
+			if !yield() {
+				return
+			}
+			wakeup := a.ctx.Wakeup
+			a.ctx.Reset()
+			for _, e := range a.ctx.Platform.AppendEvents(wakeup, evts[:0]) {
+				a.idle.start = a.ctx.Platform.Now()
+				if se, ok := e.AsSDCard(); ok {
+					a.ctx.EmptySDSlot = !se.Inserted
+				} else {
+					a.ctx.Events(e)
 				}
-				for {
-					fb, ok := a.ctx.Platform.NextChunk()
-					if !ok {
-						break
-					}
-					fbdims := fb.Bounds().Size()
-					if a.mask == nil || fbdims != a.mask.Bounds().Size() {
-						a.mask = image.NewAlpha(image.Rectangle{Max: fbdims})
-					}
-					a.root.Draw(fb, a.mask)
+			}
+			idleWakeup := a.idle.start.Add(idleTimeout)
+			now := a.ctx.Platform.Now()
+			idle := now.Sub(idleWakeup) >= 0
+			if a.idle.active != idle {
+				a.idle.active = idle
+				if idle {
+					a.idle.state = saver.State{}
+				} else {
+					// The screen saver has invalidated the cached
+					// frame content.
+					a.root = op.Ops{}
 				}
-				for {
-					if !yield() {
-						return
-					}
-					wakeup := a.ctx.Wakeup
-					a.ctx.Reset()
-					for _, e := range a.ctx.Platform.AppendEvents(wakeup, evts[:0]) {
-						a.idle.start = a.ctx.Platform.Now()
-						if se, ok := e.AsSDCard(); ok {
-							a.ctx.EmptySDSlot = !se.Inserted
-						} else {
-							a.ctx.Events(e)
-						}
-					}
-					idleWakeup := a.idle.start.Add(idleTimeout)
-					now := a.ctx.Platform.Now()
-					idle := now.Sub(idleWakeup) >= 0
-					if a.idle.active != idle {
-						a.idle.active = idle
-						if idle {
-							a.idle.state = saver.State{}
-						} else {
-							// The screen saver has invalidated the cached
-							// frame content.
-							a.root = op.Ops{}
-						}
-					}
-					if a.idle.active {
-						a.idle.state.Draw(a.ctx.Platform)
-						// Throttle screen saver speed.
-						const minFrameTime = 40 * time.Millisecond
-						a.ctx.WakeupAt(now.Add(minFrameTime))
-						continue
-					}
-					a.ctx.WakeupAt(idleWakeup)
+			}
+			if a.idle.active {
+				a.idle.state.Draw(a.ctx.Platform)
+				// Throttle screen saver speed.
+				const minFrameTime = 40 * time.Millisecond
+				a.ctx.WakeupAt(now.Add(minFrameTime))
+				continue
+			}
+			a.ctx.WakeupAt(idleWakeup)
+
+			// Render current screen.
+			a.root.Reset()
+			current = current.Update(a.ctx, a.root.Context())
+
+			dirty := a.root.Clip(image.Rectangle{Max: a.ctx.Platform.DisplaySize()})
+			if err := a.ctx.Platform.Dirty(dirty); err != nil {
+				panic(err)
+			}
+			for {
+				fb, ok := a.ctx.Platform.NextChunk()
+				if !ok {
 					break
 				}
-				a.root.Reset()
+				fbdims := fb.Bounds().Size()
+				if a.mask == nil || fbdims != a.mask.Bounds().Size() {
+					a.mask = image.NewAlpha(image.Rectangle{Max: fbdims})
+				}
+				a.root.Draw(fb, a.mask)
 			}
 		}
 	}
