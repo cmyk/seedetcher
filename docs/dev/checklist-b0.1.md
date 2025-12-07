@@ -14,3 +14,20 @@
   - [x] Extract restart-confirm helper (reuse across descriptor/seed/confirm)
   - [x] Extract seed validation helper (dup fp / descriptor mismatch) with typed errors
   - [x] Tidy print job plumbing (desc/mnemonic/keyIdx holder)
+- [x] Docs: build matrix (controllers/images, USB roles) — see `docs/dev/build-matrix.md`
+- [ ] Printing without Ghostscript (Brother HL-L5000D, prefer PCL5e)
+  - [ ] Render plates to bitmap in Go at printer DPI with mirror flag
+  - [ ] PCL5e raster writer (start/end job, set resolution/page, stream rows)
+  - [ ] Controller flag for raw PCL vs PDF capture
+- [ ] Boot/USB logistics
+  - [ ] Add host-mode image targets (dr_mode=host, no g_serial) and document log/shell access path (UART when in host mode) — image outputs added (`image-host`, `image-host-debug`); still needs device verification
+  - [ ] Make init/gadget bring-up tolerant: do not block boot if no USB host on OTG (powerbank + printer on data port)
+  - [ ] Confirm/restrict shell access: use `controller-debug` only for dev; release image runs non-debug binary (no gadget shell)
+- [ ] Printing workflow notes
+  - [ ] Add CLI flag to emit raw PCL to file (e.g., `-pcl-out`/`-mirror`) for host-side testing
+  - [ ] Document host print test: `lp` or `cat out.pcl > /dev/usb/lp0` on Ubuntu before deploying to Zero
+- [ ] Docs update checkpoint (after implementing above)
+- [ ] Zero host-mode printing (usblp)
+  - [ ] Switch OTG to host mode (disable gadget overlay/modules; use `dr_mode=host` in dtoverlay)
+  - [ ] Ensure kernel has `usblp` (CONFIG_USB_PRINTER) built/loaded; auto-load at boot if modular
+  - [ ] Verify `/dev/usb/lp0` appears with printer attached; document UART/alt shell for host mode

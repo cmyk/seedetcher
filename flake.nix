@@ -390,7 +390,7 @@
 
               allowedReferences = [ ];
             };
-          mkimage = debug:
+          mkimage = { debug, usbMode ? "gadget" }:
             let
               pkgs = hostPkgs;
               firmware = self.packages.${system}.firmware;
@@ -401,43 +401,46 @@
                   self.packages.${system}.kernel;
 
               initramfs = self.lib.${system}.mkinitramfs debug;
-              img-name = if debug then "seedetcher-debug.img" else "seedetcher.img";
+              img-name =
+                let
+                  base = if usbMode == "host" then "seedetcher-host" else "seedetcher";
+                in
+                if debug then "${base}-debug.img" else "${base}.img";
 
-              
-              # cmyk: original cmdlinetxt
-              # cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller oops=panic quiet";
-              # switching the order of console=tty1 and console=ttyGS0,115200 should show initializaton
-              
-              #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 init=/init rootwait modules-load=dwc2,g_serial g_serial.use_acm=1 g_serial.n_ports=2 debug ignore_loglevel earlyprintk";              
+              cmdlinetxt =
+                let
+                  cmdlineBase = "console=tty1 rootwait";
+                  cmdlineSerial = "console=serial0,115200 " + cmdlineBase;
+                in
+                if usbMode == "gadget" then
+                  pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 ${cmdlineBase} modules-load=dwc2,g_serial g_serial.n_ports=2"
+                else
+                  pkgs.writeText "cmdline.txt" "${cmdlineSerial} modules-load=dwc2,usblp";
 
-              cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 console=tty1 rootwait modules-load=dwc2,g_serial g_serial.n_ports=2";              
-              
-              #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 rootwait modules-load=dwc2,g_serial init=/bin/sh debug ignore_loglevel earlyprintk";
-              
-              ## doesnt WORK: cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 console=ttyGS0,115200 rdinit=/controller rootwait";
-              #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=serial0,115200 console=tty1 rdinit=/controller rootwait modules-load=dwc2,g_serial";
-              ## Original cmdlineline.txt
-              #cmdlinetxt = pkgs.writeText "cmdline.txt" "console=tty1 rdinit=/controller oops=panic quiet";
-              configtxt = pkgs.writeText "config.txt" ''
-                initramfs initramfs.cpio.gz followkernel
-                disable_splash=1
-                boot_delay=0
-                force_turbo=1
-                camera_auto_detect=1
-                dtoverlay=mipi-dbi-spi
-                dtparam=width=240
-                dtparam=height=240
-                dtparam=width-mm=23
-                dtparam=height-mm=23
-                dtparam=reset-gpio=27
-                dtparam=dc-gpio=25
-                dtparam=backlight-gpio=24
-                dtparam=write-only
-                dtparam=speed=40000000
-                dtoverlay=dwc2
-                dtoverlay=disable-bt
-                dtoverlay=disable-wifi
-              '';
+              configtxt =
+                let
+                  usbOverlay = if usbMode == "gadget" then "dtoverlay=dwc2" else "dtoverlay=dwc2,dr_mode=host";
+                in
+                pkgs.writeText "config.txt" ''
+                  initramfs initramfs.cpio.gz followkernel
+                  disable_splash=1
+                  boot_delay=0
+                  force_turbo=1
+                  camera_auto_detect=1
+                  dtoverlay=mipi-dbi-spi
+                  dtparam=width=240
+                  dtparam=height=240
+                  dtparam=width-mm=23
+                  dtparam=height-mm=23
+                  dtparam=reset-gpio=27
+                  dtparam=dc-gpio=25
+                  dtparam=backlight-gpio=24
+                  dtparam=write-only
+                  dtparam=speed=40000000
+                  ${usbOverlay}
+                  dtoverlay=disable-bt
+                  dtoverlay=disable-wifi
+                '';
             in
             pkgs.stdenvNoCC.mkDerivation {
               name = "disk-image";
@@ -693,8 +696,10 @@
             };
             initramfs = self.lib.${system}.mkinitramfs false;
             initramfs-debug = self.lib.${system}.mkinitramfs true;
-            image = self.lib.${system}.mkimage false;
-            image-debug = self.lib.${system}.mkimage true;
+            image = self.lib.${system}.mkimage { debug = false; usbMode = "gadget"; };
+            image-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; };
+            image-host = self.lib.${system}.mkimage { debug = false; usbMode = "host"; };
+            image-host-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; };
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "reload" ''
               #!/bin/sh

@@ -9,10 +9,26 @@
 # **************************************
 
 
-# Define variables
+# Defaults (override with -i)
+IMAGE_NAME="seedetcher-debug.img"
 REMOTE_HOST="ubuntu"
-REMOTE_PATH="~/seedetcher/result/seedetcher-debug.img"
-LOCAL_PATH="$HOME/Downloads/seedetcher-debug.img"
+
+usage() {
+  echo "Usage: $0 [-i image-name]"
+  echo "  -i image-name   file name in ~/seedetcher/result (default: seedetcher-debug.img)"
+  exit 1
+}
+
+while getopts "i:h" opt; do
+  case "$opt" in
+    i) IMAGE_NAME="$OPTARG" ;;
+    h) usage ;;
+    *) usage ;;
+  esac
+done
+
+REMOTE_PATH="~/seedetcher/result/${IMAGE_NAME}"
+LOCAL_PATH="$HOME/Downloads/${IMAGE_NAME}"
 
 
 echo "Waiting for SD card to be mounted..."

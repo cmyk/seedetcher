@@ -11,6 +11,10 @@
 - Dev host: macOS; builds run inside an Ubuntu VM with Nix.
 - Target: Raspberry Pi Zero (ARMv6, musl).
 
+## Images & USB modes
+- `image` (prod) vs `image-debug` (dev with serial/reload hooks). Both boot in USB gadget mode for shell access; see `docs/dev/build-matrix.md` for the full matrix.
+- Host-mode variants: `image-host` / `image-host-debug` switch OTG to host and load `usblp` for `/dev/usb/lp0` printers; use UART for shell in host mode.
+
 ## Build → Flash
 - Build image in Ubuntu VM: `nix build .#image-debug --impure` (outputs `result/seedetcher-debug.img`).
 - Flash from mac: `scripts/flash-sdcard.sh` pointing at the built image.
