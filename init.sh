@@ -27,14 +27,17 @@ debug_echo() {
     echo "DEBUG: $1" >> /log/init_debug.log
 }
 
-# In host mode we want shell on UART; in gadget mode we prefer ttyGS0/1.
-SHELL_TTY="/dev/ttyAMA0"
-CTRL_TTY="/dev/ttyAMA0"
-if [ ! -c "$SHELL_TTY" ]; then
+# Prefer gadget ttys when present; otherwise fall back to UART.
+if [ -c /dev/ttyGS0 ]; then
     SHELL_TTY="/dev/ttyGS0"
+else
+    SHELL_TTY="/dev/ttyAMA0"
 fi
-if [ ! -c "$CTRL_TTY" ]; then
+
+if [ -c /dev/ttyGS1 ]; then
     CTRL_TTY="/dev/ttyGS1"
+else
+    CTRL_TTY="/dev/ttyAMA0"
 fi
 
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
