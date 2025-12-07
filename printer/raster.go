@@ -1,0 +1,420 @@
+package printer
+
+import (
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
+	"math"
+	"os"
+	"strings"
+	"sync"
+
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/hdkeychain"
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/kortschak/qr"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/basicfont"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/math/fixed"
+	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/bip39"
+	"seedetcher.com/seedqr"
+)
+
+// RasterOptions controls the bitmap output used for raw printer jobs.
+type RasterOptions struct {
+	DPI    float64 // target resolution; defaults to 600 if unset
+	Mirror bool    // mirror horizontally (for toner transfer)
+	Invert bool    // swap black/white for negative output
+}
+
+const (
+	plateSizeMM   = 85.0
+	borderWidthMM = 0.2
+)
+
+var (
+	bwPalette = color.Palette{color.White, color.Black}
+
+	fontOnce     sync.Once
+	fontFaceData *opentype.Font
+	fontErr      error
+	faceMu       sync.Mutex
+	faceCache    = make(map[[2]float64]font.Face) // key: {sizePt, dpi}
+)
+
+// CreatePlateBitmaps renders seed/descriptor plates to 1-bit bitmaps using the existing layout.
+func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions) ([]*image.Paletted, []*image.Paletted, error) {
+	totalShares := len(mnemonics)
+	if desc != nil && len(desc.Keys) > 0 {
+		totalShares = len(desc.Keys)
+	}
+
+	seedImgs := make([]*image.Paletted, totalShares)
+	var descImgs []*image.Paletted
+	hasDesc := desc != nil && len(desc.Keys) > 0
+	if hasDesc {
+		descImgs = make([]*image.Paletted, totalShares)
+	}
+
+	for i := 0; i < totalShares; i++ {
+		mnemonic := mnemonics[i%len(mnemonics)]
+		seedImg, err := RenderSeedPlateBitmap(mnemonic, i+1, totalShares, opts)
+		if err != nil {
+			return nil, nil, err
+		}
+		seedImgs[i] = seedImg
+
+		if hasDesc {
+			descKeyIdx := i % len(desc.Keys)
+			descImg, err := RenderDescriptorPlateBitmap(desc, descKeyIdx, i+1, totalShares, opts)
+			if err != nil {
+				return nil, nil, err
+			}
+			descImgs[i] = descImg
+		}
+	}
+
+	return seedImgs, descImgs, nil
+}
+
+// RenderSeedPlateBitmap mirrors the PDF layout at 600dpi as a 1-bit paletted image.
+func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions) (*image.Paletted, error) {
+	dpi := opts.dpi()
+	canvas := newPlateCanvas(dpi)
+	blackIdx := uint8(1)
+
+	border := mmToPx(borderWidthMM, dpi)
+	if border < 1 {
+		border = 1
+	}
+	strokeRect(canvas, 0, 0, canvas.Bounds().Dx(), canvas.Bounds().Dy(), border, blackIdx)
+
+	shareFace := loadFace(5, dpi)
+	mainFace := loadFace(8, dpi)
+
+	drawText(canvas, shareFace, dpi, 5.0, 5.0, fmt.Sprintf("%d/%d", shareNum, totalShares))
+
+	seed := bip39.MnemonicSeed(mnemonic, "")
+	if seed != nil {
+		masterKey, err := hdkeychain.NewMaster(seed, &chaincfg.MainNetParams)
+		if err == nil {
+			if masterPubKey, err := masterKey.Neuter(); err == nil {
+				if pubKey, err := masterPubKey.ECPubKey(); err == nil {
+					fp := btcutil.Hash160(pubKey.SerializeCompressed())[:4]
+					fingerprintHex := fmt.Sprintf("%X", fp)
+					drawText(canvas, shareFace, dpi, 40.0, 5.0, fingerprintHex)
+					drawText(canvas, shareFace, dpi, 70.0, 5.0, "V1")
+				}
+			}
+		}
+	}
+
+	// Word columns
+	yLeft := 15.0
+	for i := 0; i < 16 && i < len(mnemonic); i++ {
+		if mnemonic[i] == -1 {
+			continue
+		}
+		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
+		drawText(canvas, mainFace, dpi, 12.0, yLeft, fmt.Sprintf("%2d %s", i+1, word))
+		yLeft += 4.0
+	}
+	yRight := 15.0
+	for i := 16; i < 24 && i < len(mnemonic); i++ {
+		if mnemonic[i] == -1 {
+			continue
+		}
+		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
+		drawText(canvas, mainFace, dpi, 45.0, yRight, fmt.Sprintf("%2d %s", i+1, word))
+		yRight += 4.0
+	}
+
+	if seed != nil {
+		qrContent := seedqr.QR(mnemonic)
+		if len(qrContent) > 0 {
+			qrCode, err := qr.Encode(string(qrContent), qr.M)
+			if err == nil {
+				drawQR(canvas, qrCode, dpi, 45.0, plateSizeMM-25.0-10.0, 25.0, blackIdx)
+			}
+		}
+
+		title := "SATOSHI'S STASH"
+		titleFace := loadFace(5, dpi)
+		titleY := plateSizeMM - 5.0
+		drawCenteredText(canvas, titleFace, dpi, titleY, title)
+	}
+
+	applyPostProcess(canvas, opts)
+	return canvas, nil
+}
+
+// RenderDescriptorPlateBitmap mirrors the descriptor PDF layout at 600dpi as a 1-bit paletted image.
+func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNum, totalShares int, opts RasterOptions) (*image.Paletted, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("descriptor is nil")
+	}
+	dpi := opts.dpi()
+	canvas := newPlateCanvas(dpi)
+	blackIdx := uint8(1)
+
+	border := mmToPx(borderWidthMM, dpi)
+	if border < 1 {
+		border = 1
+	}
+	strokeRect(canvas, 0, 0, canvas.Bounds().Dx(), canvas.Bounds().Dy(), border, blackIdx)
+
+	smallFace := loadFace(5, dpi)
+	mainFace := loadFace(8, dpi)
+	drawText(canvas, smallFace, dpi, 5.0, 5.0, fmt.Sprintf("%d/%d", shareNum, totalShares))
+
+	key := desc.Keys[keyIdx]
+	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s",
+		desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
+
+	lines := wrapText(mainFace, dpi, allText, 75.0)
+	y := 10.0
+	for _, line := range lines {
+		drawText(canvas, mainFace, dpi, 5.0, y, line)
+		y += 5.0
+	}
+
+	qrContent := createDescriptorQR(desc)
+	if len(qrContent) == 0 {
+		return nil, fmt.Errorf("empty descriptor QR content")
+	}
+	qrCode, err := qr.Encode(qrContent, descriptorQRECC)
+	if err != nil {
+		return nil, err
+	}
+
+	textHeight := y
+	availableHeight := plateSizeMM - textHeight - 5.0
+	qrSize := availableHeight
+	if qrSize > descriptorQRSizeMM {
+		qrSize = descriptorQRSizeMM
+	}
+	if qrSize < 5.0 {
+		qrSize = 5.0 // Prevent degenerate QR
+	}
+	qrX := (plateSizeMM - qrSize) / 2
+	qrY := plateSizeMM - qrSize - 5.0
+	drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
+
+	applyPostProcess(canvas, opts)
+	return canvas, nil
+}
+
+// SavePNG writes a paletted image to disk.
+func SavePNG(path string, img image.Image) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return png.Encode(f, img)
+}
+
+// ---- helpers ----
+
+func (o RasterOptions) dpi() float64 {
+	if o.DPI <= 0 {
+		return 600
+	}
+	return o.DPI
+}
+
+func newPlateCanvas(dpi float64) *image.Paletted {
+	sizePx := mmToPx(plateSizeMM, dpi)
+	return image.NewPaletted(image.Rect(0, 0, sizePx, sizePx), bwPalette)
+}
+
+func mmToPx(mm, dpi float64) int {
+	return int(math.Round(mm / 25.4 * dpi))
+}
+
+func mmToPxFloat(mm, dpi float64) float64 {
+	return mm / 25.4 * dpi
+}
+
+func strokeRect(img *image.Paletted, x, y, w, h, thickness int, idx uint8) {
+	fillRect(img, x, y, w, thickness, idx)             // top
+	fillRect(img, x, y+h-thickness, w, thickness, idx) // bottom
+	fillRect(img, x, y, thickness, h, idx)             // left
+	fillRect(img, x+w-thickness, y, thickness, h, idx) // right
+}
+
+func fillRect(img *image.Paletted, x, y, w, h int, idx uint8) {
+	b := img.Bounds()
+	x0, y0 := clamp(x, b.Min.X, b.Max.X), clamp(y, b.Min.Y, b.Max.Y)
+	x1, y1 := clamp(x+w, b.Min.X, b.Max.X), clamp(y+h, b.Min.Y, b.Max.Y)
+	if x1 <= x0 || y1 <= y0 {
+		return
+	}
+	for yy := y0; yy < y1; yy++ {
+		row := img.Pix[yy*img.Stride:]
+		for xx := x0; xx < x1; xx++ {
+			row[xx] = idx
+		}
+	}
+}
+
+func clamp(v, lo, hi int) int {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
+}
+
+func drawText(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string) {
+	d := font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(color.Black),
+		Face: face,
+		Dot: fixed.Point26_6{
+			X: fixed.I(int(math.Round(mmToPxFloat(xMm, dpi)))),
+			Y: fixed.I(int(math.Round(mmToPxFloat(yMm, dpi)))),
+		},
+	}
+	d.DrawString(text)
+}
+
+func drawCenteredText(img *image.Paletted, face font.Face, dpi, yMm float64, text string) {
+	d := font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(color.Black),
+		Face: face,
+	}
+	textWidth := d.MeasureString(text).Round()
+	xPx := (img.Bounds().Dx() - textWidth) / 2
+	d.Dot = fixed.Point26_6{
+		X: fixed.I(xPx),
+		Y: fixed.I(int(math.Round(mmToPxFloat(yMm, dpi)))),
+	}
+	d.DrawString(text)
+}
+
+func drawQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float64, idx uint8) {
+	if code == nil {
+		return
+	}
+	x0 := mmToPx(xMm, dpi)
+	y0 := mmToPx(yMm, dpi)
+	sizePx := mmToPx(sizeMm, dpi)
+	const quiet = 4
+	step := float64(sizePx) / float64(code.Size+2*quiet)
+	offset := int(math.Round(float64(quiet) * step))
+
+	for y := 0; y < code.Size; y++ {
+		yStart := y0 + offset + int(math.Round(float64(y)*step))
+		yEnd := y0 + offset + int(math.Round(float64(y+1)*step))
+		for x := 0; x < code.Size; x++ {
+			if !code.Black(x, y) {
+				continue
+			}
+			xStart := x0 + offset + int(math.Round(float64(x)*step))
+			xEnd := x0 + offset + int(math.Round(float64(x+1)*step))
+			fillRect(img, xStart, yStart, xEnd-xStart, yEnd-yStart, idx)
+		}
+	}
+}
+
+// wrapText performs character-level wrapping to ensure long descriptors fit even without spaces.
+func wrapText(face font.Face, dpi float64, text string, maxWidthMm float64) []string {
+	var lines []string
+	if maxWidthMm <= 0 {
+		return []string{text}
+	}
+	maxPx := int(math.Round(mmToPxFloat(maxWidthMm, dpi)))
+	if maxPx <= 0 {
+		return []string{text}
+	}
+
+	d := font.Drawer{Face: face}
+	var buf []rune
+	for _, r := range text {
+		buf = append(buf, r)
+		if d.MeasureString(string(buf)).Ceil() > maxPx {
+			// Overflow: push previous run and start new line with current rune.
+			if len(buf) > 1 {
+				lines = append(lines, string(buf[:len(buf)-1]))
+				buf = buf[len(buf)-1:]
+			} else {
+				// Single rune too wide; force as line.
+				lines = append(lines, string(buf))
+				buf = buf[:0]
+			}
+		}
+	}
+	if len(buf) > 0 {
+		lines = append(lines, string(buf))
+	}
+	return lines
+}
+
+func loadFace(sizePt, dpi float64) font.Face {
+	key := [2]float64{sizePt, dpi}
+	faceMu.Lock()
+	if face, ok := faceCache[key]; ok {
+		faceMu.Unlock()
+		return face
+	}
+	faceMu.Unlock()
+
+	fontOnce.Do(func() {
+		data := loadFontData(martianMono)
+		if data == nil {
+			fontErr = fmt.Errorf("font data %s not found", martianMono)
+			return
+		}
+		fontFaceData, fontErr = opentype.Parse(data)
+	})
+
+	if fontErr == nil && fontFaceData != nil {
+		if face, err := opentype.NewFace(fontFaceData, &opentype.FaceOptions{
+			Size:    sizePt,
+			DPI:     dpi,
+			Hinting: font.HintingFull,
+		}); err == nil {
+			faceMu.Lock()
+			faceCache[key] = face
+			faceMu.Unlock()
+			return face
+		}
+	}
+	return basicfont.Face7x13
+}
+
+func applyPostProcess(img *image.Paletted, opts RasterOptions) {
+	if opts.Mirror {
+		mirrorHorizontal(img)
+	}
+	if opts.Invert {
+		invert(img)
+	}
+}
+
+func mirrorHorizontal(img *image.Paletted) {
+	w, h := img.Bounds().Dx(), img.Bounds().Dy()
+	for y := 0; y < h; y++ {
+		row := img.Pix[y*img.Stride:]
+		for x := 0; x < w/2; x++ {
+			row[x], row[w-1-x] = row[w-1-x], row[x]
+		}
+	}
+}
+
+func invert(img *image.Paletted) {
+	for i, v := range img.Pix {
+		if v == 0 {
+			img.Pix[i] = 1
+		} else if v == 1 {
+			img.Pix[i] = 0
+		}
+	}
+}

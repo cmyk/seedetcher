@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/logutil"
@@ -32,6 +34,8 @@ const (
 
 // Load Fonts
 var martianMono = "font/martianmono/MartianMono_Condensed-Regular.ttf" // Path to the UTF-8 TrueType font file
+var descriptorQRSizeMM = 75.0                                          // Max descriptor QR size in mm (configurable)
+var descriptorQRECC = qr.L                                             // Error correction level for descriptor QR
 
 // Load font binary data
 func loadFontData(fontPath string) []byte {
@@ -79,10 +83,6 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 	pdf.Rect(0, 0, plateSize, plateSize, "D")
 
 	pdf.SetFont(fontName, "", 5)
-	// Fix: Use 1/1 if totalShares > 1 but no descriptor context (singlesig case)
-	if totalShares > 1 {
-		totalShares = 1 // Singlesig without descriptor
-	}
 	shareText := fmt.Sprintf("%d/%d", shareNum, totalShares)
 	pdf.Text(5.0, 5.0, shareText)
 
@@ -137,14 +137,17 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 			qrSize := 25.0
 			qrX := 45.0
 			qrY := plateSize - qrSize - 10.0
-			pixelSize := qrSize / float64(qrCode.Size)
+			const quiet = 4
+			step := qrSize / float64(qrCode.Size+2*quiet)
+			offset := float64(quiet) * step
 			for y := 0; y < qrCode.Size; y++ {
 				for x := 0; x < qrCode.Size; x++ {
-					if qrCode.Black(x, y) {
-						startX := qrX + (float64(x) * pixelSize)
-						startY := qrY + (float64(y) * pixelSize)
-						pdf.Rect(startX, startY, pixelSize, pixelSize, "F")
+					if !qrCode.Black(x, y) {
+						continue
 					}
+					startX := qrX + offset + (float64(x) * step)
+					startY := qrY + offset + (float64(y) * step)
+					pdf.Rect(startX, startY, step, step, "F")
 				}
 			}
 		}
@@ -210,24 +213,33 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 	if len(qrContent) == 0 {
 		return nil, fmt.Errorf("failed to generate descriptor QR: empty content")
 	}
-	qrCode, err := qr.Encode(qrContent, qr.M)
+	qrCode, err := qr.Encode(qrContent, descriptorQRECC)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode descriptor QR: %v", err)
 	}
 	textHeight := int(y)
 	availableHeight := int(plateSize - float64(textHeight) - 5.0) // 5mm top + 5mm bottom margin
-	qrSize := min(availableHeight, 75)                            // Max 75mm within 10mm margins
-	qrX := (plateSize - float64(qrSize)) / 2                      // Left margin
+	qrMax := int(math.Round(descriptorQRSizeMM))
+	if qrMax <= 0 {
+		qrMax = 75
+	}
+	qrSize := min(availableHeight, qrMax) // Cap by configured size
+	if qrSize < 5 {
+		qrSize = 5 // Prevent too-small QR
+	}
+	qrX := (plateSize - float64(qrSize)) / 2 // Left margin
 	qrY := plateSize - float64(qrSize) - 5
-	pixelSize := float64(qrSize) / float64(qrCode.Size)
-	fmt.Printf("pixelSize: %f /", pixelSize)
+	const quiet = 4
+	step := float64(qrSize) / float64(qrCode.Size+2*quiet)
+	offset := float64(quiet) * step
 	for y := 0; y < qrCode.Size; y++ {
 		for x := 0; x < qrCode.Size; x++ {
-			if qrCode.Black(x, y) {
-				startX := qrX + (float64(x) * pixelSize)
-				startY := qrY + (float64(y) * pixelSize)
-				pdf.Rect(startX, startY, pixelSize, pixelSize, "F")
+			if !qrCode.Black(x, y) {
+				continue
 			}
+			startX := qrX + offset + (float64(x) * step)
+			startY := qrY + offset + (float64(y) * step)
+			pdf.Rect(startX, startY, step, step, "F")
 		}
 	}
 
@@ -239,14 +251,16 @@ func createDescriptorQR(desc *urtypes.OutputDescriptor) string {
 	if desc == nil {
 		return ""
 	}
-	parts := []string{fmt.Sprintf("Type: %v", desc.Type)}
-	parts = append(parts, fmt.Sprintf("Script: %s", desc.Script.String()))
-	parts = append(parts, fmt.Sprintf("Threshold: %d", desc.Threshold))
-	parts = append(parts, fmt.Sprintf("Keys: %d", len(desc.Keys)))
-	for i, key := range desc.Keys {
-		parts = append(parts, fmt.Sprintf("Key %d: %s", i+1, key.String()))
+	// Encode as UR:crypto-output so scan path uses the standard descriptor parser.
+	return ur.Encode("crypto-output", desc.Encode(), 1, 1)
+}
+
+// SetDescriptorQRSize overrides the maximum descriptor QR size in millimeters.
+// Zero or negative values are ignored.
+func SetDescriptorQRSize(mm float64) {
+	if mm > 0 {
+		descriptorQRSizeMM = mm
 	}
-	return strings.Join(parts, "\n")
 }
 
 // PrintPDF generates individual 85x85mm PDFs and returns paths to the generated plates.
@@ -263,9 +277,6 @@ func CreatePlates(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputD
 	if desc != nil && len(desc.Keys) > 0 {
 		totalShares = len(desc.Keys)
 		logutil.DebugLog("Calculated totalShares: %d based on desc.Keys length: %d", totalShares, len(desc.Keys))
-	} else if totalShares > 1 {
-		totalShares = 1
-		logutil.DebugLog("No descriptor, forcing totalShares to %d (singlesig)", totalShares)
 	}
 
 	seedPaths := make([]string, totalShares)
@@ -284,8 +295,9 @@ func CreatePlates(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputD
 		seedPaths[i] = seedFile
 		logutil.DebugLog("Generated seed plate %d at %s, size: %d bytes", i+1, seedFile, seedBuf.Len())
 		if desc != nil && len(desc.Keys) > 0 {
+			descKeyIdx := i % len(desc.Keys) // rotate keys per plate
 			logutil.DebugLog("Generating descriptor plate %d", i+1)
-			pdf, err := createDescriptorPlate(desc, keyIdx, i+1, totalShares)
+			pdf, err := createDescriptorPlate(desc, descKeyIdx, i+1, totalShares)
 			if err != nil {
 				return nil, nil, tempDir, fmt.Errorf("failed to generate descriptor plate %d: %v", i, err)
 			}

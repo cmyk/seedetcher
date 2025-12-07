@@ -9,6 +9,11 @@ type Flags struct {
 	PaperSize  string
 	Verbose    bool
 	WalletType string
+	BitmapDir  string
+	DPI        int
+	Mirror     bool
+	Invert     bool
+	DescQRMM   float64
 }
 
 func DefineFlags() *Flags {
@@ -19,5 +24,10 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.PaperSize, "papersize", "A4", "Paper size (A4 or Letter)")
 	flag.BoolVar(&f.Verbose, "verbose", false, "Enable verbose logging")
 	flag.StringVar(&f.WalletType, "w", "multisig", "Wallet type (singlesig or multisig)")
+	flag.StringVar(&f.BitmapDir, "png-out", "", "Optional output directory for 600dpi plate PNGs (mirrored/inverted if set)")
+	flag.IntVar(&f.DPI, "dpi", 600, "Raster output DPI when using -png-out")
+	flag.BoolVar(&f.Mirror, "mirror", false, "Mirror raster output horizontally (toner transfer)")
+	flag.BoolVar(&f.Invert, "invert", false, "Invert raster output (white/black swap)")
+	flag.Float64Var(&f.DescQRMM, "desc-qr-mm", 75.0, "Maximum descriptor QR size in millimeters")
 	return f
 }

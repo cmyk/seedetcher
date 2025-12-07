@@ -94,6 +94,17 @@ const (
 	SortedMulti
 )
 
+func (m MultisigType) String() string {
+	switch m {
+	case Singlesig:
+		return "Singlesig"
+	case SortedMulti:
+		return "SortedMulti"
+	default:
+		return fmt.Sprintf("Unknown(%d)", int(m))
+	}
+}
+
 // Singlesig reports whether the script is for single-sig.
 func (s Script) Singlesig() bool {
 	for _, s2 := range []Script{P2PKH, P2WPKH, P2SH_P2WPKH, P2TR} {
@@ -246,7 +257,8 @@ func (k KeyDescriptor) toCBOR() hdKey {
 		case ChildDerivation:
 			children = append(children, c.Index, c.Hardened)
 		case RangeDerivation:
-			children = append(children, c.Index, c.End, c.Hardened)
+			// Range encoded as [start, end], then hardened flag.
+			children = append(children, []any{c.Index, c.End}, c.Hardened)
 		case WildcardDerivation:
 			children = append(children, []any{}, c.Hardened)
 		}

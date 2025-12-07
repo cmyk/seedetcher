@@ -184,6 +184,44 @@ Based on the SeedHammer documentation, the available button inputs are:
 	•	b3 (bottom button)
 
 
+## Printing
+
+Test output:
+
+```bash
+go run cmd/cli/main.go -w multisig -o ~/PDF -png-out ~/PDF/png -dpi 600 -desc-qr-mm 25
+
+
+go run cmd/cli/main.go -w singlesig \
+	-mnemonic "cash zoo picture text skill steel dragon remove imitate fatal close train recipe april extra void obey sell train chaos noble rice typical below" \
+	-o ~/PDF-test \
+	-png-out ~/PDF-test/png \
+	-dpi 1200 \
+	-desc-qr-mm 25
+```
+
+### Quick test plates (no hardware)
+- Singlesig fixture (testnet): `cash zoo picture text skill steel dragon remove imitate fatal close train recipe april extra void obey sell train chaos noble rice typical below`
+- Multisig fixture (2-of-3 testnet) lives in `testutils.WalletConfigs["multisig"]`.
+
+Examples:
+```bash
+# Singlesig PDF + PNGs (adjust paths/flags as needed)
+go run cmd/cli/main.go -w singlesig \
+  -mnemonic "cash zoo picture text skill steel dragon remove imitate fatal close train recipe april extra void obey sell train chaos noble rice typical below" \
+  -o ~/PDF-test \
+  -png-out ~/PDF-test/png \
+  -dpi 1200 \
+  -desc-qr-mm 25
+
+# Multisig PDF + PNGs
+go run cmd/cli/main.go -w multisig \
+  -o ~/PDF \
+  -png-out ~/PDF/png \
+  -dpi 600 \
+  -desc-qr-mm 25
+```
+
 
 Shell Commands on Zero
 ==========================================
@@ -320,19 +358,7 @@ Implementation Plan
 	3	Test on Ubuntu by capturing output over USB, then flash and validate on the Pi Zero with a physical laser printer.
 
 
-
-
-
-Memory Constraints
-Issue: My context memory fills up with long chats, risking a crash.
-Tips:
-Start Fresh: If I fail, create a new chat and paste only the latest files/changes (e.g., updated print.go and cmd/cli/main.go).
-Summarize: Tell me, “Use the latest print.go and cmd/cli/main.go from [timestamp]” instead of re-explaining everything.
-Focus: Ask one thing at a time (like now), keeping replies short.
-
-
-
-Converting Fonts
+## Converting Fonts
 
 go run font/bitmap/convert.go -package comfortaa -ppem 17 font/comfortaa/Comfortaa-Bold.ttf font/comfortaa/bold17
 
@@ -364,4 +390,3 @@ Long-Term Plan
 Dev Mode: Keep go-deps hashless while debugging. It’s flexible—deps update as you change go.mod.
 
 Release Mode: Once you’re stable, add the outputHash back for reproducibility. Run nix build .#go-deps, fail it with a dummy hash, grab the real one from the error, and lock it in.
-
