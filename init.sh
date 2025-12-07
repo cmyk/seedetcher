@@ -22,9 +22,18 @@ mkdir -p /dev/pts
 mount -t sysfs none /sys
 mount -t devpts none /dev/pts
 
-# Send debug messages to ttyGS0 but avoid affecting exec shell output
+# Pick a debug sink as early as possible
+DEBUG_TTY="/dev/ttyAMA0"
+[ -c /dev/ttyGS0 ] && DEBUG_TTY="/dev/ttyGS0"
+[ -c /dev/tty1 ] && [ ! -c "$DEBUG_TTY" ] && DEBUG_TTY="/dev/tty1"
+
 debug_echo() {
-    echo "DEBUG: $1" >> /log/init_debug.log
+    msg="DEBUG: $1"
+    echo "$msg" >> /log/init_debug.log
+    echo "$msg" > /dev/kmsg
+    if [ -c "$DEBUG_TTY" ]; then
+        echo "$msg" > "$DEBUG_TTY"
+    fi
 }
 
 # Prefer gadget TTYs when present; otherwise use UART. Wait up to 30s for the chosen one.
@@ -34,9 +43,10 @@ else
     SHELL_TTY="/dev/ttyAMA0"
 fi
 
-CTRL_TTY="/dev/null"
 if [ -c /dev/ttyGS1 ]; then
     CTRL_TTY="/dev/ttyGS1"
+else
+    CTRL_TTY="/dev/ttyAMA0"
 fi
 
 wait_for() {
@@ -50,9 +60,7 @@ wait_for() {
 }
 
 wait_for "$SHELL_TTY" 30
-if [ "$CTRL_TTY" != "/dev/null" ]; then
-    wait_for "$CTRL_TTY" 30
-fi
+wait_for "$CTRL_TTY" 30
 
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
 
