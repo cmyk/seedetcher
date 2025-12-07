@@ -31,16 +31,33 @@ func init() {
 	}
 }
 
+func pickDebugSerial() string {
+	// Prefer gadget port if present; fall back to UART console when in host mode.
+	paths := []string{"/dev/ttyGS1", "/dev/ttyAMA0"}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
 func dbgInit(p *Platform) error {
-	s, err := openSerial("/dev/ttyGS1")
+	serialPath := pickDebugSerial()
+	if serialPath == "" {
+		logutil.DebugLog("debug: no serial device found for debug console; continuing without it")
+		return nil
+	}
+	s, err := openSerial(serialPath)
 	if err != nil {
-		return err
+		logutil.DebugLog("debug: failed to open %s: %v", serialPath, err)
+		return nil
 	}
 	// Only redirect stdout/stderr if not printing
 	if !p.printing {
 		unix.Dup2(int(s.Fd()), syscall.Stderr)
 		unix.Dup2(int(s.Fd()), syscall.Stdout)
-		logutil.DebugLog("Redirected stdout/stderr to /dev/ttyGS1")
+		logutil.DebugLog("Redirected stdout/stderr to %s", serialPath)
 	}
 	go func() {
 		defer s.Close()

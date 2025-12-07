@@ -18,7 +18,7 @@ Build directly if needed: `nix build .#controller` or `nix build .#controller-de
 | `image`                    | `controller`       | Gadget (`dwc2,g_serial`)         | Console on `ttyGS0`/HDMI; no debug hooks.                     |
 | `image-debug`              | `controller-debug` | Gadget (`dwc2,g_serial`)         | Adds serial console + reload flow via `/dev/ttyGS1`.          |
 | `image-host`               | `controller`       | Host (`dr_mode=host`, `usblp`)   | For direct USB-printer use (`/dev/usb/lp0`), no gadget shell. |
-| `image-host-debug`         | `controller-debug` | Host (`dr_mode=host`, `usblp`)   | Host-mode + debug controller; use UART for shell.             |
+| `image-host-debug`         | `controller-debug` | Host (`dr_mode=host`, `usblp`)   | Host-mode + debug controller; debug console falls back to UART.             |
 
 Build commands (examples):
 - `nix build .#image` → `result/seedetcher.img`
