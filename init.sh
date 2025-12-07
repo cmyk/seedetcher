@@ -105,9 +105,9 @@ export ENV=~/.shrc
 debug_echo "Init finished. Starting shell..."
 
 if [ -n "$SHELL_TTY" ] && [ -c "$SHELL_TTY" ]; then
-    debug_echo "Launching shell on $SHELL_TTY..."
+    debug_echo "Launching getty on $SHELL_TTY..."
     echo "seedetcher init: shell on $SHELL_TTY" > "$SHELL_TTY"
-    exec /bin/sh -i < "$SHELL_TTY" > "$SHELL_TTY" 2>&1 || echo "Failed to launch shell" > "$SHELL_TTY"
+    exec /bin/busybox getty -L 115200 "$SHELL_TTY" sh
 else
     debug_echo "No shell TTY found; exec'ing controller only"
     exec /controller >> /log/debug.log 2>> /log/debug.log
