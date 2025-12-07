@@ -27,38 +27,32 @@ debug_echo() {
     echo "DEBUG: $1" >> /log/init_debug.log
 }
 
-wait_for_tty() {
+# Prefer gadget TTYs when present; otherwise use UART. Wait up to 30s for the chosen one.
+if [ -c /dev/ttyGS0 ]; then
+    SHELL_TTY="/dev/ttyGS0"
+else
+    SHELL_TTY="/dev/ttyAMA0"
+fi
+
+CTRL_TTY="/dev/null"
+if [ -c /dev/ttyGS1 ]; then
+    CTRL_TTY="/dev/ttyGS1"
+fi
+
+wait_for() {
     tgt="$1"; shift
-    tries="$1"; shift
-    while [ "$tries" -gt 0 ]; do
-        if [ -c "$tgt" ]; then
-            echo "$tgt"
-            return
-        fi
+    timeout="$1"; shift
+    while [ "$timeout" -gt 0 ] && [ ! -c "$tgt" ]; do
         sleep 1
-        tries=$((tries - 1))
+        timeout=$((timeout - 1))
     done
-    echo ""
+    [ -c "$tgt" ]
 }
 
-choose_shell_tty() {
-    for t in /dev/ttyGS0 /dev/ttyAMA0 /dev/tty1; do
-        tty=$(wait_for_tty "$t" 5)
-        [ -n "$tty" ] && echo "$tty" && return
-    done
-    echo ""
-}
-
-choose_ctrl_tty() {
-    for t in /dev/ttyGS1 /dev/ttyAMA0; do
-        tty=$(wait_for_tty "$t" 5)
-        [ -n "$tty" ] && echo "$tty" && return
-    done
-    echo "/dev/null"
-}
-
-SHELL_TTY=$(choose_shell_tty)
-CTRL_TTY=$(choose_ctrl_tty)
+wait_for "$SHELL_TTY" 30
+if [ "$CTRL_TTY" != "/dev/null" ]; then
+    wait_for "$CTRL_TTY" 30
+fi
 
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
 
