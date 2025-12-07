@@ -5,7 +5,7 @@
 mkdir -p /log
 chmod 777 /log
 
-echo "DEBUG MARKER: Init script has started" | tee -a /log/init_debug.log > /dev/ttyGS0
+echo "DEBUG MARKER: Init script has started" | tee -a /log/init_debug.log >/dev/null
 
 set -m  # Enable job control
 
@@ -27,46 +27,45 @@ debug_echo() {
     echo "DEBUG: $1" >> /log/init_debug.log
 }
 
+choose_shell_tty() {
+    for t in /dev/ttyGS0 /dev/ttyAMA0 /dev/tty1; do
+        [ -c "$t" ] && echo "$t" && return
+    done
+    echo ""
+}
+
+choose_ctrl_tty() {
+    for t in /dev/ttyGS1; do
+        [ -c "$t" ] && echo "$t" && return
+    done
+    echo "/dev/null"
+}
+
+SHELL_TTY=$(choose_shell_tty)
+CTRL_TTY=$(choose_ctrl_tty)
+
+debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
+
 # Fix DRM framebuffer permissions
 debug_echo "Fixing /dev/dri permissions..."
 mkdir -p /dev/dri
 chmod 777 /dev/dri
 chmod 777 /dev/dri/* 2>/dev/null || true
 
-timeout=10  # Max wait time in seconds
-
-# Ensure /dev/ttyGS0 is available for shell
-while [ ! -c /dev/ttyGS0 ] && [ $timeout -gt 0 ]; do
-    debug_echo "Waiting for /dev/ttyGS0..."
-    sleep 1
-    timeout=$((timeout - 1))
-done
-
-# Reset timeout
-timeout=10
-
-# Ensure /dev/ttyGS1 is available for controller input
-while [ ! -c /dev/ttyGS1 ] && [ $timeout -gt 0 ]; do
-    debug_echo "Waiting for /dev/ttyGS1..."
-    sleep 1
-    timeout=$((timeout - 1))
-done
-
-debug_echo "USB serial devices detected!"
-
-# setting correct permissions
-chmod 666 /dev/ttyGS*
-
-debug_echo "Setting USBDEV1 to raw mode..."
-stty -F /dev/ttyGS1 raw -echo
-echo "" > /dev/ttyGS1
+# If we have a controller TTY, prep it
+if [ -c "$CTRL_TTY" ] && [ "$CTRL_TTY" != "/dev/null" ]; then
+    chmod 666 "$CTRL_TTY"
+    debug_echo "Setting $CTRL_TTY to raw mode..."
+    stty -F "$CTRL_TTY" raw -echo
+    echo "" > "$CTRL_TTY"
+fi
 
 debug_echo "Checking /controller existence and permissions..."
-ls -l /controller > /dev/ttyGS0 2>&1
-file /controller > /dev/ttyGS0 2>&1
+ls -l /controller >> /log/init_debug.log 2>&1
+file /controller >> /log/init_debug.log 2>&1
 debug_echo "Starting controller..."
-# Ensure controller’s stdout/stderr go to log, not ttyGS1
-/controller < /dev/ttyGS1 >> /log/debug.log 2>> /log/debug.log &
+# Ensure controller’s stdout/stderr go to log; stdin from controller TTY if present
+/controller < "$CTRL_TTY" >> /log/debug.log 2>> /log/debug.log &
 
 # Wait until the controller process is fully running
 while ! pidof controller > /dev/null; do
@@ -87,17 +86,16 @@ export ENV=~/.shrc
 
 debug_echo "Init finished. Starting shell..."
 
-cat /dev/ttyGS0 > /log/serial_dump.log 2>&1 &
-sleep 2
-killall cat
-
-stty -F /dev/ttyGS0 sane
-echo "" > /dev/ttyGS0
-
-# Flush any junk input before starting the shell
-while read -t 0.1 junk; do :; done < /dev/ttyGS0
-echo "reset" > /dev/ttyGS0
-sleep 0.1
-
-debug_echo "Launching shell..."
-exec /bin/sh -i < /dev/ttyGS0 > /dev/ttyGS0 2>&1 || echo "Failed to launch shell" > /dev/ttyGS0
+if [ -n "$SHELL_TTY" ] && [ -c "$SHELL_TTY" ]; then
+    stty -F "$SHELL_TTY" sane 2>/dev/null || true
+    echo "" > "$SHELL_TTY"
+    # Flush any junk input before starting the shell
+    while read -t 0.1 junk; do :; done < "$SHELL_TTY"
+    echo "reset" > "$SHELL_TTY"
+    sleep 0.1
+    debug_echo "Launching shell on $SHELL_TTY..."
+    exec /bin/sh -i < "$SHELL_TTY" > "$SHELL_TTY" 2>&1 || echo "Failed to launch shell" > "$SHELL_TTY"
+else
+    debug_echo "No shell TTY found; exec'ing controller only"
+    exec /controller >> /log/debug.log 2>> /log/debug.log
+fi
