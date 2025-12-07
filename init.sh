@@ -105,19 +105,9 @@ export ENV=~/.shrc
 debug_echo "Init finished. Starting shell..."
 
 if [ -n "$SHELL_TTY" ] && [ -c "$SHELL_TTY" ]; then
-    stty -F "$SHELL_TTY" sane 2>/dev/null || true
-    echo "" > "$SHELL_TTY"
-    # Flush any junk input before starting the shell
-    while read -t 0.1 junk; do :; done < "$SHELL_TTY"
-    echo "reset" > "$SHELL_TTY"
-    sleep 0.1
     debug_echo "Launching shell on $SHELL_TTY..."
     echo "seedetcher init: shell on $SHELL_TTY" > "$SHELL_TTY"
-    if command -v setsid >/dev/null 2>&1; then
-        exec setsid -c /bin/sh -i < "$SHELL_TTY" > "$SHELL_TTY" 2>&1 || echo "Failed to launch shell" > "$SHELL_TTY"
-    else
-        exec /bin/sh -i < "$SHELL_TTY" > "$SHELL_TTY" 2>&1 || echo "Failed to launch shell" > "$SHELL_TTY"
-    fi
+    exec /bin/sh -i < "$SHELL_TTY" > "$SHELL_TTY" 2>&1 || echo "Failed to launch shell" > "$SHELL_TTY"
 else
     debug_echo "No shell TTY found; exec'ing controller only"
     exec /controller >> /log/debug.log 2>> /log/debug.log
