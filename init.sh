@@ -95,7 +95,11 @@ if [ -n "$SHELL_TTY" ] && [ -c "$SHELL_TTY" ]; then
     sleep 0.1
     debug_echo "Launching shell on $SHELL_TTY..."
     echo "seedetcher init: shell on $SHELL_TTY" > "$SHELL_TTY"
-    exec /bin/sh -i < "$SHELL_TTY" > "$SHELL_TTY" 2>&1 || echo "Failed to launch shell" > "$SHELL_TTY"
+    if command -v setsid >/dev/null 2>&1; then
+        exec setsid -c /bin/sh -i < "$SHELL_TTY" > "$SHELL_TTY" 2>&1 || echo "Failed to launch shell" > "$SHELL_TTY"
+    else
+        exec /bin/sh -i < "$SHELL_TTY" > "$SHELL_TTY" 2>&1 || echo "Failed to launch shell" > "$SHELL_TTY"
+    fi
 else
     debug_echo "No shell TTY found; exec'ing controller only"
     exec /controller >> /log/debug.log 2>> /log/debug.log
