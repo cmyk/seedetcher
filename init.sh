@@ -46,7 +46,7 @@ fi
 if [ -c /dev/ttyGS1 ]; then
     CTRL_TTY="/dev/ttyGS1"
 else
-    CTRL_TTY="/dev/ttyAMA0"
+    CTRL_TTY="/dev/null"
 fi
 
 wait_for() {
@@ -71,7 +71,7 @@ chmod 777 /dev/dri
 chmod 777 /dev/dri/* 2>/dev/null || true
 
 # Prep controller TTY if present
-if [ -c "$CTRL_TTY" ]; then
+if [ -c "$CTRL_TTY" ] && [ "$CTRL_TTY" != "/dev/null" ]; then
     chmod 666 "$CTRL_TTY"
     debug_echo "Setting $CTRL_TTY to raw mode..."
     stty -F "$CTRL_TTY" raw -echo
