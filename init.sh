@@ -27,22 +27,15 @@ debug_echo() {
     echo "DEBUG: $1" >> /log/init_debug.log
 }
 
-choose_shell_tty() {
-    for t in /dev/ttyGS0 /dev/ttyAMA0 /dev/tty1; do
-        [ -c "$t" ] && echo "$t" && return
-    done
-    echo ""
-}
-
-choose_ctrl_tty() {
-    for t in /dev/ttyGS1; do
-        [ -c "$t" ] && echo "$t" && return
-    done
-    echo "/dev/null"
-}
-
-SHELL_TTY=$(choose_shell_tty)
-CTRL_TTY=$(choose_ctrl_tty)
+# In host mode we want shell on UART; in gadget mode we prefer ttyGS0/1.
+SHELL_TTY="/dev/ttyAMA0"
+CTRL_TTY="/dev/ttyAMA0"
+if [ ! -c "$SHELL_TTY" ]; then
+    SHELL_TTY="/dev/ttyGS0"
+fi
+if [ ! -c "$CTRL_TTY" ]; then
+    CTRL_TTY="/dev/ttyGS1"
+fi
 
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
 
@@ -52,8 +45,8 @@ mkdir -p /dev/dri
 chmod 777 /dev/dri
 chmod 777 /dev/dri/* 2>/dev/null || true
 
-# If we have a controller TTY, prep it
-if [ -c "$CTRL_TTY" ] && [ "$CTRL_TTY" != "/dev/null" ]; then
+# Prep controller TTY if present
+if [ -c "$CTRL_TTY" ]; then
     chmod 666 "$CTRL_TTY"
     debug_echo "Setting $CTRL_TTY to raw mode..."
     stty -F "$CTRL_TTY" raw -echo
