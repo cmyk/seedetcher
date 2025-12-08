@@ -219,20 +219,31 @@ func (p *Platform) CameraFrame(dims image.Point) {
 
 // In platform_rpi.go, replace Printer function
 func (p *Platform) Printer() io.Writer {
-	logutil.DebugLog("Attempting to open /dev/ttyGS1")
-	printer, err := os.OpenFile("/dev/ttyGS1", os.O_RDWR, 0) // RDWR for reading response
-	if err != nil {
-		logutil.DebugLog("Failed to open /dev/ttyGS1: %v, falling back to stderr", err)
-		p.printerCached = os.Stderr
+	if p.printerCached != nil {
 		return p.printerCached
 	}
-	logutil.DebugLog("Successfully opened /dev/ttyGS1")
-	// Skip PJL query for now—assume no PCL/PS support
-	p.supportsPCL = false
-	p.supportsPostScript = false
-	p.printerCached = printer
-	logutil.DebugLog("Printer initialized without query, PCL: %v, PS: %v", p.supportsPCL, p.supportsPostScript)
-	return printer
+	// Prefer usblp (host-mode printing). Fall back to gadget serial if present.
+	paths := []string{"/dev/usb/lp0", "/dev/ttyGS1"}
+	for _, dev := range paths {
+		printer, err := os.OpenFile(dev, os.O_RDWR, 0)
+		if err != nil {
+			logutil.DebugLog("Failed to open %s: %v", dev, err)
+			continue
+		}
+		logutil.DebugLog("Opened printer device %s", dev)
+		// Assume PCL-capable when using usblp.
+		if strings.Contains(dev, "lp0") {
+			p.supportsPCL = true
+		} else {
+			p.supportsPCL = false
+		}
+		p.supportsPostScript = false
+		p.printerCached = printer
+		logutil.DebugLog("Printer initialized: dev=%s PCL=%v PS=%v", dev, p.supportsPCL, p.supportsPostScript)
+		return printer
+	}
+	p.printerCached = os.Stderr
+	return p.printerCached
 }
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
@@ -269,12 +280,34 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		}
 	}
 
+	if p.supportsPCL {
+		// Default to PCL in host mode (usblp).
+		opts := printer.RasterOptions{
+			DPI:    600, // Safe default for Zero; adjust if needed
+			Mirror: true,
+			Invert: true,
+		}
+		seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts)
+		if err != nil {
+			return fmt.Errorf("pcl: plate bitmaps: %w", err)
+		}
+		pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperA4, opts.DPI)
+		if err != nil {
+			return fmt.Errorf("pcl: compose pages: %w", err)
+		}
+		if err := printer.WritePCL(printerDev, pages, opts.DPI, printer.PaperA4); err != nil {
+			return fmt.Errorf("pcl: write: %w", err)
+		}
+		logutil.DebugLog("PCL write complete (pages=%d dpi=%.0f)", len(pages), opts.DPI)
+		return nil
+	}
+
+	// Fallback: PDF path (gadget capture/dev)
 	seedPaths, descPaths, tempDir, err := printer.CreatePlates(tempFile, mnemonics, desc, keyIdx, p.supportsPCL, p.supportsPostScript)
 	if err != nil {
 		logutil.DebugLog("PDF generation failed: %v", err)
 		return err
 	}
-	//defer os.RemoveAll(tempDir) // Move cleanup here
 	logutil.DebugLog("Generated %d seed plates and %d desc plates in %s", len(seedPaths), len(descPaths), tempDir)
 
 	if err := printer.CreatePageLayout(tempFile, tempDir, printer.PaperA4, seedPaths, descPaths); err != nil {
