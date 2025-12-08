@@ -30,17 +30,21 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	if !ok {
 		return false
 	}
-	if ctx != nil {
-		if connected, model := ctx.Platform.PrinterStatus(); connected != ctx.PrinterConnected || model != ctx.PrinterModel {
-			ctx.PrinterConnected = connected
-			ctx.PrinterModel = model
+	updatePrinterStatus := func() {
+		if ctx != nil {
+			if connected, model := ctx.Platform.PrinterStatus(); connected != ctx.PrinterConnected || model != ctx.PrinterModel {
+				ctx.PrinterConnected = connected
+				ctx.PrinterModel = model
+			}
 		}
 	}
+	updatePrinterStatus()
 	selectedPaper := printer.PaperA4
 	if choice == 1 {
 		selectedPaper = printer.PaperLetter
 	}
 	for {
+		updatePrinterStatus()
 		for {
 			e, ok := inp.Next(ctx, Button1, Button3)
 			if !ok {
