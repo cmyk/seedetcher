@@ -334,7 +334,7 @@ func Run(pl Platform, version string) func(yield func() bool) {
 						} else if pe, ok := e.AsPrinter(); ok {
 							prev := a.ctx.PrinterConnected
 							a.ctx.PrinterConnected = pe.Connected
-							if pe.Model != "" {
+							if pe.Model != "" || !pe.Connected {
 								a.ctx.PrinterModel = pe.Model
 							}
 							if pe.Connected != prev {

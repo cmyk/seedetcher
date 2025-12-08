@@ -21,6 +21,8 @@ mount -t proc none /proc
 mkdir -p /dev/pts
 mount -t sysfs none /sys
 mount -t devpts none /dev/pts
+# Disable SysRq to avoid accidental resets/noise on UART
+echo 0 > /proc/sys/kernel/sysrq
 
 # Pick a debug sink as early as possible
 DEBUG_TTY="/dev/ttyAMA0"
