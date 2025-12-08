@@ -32,8 +32,6 @@
 
 ## Host CLI (no hardware)
 - Generate plates locally: `go run cmd/cli/main.go -w singlesig|multisig -o ~/outdir [-verbose]`
-- Raster/PCL: `-png-out`/`-dpi`/`-mirror`/`-invert`/`-desc-qr-mm` apply to PNG/PCL; `-pcl-out` writes raw PCL (mirrored/inverted if flags set). PDFs are always unmirrored/uninverted.
-- Send PCL to printer: `scripts/print_pcl.sh <file.pcl> [printer_dev]` (defaults `/dev/usb/lp0`, resets channel and streams with `dd bs=16k`).
 
 ## Key Directories
 - `cmd/controller/` – GUI entrypoint; `platform_rpi.go` (camera/display/printer), `platform_dummy.go` for non-ARM.

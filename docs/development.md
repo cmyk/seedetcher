@@ -180,6 +180,11 @@ go run cmd/cli/main.go -w multisig \
   timeout 2 cat /dev/usb/lp0
   ```
 
+### Raster/PCL notes
+- `-png-out`/`-dpi`/`-mirror`/`-invert`/`-desc-qr-mm` apply to PNG/PCL output; PDFs are always unmirrored/uninverted.
+- `-pcl-out <path|dir>` writes raw PCL (mirrored/inverted if flags set). If a directory or trailing `/` is provided, the file is auto-named `<wallet>.pcl` inside it.
+- Send PCL over USB: `scripts/print_pcl.sh <file.pcl> [printer_dev]` (defaults `/dev/usb/lp0`, resets channel and streams with `dd bs=16k`).
+
 ## Shell Commands on Zero
 
 `--test-createPlageLayout` is needed to access the controller's flags!
