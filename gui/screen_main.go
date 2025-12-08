@@ -81,19 +81,16 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			Body:  "Remove SD card to continue.\n\nHold button to ignore this warning.",
 			Icon:  assets.IconRight,
 		}
-		for {
-			dims := ctx.Platform.DisplaySize()
-			switch ws.Layout(ctx, ops, th, dims) {
-			case ConfirmYes:
-				ctx.EmptySDSlot = true
-				goto startFlow
-			case ConfirmNo:
-				return &MainMenuScreen{}
-			}
-			ctx.Frame()
+		dims := ctx.Platform.DisplaySize()
+		switch ws.Layout(ctx, ops, th, dims) {
+		case ConfirmYes:
+			ctx.EmptySDSlot = true
+		case ConfirmNo:
+			return &MainMenuScreen{}
 		}
+		ctx.Frame()
+		return s
 	}
-startFlow:
 	switch s.stage {
 	case stageDescriptor:
 		return &DescriptorInputScreen{
