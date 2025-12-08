@@ -5,6 +5,8 @@ import (
 	"image"
 	"time"
 
+	"math"
+
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui/assets"
@@ -168,7 +170,8 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 
 		content := layout.Rectangle{Max: dims}.Shrink(leadingSize, 0, leadingSize, 0)
 		op.Offset(ops, content.Center(assets.ProgressCircle.Bounds().Size()))
-		(&ProgressImage{Progress: 0.5, Src: assets.ProgressCircle}).Add(ops)
+		progress := float32(math.Mod(ctx.Platform.Now().Sub(s.startTime).Seconds(), 1.0))
+		(&ProgressImage{Progress: progress, Src: assets.ProgressCircle}).Add(ops)
 		op.ColorOp(ops, th.Text)
 		label := "Printing... please wait"
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
