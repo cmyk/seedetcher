@@ -179,24 +179,6 @@ func layoutNavigation(ctx *Context, inp *InputTracker, ops op.Ctx, th *Colors, d
 		})
 	}
 
-	// Toast (optional)
-	now := ctx.Platform.Now()
-	var toasts []toastMsg
-	for _, t := range ctx.toasts {
-		if now.Before(t.until) {
-			toasts = append(toasts, t)
-		}
-	}
-	ctx.toasts = toasts
-	if len(toasts) > 0 {
-		t := toasts[0]
-		msg := t.msg
-		bg := layout.Rectangle{Min: image.Pt(12, 12), Max: image.Pt(dims.X-12, 12+28)}
-		op.ColorOp(ops, th.Text)
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, bg.Dx()-12, th.Text, "%s", msg)
-		op.Position(ops, ops.End(), bg.Min.Add(image.Pt(6, (bg.Dy()-sz.Y)/2)))
-	}
-
 	return r
 }
 
