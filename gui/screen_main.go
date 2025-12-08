@@ -41,7 +41,7 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		icon := ops.Begin()
 		op.ImageOp(icon, assets.Hammer, false)
 		op.Position(ops, ops.End(), center)
-		layoutNavigation(inp, ops, &singleTheme, dims, []NavButton{
+		layoutNavigation(ctx, inp, ops, &singleTheme, dims, []NavButton{
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
 		}...)
 		ctx.Frame()

@@ -226,7 +226,7 @@ func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
 		}
 
 		nav := func(btn Button, icn image.RGBA64Image) {
-			nav := layoutNavigation(inp, ops.Begin(), th, dims, []NavButton{{Button: btn, Style: StyleSecondary, Icon: icn}}...)
+			nav := layoutNavigation(ctx, inp, ops.Begin(), th, dims, []NavButton{{Button: btn, Style: StyleSecondary, Icon: icn}}...)
 			nav = image.Rectangle(layout.Rectangle(nav).Shrink(underlay.Padding()).Shrink(-2, -4, -2, -2))
 			background(ops, ops.End(), nav, image.Point{})
 		}

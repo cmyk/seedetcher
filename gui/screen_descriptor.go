@@ -93,7 +93,7 @@ func (s *DescriptorScreen) Confirm(ctx *Context, ops op.Ctx, th *Colors) (int, b
 
 		dims := ctx.Platform.DisplaySize()
 		s.Draw(ctx, ops, th, dims)
-		layoutNavigation(inp, ops, th, dims, []NavButton{
+		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
 			{Button: Button2, Style: StyleSecondary, Icon: assets.IconInfo},
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},

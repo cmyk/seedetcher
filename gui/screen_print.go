@@ -70,13 +70,21 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			title = "Print Wallet Share"
 		}
 		layoutTitle(ctx, ops, dims.X, th.Text, "%s", title)
-		lead := fmt.Sprintf("Paper size: %s\n\nEnsure your printer is connected before printing.\nPress Print to continue.", selectedPaper)
+		status := "Printer: Not connected"
+		if ctx.PrinterConnected {
+			if ctx.PrinterModel != "" {
+				status = fmt.Sprintf("Printer: Connected (%s)", ctx.PrinterModel)
+			} else {
+				status = "Printer: Connected"
+			}
+		}
+		lead := fmt.Sprintf("%s\nPaper size: %s\n\nPress Print to continue.", status, selectedPaper)
 		if desc != nil {
-			lead = fmt.Sprintf("Paper size: %s\n\nEnsure your printer is connected before printing share %d/%d.\nPress Print to continue.", selectedPaper, keyIdx+1, len(desc.Keys))
+			lead = fmt.Sprintf("%s\nPaper size: %s\n\nPrinting share %d/%d.\nPress Print to continue.", status, selectedPaper, keyIdx+1, len(desc.Keys))
 		}
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", lead)
 		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
-		layoutNavigation(inp, ops, th, dims, []NavButton{
+		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
 		}...)
@@ -129,7 +137,7 @@ func (s *PrintResultScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic 
 		}
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", msg)
 		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
-		layoutNavigation(&s.inp, ops, th, dims, []NavButton{
+		layoutNavigation(ctx, &s.inp, ops, th, dims, []NavButton{
 			{Button: Button2, Style: StyleSecondary, Icon: assets.IconHammer, Progress: 0}, // Print Again
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconDiscard, Progress: 0},  // Delete Seed
 		}...)
@@ -248,7 +256,7 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
 		op.Position(ops, ops.End(), content.Center(sz).Add(image.Pt(0, assets.ProgressCircle.Bounds().Dy()/2+12)))
 
-		layoutNavigation(&s.inp, ops, th, dims)
+		layoutNavigation(ctx, &s.inp, ops, th, dims)
 		ctx.Frame()
 
 		if finished && !finishedAt.IsZero() && ctx.Platform.Now().Sub(finishedAt) >= time.Second {

@@ -117,12 +117,12 @@ func (s *SeedScreen) Confirm(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip3
 		dims := ctx.Platform.DisplaySize()
 		s.Draw(ctx, ops, th, dims, mnemonic)
 
-		layoutNavigation(inp, ops, th, dims, []NavButton{
+		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
 			{Button: Button2, Style: StyleSecondary, Icon: assets.IconEdit},
 		}...)
 		if isMnemonicComplete(mnemonic) {
-			layoutNavigation(inp, ops, th, dims, []NavButton{
+			layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
 				{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
 			}...)
 		}

@@ -48,7 +48,7 @@ func (s *ChoiceScreen) Choose(ctx *Context, ops op.Ctx, th *Colors) (int, bool) 
 		dims := ctx.Platform.DisplaySize()
 		s.Draw(ctx, ops, th, dims)
 
-		layoutNavigation(inp, ops, th, dims, []NavButton{
+		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
 		}...)
@@ -125,7 +125,7 @@ type NavButton struct {
 	Progress float32
 }
 
-func layoutNavigation(inp *InputTracker, ops op.Ctx, th *Colors, dims image.Point, btns ...NavButton) image.Rectangle {
+func layoutNavigation(ctx *Context, inp *InputTracker, ops op.Ctx, th *Colors, dims image.Point, btns ...NavButton) image.Rectangle {
 	navsz := assets.NavBtnPrimary.Bounds().Size()
 	button := func(ops op.Ctx, b NavButton, pressed bool) {
 		if b.Style == StyleNone {
@@ -178,6 +178,25 @@ func layoutNavigation(inp *InputTracker, ops op.Ctx, th *Colors, dims image.Poin
 			Max: pos.Add(navsz),
 		})
 	}
+
+	// Toast (optional)
+	now := ctx.Platform.Now()
+	var toasts []toastMsg
+	for _, t := range ctx.toasts {
+		if now.Before(t.until) {
+			toasts = append(toasts, t)
+		}
+	}
+	ctx.toasts = toasts
+	if len(toasts) > 0 {
+		t := toasts[0]
+		msg := t.msg
+		bg := layout.Rectangle{Min: image.Pt(12, 12), Max: image.Pt(dims.X-12, 12+28)}
+		op.ColorOp(ops, th.Text)
+		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, bg.Dx()-12, th.Text, "%s", msg)
+		op.Position(ops, ops.End(), bg.Min.Add(image.Pt(6, (bg.Dy()-sz.Y)/2)))
+	}
+
 	return r
 }
 

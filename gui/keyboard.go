@@ -83,9 +83,9 @@ func inputWordsFlow(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemoni
 		top, _ := content.CutBottom(kbdsz.Y)
 		op.Position(ops, ops.End(), top.Center(longest))
 
-		layoutNavigation(inp, ops, th, dims, []NavButton{{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack}}...)
+		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack}}...)
 		if complete {
-			layoutNavigation(inp, ops, th, dims, []NavButton{{Button: Button2, Style: StylePrimary, Icon: assets.IconCheckmark}}...)
+			layoutNavigation(ctx, inp, ops, th, dims, []NavButton{{Button: Button2, Style: StylePrimary, Icon: assets.IconCheckmark}}...)
 		}
 		ctx.Frame()
 	}

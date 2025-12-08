@@ -161,7 +161,7 @@ func ShowAddressesScreen(ctx *Context, ops op.Ctx, th *Colors, desc urtypes.Outp
 		op.Position(ops.Begin(), addresses, pos)
 		fadeClip(ops, ops.End(), image.Rectangle(body))
 
-		layoutNavigation(inp, ops, th, dims, []NavButton{{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack}}...)
+		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack}}...)
 		ctx.Frame()
 	}
 }

@@ -71,7 +71,7 @@ func (s *ErrorScreen) Layout(ctx *Context, ops op.Ctx, th *Colors, dims image.Po
 		}
 	}
 	s.w.Layout(ctx, ops, th, dims, s.Title, s.Body)
-	layoutNavigation(&s.inp, ops, th, dims, []NavButton{{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark}}...)
+	layoutNavigation(ctx, &s.inp, ops, th, dims, []NavButton{{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark}}...)
 	return false
 }
 
@@ -207,7 +207,7 @@ func (s *ConfirmWarningScreen) Layout(ctx *Context, ops op.Ctx, th *Colors, dims
 		}
 	}
 	s.warning.Layout(ctx, ops, th, dims, s.Title, s.Body)
-	layoutNavigation(&s.inp, ops, th, dims, []NavButton{
+	layoutNavigation(ctx, &s.inp, ops, th, dims, []NavButton{
 		{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
 		{Button: Button3, Style: StylePrimary, Icon: s.Icon, Progress: progress},
 	}...)

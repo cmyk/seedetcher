@@ -27,13 +27,25 @@ type Context struct {
 	// Global UI state.
 	Version string
 	// PrintProgress, if set, receives stage progress updates (current, total).
-	PrintProgress  func(stage printer.PrintStage, current, total int64)
-	Calibrated     bool
-	EmptySDSlot    bool
-	RotateCamera   bool
-	LastDescriptor *urtypes.OutputDescriptor
-	Keystores      map[uint32]bip39.Mnemonic // Fingerprint -> Mnemonic
-	events         []Event
+	PrintProgress    func(stage printer.PrintStage, current, total int64)
+	Calibrated       bool
+	EmptySDSlot      bool
+	PrinterConnected bool
+	PrinterModel     string
+	RotateCamera     bool
+	LastDescriptor   *urtypes.OutputDescriptor
+	Keystores        map[uint32]bip39.Mnemonic // Fingerprint -> Mnemonic
+	events           []Event
+	toasts           []toastMsg
+}
+
+type toastMsg struct {
+	msg   string
+	until time.Time
+}
+
+func (c *Context) addToast(msg string, dur time.Duration) {
+	c.toasts = append(c.toasts, toastMsg{msg: msg, until: c.Platform.Now().Add(dur)})
 }
 
 // Session holds the mutable data for a user flow. It makes screen transitions
@@ -185,6 +197,7 @@ const (
 	buttonEvent = 1 + iota
 	sdcardEvent
 	frameEvent
+	printerEvent
 )
 
 type ButtonEvent struct {
@@ -196,6 +209,11 @@ type ButtonEvent struct {
 
 type SDCardEvent struct {
 	Inserted bool
+}
+
+type PrinterEvent struct {
+	Connected bool
+	Model     string
 }
 
 type Button int
@@ -312,6 +330,21 @@ func Run(pl Platform, version string) func(yield func() bool) {
 						a.idle.start = a.ctx.Platform.Now()
 						if se, ok := e.AsSDCard(); ok {
 							a.ctx.EmptySDSlot = !se.Inserted
+						} else if pe, ok := e.AsPrinter(); ok {
+							prev := a.ctx.PrinterConnected
+							a.ctx.PrinterConnected = pe.Connected
+							a.ctx.PrinterModel = pe.Model
+							if pe.Connected != prev {
+								msg := "Printer disconnected"
+								if pe.Connected {
+									if pe.Model != "" {
+										msg = "Printer connected: " + pe.Model
+									} else {
+										msg = "Printer connected"
+									}
+								}
+								a.ctx.addToast(msg, 2*time.Second)
+							}
 						} else {
 							a.ctx.Events(e)
 						}
@@ -391,6 +424,15 @@ func (s SDCardEvent) Event() Event {
 	return e
 }
 
+func (p PrinterEvent) Event() Event {
+	e := Event{typ: printerEvent}
+	if p.Connected {
+		e.data[0] = 1
+	}
+	e.refs[0] = p.Model
+	return e
+}
+
 func (e Event) AsFrame() (FrameEvent, bool) {
 	if e.typ != frameEvent {
 		return FrameEvent{}, false
@@ -422,5 +464,19 @@ func (e Event) AsSDCard() (SDCardEvent, bool) {
 	}
 	return SDCardEvent{
 		Inserted: e.data[0] != 0,
+	}, true
+}
+
+func (e Event) AsPrinter() (PrinterEvent, bool) {
+	if e.typ != printerEvent {
+		return PrinterEvent{}, false
+	}
+	var model string
+	if e.refs[0] != nil {
+		model = e.refs[0].(string)
+	}
+	return PrinterEvent{
+		Connected: e.data[0] != 0,
+		Model:     model,
 	}, true
 }
