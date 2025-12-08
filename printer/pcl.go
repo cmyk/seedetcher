@@ -22,9 +22,8 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 	}
 	pageWpx := mmToPx(pageWmm, dpi)
 	pageHpx := mmToPx(pageHmm, dpi)
-	cellW := pageWpx / 2
-	cellH := pageHpx / 3
-	paddingPx := mmToPx(5, dpi) // inset around each plate
+	targetGapPx := mmToPx(5, dpi)    // desired gap between plates
+	targetMarginPx := mmToPx(5, dpi) // desired margin to page edges
 
 	hasDesc := descPlates != nil && len(descPlates) == len(seedPlates)
 	totalShares := len(seedPlates)
@@ -50,33 +49,47 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 		pageImg := image.NewPaletted(image.Rect(0, 0, pageWpx, pageHpx), bwPalette)
 		draw.Draw(pageImg, pageImg.Bounds(), &image.Uniform{bwPalette[0]}, image.Point{}, draw.Src)
 
+		// Determine rows/cols for this page
+		slotsThisPage := len(slots)
+		cols := 2
+		rows := (slotsThisPage + cols - 1) / cols
+
+		// Baseline plate size (assume all plates same dims)
+		var baseW, baseH int
+		for _, pl := range slots {
+			if pl != nil {
+				b := pl.Bounds()
+				baseW, baseH = b.Dx(), b.Dy()
+				break
+			}
+		}
+		if baseW == 0 || baseH == 0 {
+			return nil, fmt.Errorf("invalid plate dimensions")
+		}
+
+		// Compute scaling to fit within margins/gaps
+		availW := pageWpx - 2*targetMarginPx - targetGapPx*(cols-1)
+		availH := pageHpx - 2*targetMarginPx - targetGapPx*(rows-1)
+		scale := math.Min(1, math.Min(float64(availW)/(float64(baseW)*float64(cols)), float64(availH)/(float64(baseH)*float64(rows))))
+		plateW := int(math.Round(float64(baseW) * scale))
+		plateH := int(math.Round(float64(baseH) * scale))
+		gapPx := targetGapPx
+		marginX := (pageWpx - (cols*plateW + (cols-1)*gapPx)) / 2
+		marginY := (pageHpx - (rows*plateH + (rows-1)*gapPx)) / 2
+
+		// Place slots
 		for slotIdx, plate := range slots {
 			if plate == nil {
 				continue
 			}
 			row := slotIdx / 2
 			col := slotIdx % 2
-			cellOrigin := image.Point{X: col * cellW, Y: row * cellH}
-
-			maxW := cellW - 2*paddingPx
-			maxH := cellH - 2*paddingPx
-			if maxW <= 0 || maxH <= 0 {
-				return nil, fmt.Errorf("cell too small for content")
-			}
-
-			srcB := plate.Bounds()
-			scale := math.Min(float64(maxW)/float64(srcB.Dx()), float64(maxH)/float64(srcB.Dy()))
-			if scale > 1 {
-				scale = 1 // don't upscale
-			}
-			dstW := int(math.Round(float64(srcB.Dx()) * scale))
-			dstH := int(math.Round(float64(srcB.Dy()) * scale))
-			dst := image.NewPaletted(image.Rect(0, 0, dstW, dstH), plate.Palette)
+			dst := image.NewPaletted(image.Rect(0, 0, plateW, plateH), plate.Palette)
 			xdraw.NearestNeighbor.Scale(dst, dst.Bounds(), plate, plate.Bounds(), xdraw.Src, nil)
 
 			offset := image.Point{
-				X: cellOrigin.X + (cellW-dstW)/2,
-				Y: cellOrigin.Y + (cellH-dstH)/2,
+				X: marginX + col*(plateW+gapPx),
+				Y: marginY + row*(plateH+gapPx),
 			}
 			r := image.Rectangle{Min: offset, Max: offset.Add(dst.Bounds().Size())}
 			draw.Draw(pageImg, r, dst, image.Point{}, draw.Src)
