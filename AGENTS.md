@@ -28,6 +28,7 @@
 - Lightweight, hardware-free: `GOCACHE=/tmp/gocache ./scripts/test-lite.sh` (skips libcamera/wshat CGO deps; mostly sanity-builds packages).
 - Full hardware-dependent tests are not wired up; avoid `driver/libcamera` locally unless deps installed.
 - GUI loop now runs via the `Screen` state machine starting at `MainMenuScreen`; add new UI by implementing `Screen` and wiring transitions instead of expanding the old `mainFlow`.
+- Host-side tests: use `GOCACHE=/tmp/gocache ./scripts/test-lite.sh` to skip hardware/CGO deps (`driver/libcamera`, `driver/wshat`).
 
 ## Host CLI (no hardware)
 - Generate plates locally: `go run cmd/cli/main.go -w singlesig|multisig -o ~/outdir [-verbose]`

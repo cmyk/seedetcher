@@ -24,7 +24,7 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 	pageHpx := mmToPx(pageHmm, dpi)
 	cellW := pageWpx / 2
 	cellH := pageHpx / 3
-	paddingPx := mmToPx(5, dpi) // small inset around each plate
+	paddingPx := mmToPx(5, dpi) // inset around each plate
 
 	hasDesc := descPlates != nil && len(descPlates) == len(seedPlates)
 	totalShares := len(seedPlates)
@@ -118,6 +118,9 @@ func WritePCL(w io.Writer, pages []*image.Paletted, dpi float64, paper PaperSize
 		if _, err := fmt.Fprintf(w, "\x1b&l%dA", paperCode); err != nil { // paper size
 			return err
 		}
+		if _, err := fmt.Fprintf(w, "\x1b&l0E"); err != nil { // top margin = 0 lines
+			return err
+		}
 		if _, err := fmt.Fprintf(w, "\x1b*t%dR", int(math.Round(dpi))); err != nil { // resolution
 			return err
 		}
@@ -125,6 +128,9 @@ func WritePCL(w io.Writer, pages []*image.Paletted, dpi float64, paper PaperSize
 			return err
 		}
 		if _, err := fmt.Fprintf(w, "\x1b*r%dT", height); err != nil { // source height (rows)
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "\x1b*p0x0Y"); err != nil { // move to origin
 			return err
 		}
 		if _, err := fmt.Fprintf(w, "\x1b*b0M"); err != nil { // compression: unencoded

@@ -21,6 +21,20 @@ func main() {
 		fmt.Printf("Error getting current user: %v\n", err)
 		os.Exit(1)
 	}
+	config, ok := testutils.WalletConfigs[f.WalletType]
+	if !ok {
+		fmt.Printf("Invalid wallet type. Use 'singlesig' or 'multisig'\n")
+		os.Exit(1)
+	}
+	mnemonics, desc, err := testutils.ParseWallet(config, f.Mnemonic, f.Descriptor)
+	if err != nil {
+		fmt.Printf("Error parsing wallet: %v\n", err)
+		os.Exit(1)
+	}
+	if f.Verbose {
+		fmt.Printf("Processing %s wallet with descriptor: %v\n", config.Name, desc != nil)
+	}
+
 	outputDir := strings.Replace(f.Output, "~", usr.HomeDir, 1)
 	pngDir := ""
 	if f.BitmapDir != "" {
@@ -29,7 +43,13 @@ func main() {
 	pclPath := ""
 	if f.PCLOut != "" {
 		pclPath = strings.Replace(f.PCLOut, "~", usr.HomeDir, 1)
+		// If the path is a directory (existing or ends with /), auto-name the file.
+		if strings.HasSuffix(pclPath, "/") || isDir(pclPath) {
+			base := fmt.Sprintf("%s.pcl", config.Name)
+			pclPath = filepath.Join(strings.TrimRight(pclPath, "/"), base)
+		}
 	}
+
 	if f.Verbose {
 		fmt.Println("Expanded output directory to:", outputDir)
 		if pngDir != "" {
@@ -54,20 +74,6 @@ func main() {
 			fmt.Printf("Error creating PCL output directory: %v\n", err)
 			os.Exit(1)
 		}
-	}
-
-	config, ok := testutils.WalletConfigs[f.WalletType]
-	if !ok {
-		fmt.Printf("Invalid wallet type. Use 'singlesig' or 'multisig'\n")
-		os.Exit(1)
-	}
-	mnemonics, desc, err := testutils.ParseWallet(config, f.Mnemonic, f.Descriptor)
-	if err != nil {
-		fmt.Printf("Error parsing wallet: %v\n", err)
-		os.Exit(1)
-	}
-	if f.Verbose {
-		fmt.Printf("Processing %s wallet with descriptor: %v\n", config.Name, desc != nil)
 	}
 
 	printer.SetDescriptorQRSize(f.DescQRMM)
@@ -161,4 +167,13 @@ type walletConfig struct {
 	mnemonics  []string
 	descriptor string
 	outputFile string
+}
+
+// isDir reports whether the given path exists and is a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
 }
