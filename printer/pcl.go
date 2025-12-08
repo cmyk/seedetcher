@@ -38,7 +38,8 @@ func (pw *progressWriter) Write(b []byte) (int, error) {
 
 // ComposePages assembles plate bitmaps into A4/Letter pages (2x3 grid), matching the PDF layout.
 // Mirrors/inversion should be handled at the plate level via RasterOptions.
-func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64) ([]*image.Paletted, error) {
+// progress, if set, receives StageCompose updates as slots are placed.
+func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, progress ProgressFunc) ([]*image.Paletted, error) {
 	if len(seedPlates) == 0 {
 		return nil, fmt.Errorf("no seed plates to compose")
 	}
@@ -54,6 +55,16 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 	hasDesc := descPlates != nil && len(descPlates) == len(seedPlates)
 	totalShares := len(seedPlates)
 	sharesPerPage := 3 // matches PDF layout logic
+
+	// Total slots we expect to place (for progress).
+	totalSlots := totalShares
+	if hasDesc {
+		totalSlots *= 2
+	}
+	if progress != nil && totalSlots > 0 {
+		progress(StageCompose, 0, int64(totalSlots))
+	}
+	placed := int64(0)
 
 	var pages []*image.Paletted
 	for page := 0; page*sharesPerPage < totalShares; page++ {
@@ -119,6 +130,11 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 			}
 			r := image.Rectangle{Min: offset, Max: offset.Add(dst.Bounds().Size())}
 			draw.Draw(pageImg, r, dst, image.Point{}, draw.Src)
+
+			placed++
+			if progress != nil && totalSlots > 0 {
+				progress(StageCompose, placed, int64(totalSlots))
+			}
 		}
 		pages = append(pages, pageImg)
 	}

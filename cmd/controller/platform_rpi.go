@@ -297,15 +297,9 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		if err != nil {
 			return fmt.Errorf("pcl: plate bitmaps: %w", err)
 		}
-		if progress != nil {
-			progress(printer.StageCompose, 0, 1)
-		}
-		pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperA4, opts.DPI)
+		pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperA4, opts.DPI, progress)
 		if err != nil {
 			return fmt.Errorf("pcl: compose pages: %w", err)
-		}
-		if progress != nil {
-			progress(printer.StageCompose, int64(len(pages)), int64(len(pages)))
 		}
 		if err := printer.WritePCL(printerDev, pages, opts.DPI, printer.PaperA4, progress); err != nil {
 			return fmt.Errorf("pcl: write: %w", err)

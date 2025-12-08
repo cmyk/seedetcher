@@ -136,7 +136,7 @@ func main() {
 			}
 		}
 		if pclPath != "" {
-			pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI)
+			pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, nil)
 			if err != nil {
 				fmt.Printf("Error composing PCL pages: %v\n", err)
 				os.Exit(1)
