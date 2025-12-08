@@ -146,7 +146,7 @@ func WritePCL(w io.Writer, pages []*image.Paletted, dpi float64, paper PaperSize
 		if _, err := fmt.Fprintf(w, "\x1b*p0x0Y"); err != nil { // move to origin
 			return err
 		}
-		if _, err := fmt.Fprintf(w, "\x1b*b0M"); err != nil { // compression: unencoded
+		if _, err := fmt.Fprintf(w, "\x1b*b2M"); err != nil { // compression: RLE
 			return err
 		}
 		if _, err := fmt.Fprintf(w, "\x1b*r0F"); err != nil { // start raster graphics

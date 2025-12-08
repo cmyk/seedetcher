@@ -142,36 +142,24 @@ type PrintProgressScreen struct {
 }
 
 func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) (bool, error) {
-	start := ctx.Platform.Now()
-	duration := 2 * time.Second
-	var printErr error
+	var (
+		printErr error
+		done     = make(chan struct{})
+	)
 	go func() {
-		if err := ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx); err != nil {
-			logutil.DebugLog("Print failed in progress: %v", err)
-			printErr = err
-		}
-		logutil.DebugLog("PrintPDF completed in goroutine")
+		printErr = ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx)
+		close(done)
 	}()
 
 	for {
-		for {
-			e, ok := s.inp.Next(ctx, Button1)
-			if !ok {
-				break
-			}
-			if e.Button == Button1 && s.inp.Clicked(e.Button) {
-				return false, fmt.Errorf("print canceled")
-			}
-		}
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
 		layoutTitle(ctx, ops, dims.X, th.Text, "Printing")
 
-		elapsed := ctx.Platform.Now().Sub(start)
-		progress := float32(elapsed.Seconds() / duration.Seconds())
-		if progress >= 1.0 || printErr != nil {
-			logutil.DebugLog("Progress complete or error: success=%v, err=%v", printErr == nil, printErr)
+		select {
+		case <-done:
 			return printErr == nil, printErr
+		default:
 		}
 
 		ctx.WakeupAt(ctx.Platform.Now().Add(100 * time.Millisecond))
@@ -179,19 +167,15 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		content := layout.Rectangle{Max: dims}.Shrink(leadingSize, 0, leadingSize, 0)
 		op.Offset(ops, content.Center(assets.ProgressCircle.Bounds().Size()))
 		(&ProgressImage{
-			Progress: progress,
+			Progress: 0.5, // indeterminate
 			Src:      assets.ProgressCircle,
 		}).Add(ops)
 		op.ColorOp(ops, th.Text)
-		sz := widget.Labelf(ops.Begin(), ctx.Styles.progress, th.Text, "%d%%", int(progress*100))
-		op.Position(ops, ops.End(), content.Center(sz))
+		label := "Printing..."
+		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
+		op.Position(ops, ops.End(), content.Center(sz).Add(image.Pt(0, assets.ProgressCircle.Bounds().Dy()/2+12)))
 
-		labelSz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "Printing...")
-		op.Position(ops, ops.End(), content.Center(labelSz).Add(image.Pt(0, assets.ProgressCircle.Bounds().Dy()/2+12)))
-
-		layoutNavigation(&s.inp, ops, th, dims, []NavButton{
-			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
-		}...)
+		layoutNavigation(&s.inp, ops, th, dims)
 		ctx.Frame()
 	}
 }
