@@ -3,6 +3,7 @@ package gui
 import (
 	"fmt"
 	"image"
+	"math"
 	"time"
 
 	"seedetcher.com/bc/urtypes"
@@ -138,7 +139,8 @@ func (s *PrintResultScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic 
 }
 
 type PrintProgressScreen struct {
-	inp InputTracker
+	inp       InputTracker
+	startTime time.Time
 }
 
 func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) (bool, error) {
@@ -146,6 +148,7 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		printErr error
 		done     = make(chan struct{})
 	)
+	s.startTime = ctx.Platform.Now()
 	go func() {
 		printErr = ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx)
 		close(done)
@@ -166,12 +169,9 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 
 		content := layout.Rectangle{Max: dims}.Shrink(leadingSize, 0, leadingSize, 0)
 		op.Offset(ops, content.Center(assets.ProgressCircle.Bounds().Size()))
-		(&ProgressImage{
-			Progress: 0.5, // indeterminate
-			Src:      assets.ProgressCircle,
-		}).Add(ops)
+		(&ProgressImage{Progress: 0.5, Src: assets.ProgressCircle}).Add(ops)
 		op.ColorOp(ops, th.Text)
-		label := "Printing..."
+		label := "Printing... please wait"
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
 		op.Position(ops, ops.End(), content.Center(sz).Add(image.Pt(0, assets.ProgressCircle.Bounds().Dy()/2+12)))
 
