@@ -22,7 +22,10 @@ mkdir -p /dev/pts
 mount -t sysfs none /sys
 mount -t devpts none /dev/pts
 # Disable SysRq to avoid accidental resets/noise on UART
-echo 0 > /proc/sys/kernel/sysrq
+if [ -w /proc/sys/kernel/sysrq ]; then
+    echo 0 > /proc/sys/kernel/sysrq
+    echo "SysRq=$(cat /proc/sys/kernel/sysrq 2>/dev/null)" >> /log/init_debug.log
+fi
 
 # Pick a debug sink as early as possible
 DEBUG_TTY="/dev/ttyAMA0"

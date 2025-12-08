@@ -125,7 +125,8 @@ func (p *Platform) Wakeup() {
 }
 
 func (p *Platform) PrinterStatus() (bool, string) {
-	if _, err := os.Stat("/dev/usb/lp0"); err == nil {
+	matches, _ := filepath.Glob("/dev/usb/lp*")
+	if len(matches) > 0 {
 		return true, readPrinterModel()
 	}
 	return false, ""
@@ -480,7 +481,10 @@ func (p *Platform) initPrinterNotifier() error {
 }
 
 func readPrinterModel() string {
-	paths := []string{"/sys/class/usb/lp0/device/ieee1284_id"}
+	paths := []string{}
+	if matches, err := filepath.Glob("/sys/class/usb/lp*/device/ieee1284_id"); err == nil {
+		paths = append(paths, matches...)
+	}
 	if matches, err := filepath.Glob("/sys/bus/usb/devices/*/ieee1284_id"); err == nil {
 		paths = append(paths, matches...)
 	}
@@ -492,8 +496,10 @@ func readPrinterModel() string {
 		}
 	}
 	// fallback to product string
-	if data, err := os.ReadFile("/sys/class/usb/lp0/device/product"); err == nil {
-		return strings.TrimSpace(string(data))
+	for _, p := range []string{"/sys/class/usb/lp0/device/product"} {
+		if data, err := os.ReadFile(p); err == nil {
+			return strings.TrimSpace(string(data))
+		}
 	}
 	return ""
 }
