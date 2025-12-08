@@ -46,7 +46,7 @@ var (
 )
 
 // CreatePlateBitmaps renders seed/descriptor plates to 1-bit bitmaps using the existing layout.
-func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions) ([]*image.Paletted, []*image.Paletted, error) {
+func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions, progress ProgressFunc) ([]*image.Paletted, []*image.Paletted, error) {
 	totalShares := len(mnemonics)
 	if desc != nil && len(desc.Keys) > 0 {
 		totalShares = len(desc.Keys)
@@ -74,6 +74,10 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 				return nil, nil, err
 			}
 			descImgs[i] = descImg
+		}
+
+		if progress != nil {
+			progress(StagePrepare, int64(i+1), int64(totalShares))
 		}
 	}
 

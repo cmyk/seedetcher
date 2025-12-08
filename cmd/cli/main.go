@@ -106,7 +106,7 @@ func main() {
 			Mirror: f.Mirror,
 			Invert: f.Invert,
 		}
-		seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, 0, opts)
+		seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, 0, opts, nil)
 		if err != nil {
 			fmt.Printf("Error creating raster plates: %v\n", err)
 			os.Exit(1)
@@ -146,7 +146,7 @@ func main() {
 				fmt.Printf("Error creating PCL file %s: %v\n", pclPath, err)
 				os.Exit(1)
 			}
-			if err := printer.WritePCL(pclFile, pages, opts.DPI, printer.PaperSize(f.PaperSize)); err != nil {
+			if err := printer.WritePCL(pclFile, pages, opts.DPI, printer.PaperSize(f.PaperSize), nil); err != nil {
 				pclFile.Close()
 				fmt.Printf("Error writing PCL file: %v\n", err)
 				os.Exit(1)

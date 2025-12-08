@@ -280,6 +280,12 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		}
 	}
 
+	progress := func(stage printer.PrintStage, current, total int64) {
+		if ctx != nil && ctx.PrintProgress != nil && total > 0 {
+			ctx.PrintProgress(stage, current, total)
+		}
+	}
+
 	if p.supportsPCL {
 		// Default to PCL in host mode (usblp).
 		opts := printer.RasterOptions{
@@ -287,7 +293,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			Mirror: true,
 			Invert: true,
 		}
-		seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts)
+		seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
 		if err != nil {
 			return fmt.Errorf("pcl: plate bitmaps: %w", err)
 		}
@@ -295,7 +301,10 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		if err != nil {
 			return fmt.Errorf("pcl: compose pages: %w", err)
 		}
-		if err := printer.WritePCL(printerDev, pages, opts.DPI, printer.PaperA4); err != nil {
+		if progress != nil {
+			progress(printer.StageCompose, 1, 1)
+		}
+		if err := printer.WritePCL(printerDev, pages, opts.DPI, printer.PaperA4, progress); err != nil {
 			return fmt.Errorf("pcl: write: %w", err)
 		}
 		logutil.DebugLog("PCL write complete (pages=%d dpi=%.0f)", len(pages), opts.DPI)
@@ -327,6 +336,11 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	}
 
 	const chunkSize = 1024
+	total := int64(len(data))
+	written := int64(0)
+	if progress != nil && total > 0 {
+		progress(printer.StageSend, 0, total)
+	}
 	for i := 0; i < len(data); i += chunkSize {
 		end := i + chunkSize
 		if end > len(data) {
@@ -339,6 +353,14 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			return err
 		}
 		logutil.DebugLog("Wrote chunk %d, %d bytes", i/chunkSize, n)
+		written += int64(n)
+		if progress != nil && total > 0 {
+			progress(printer.StageSend, written, total)
+		}
+	}
+	written = total
+	if progress != nil && total > 0 {
+		progress(printer.StageSend, written, total)
 	}
 	time.Sleep(2 * time.Second)
 	return nil

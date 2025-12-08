@@ -25,7 +25,9 @@ type Context struct {
 	Session  Session
 
 	// Global UI state.
-	Version        string
+	Version string
+	// PrintProgress, if set, receives stage progress updates (current, total).
+	PrintProgress  func(stage printer.PrintStage, current, total int64)
 	Calibrated     bool
 	EmptySDSlot    bool
 	RotateCamera   bool

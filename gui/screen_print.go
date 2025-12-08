@@ -5,8 +5,6 @@ import (
 	"image"
 	"time"
 
-	"math"
-
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui/assets"
@@ -140,8 +138,7 @@ func (s *PrintResultScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic 
 }
 
 type PrintProgressScreen struct {
-	inp       InputTracker
-	startTime time.Time
+	inp InputTracker
 }
 
 func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) (bool, error) {
@@ -149,7 +146,27 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		printErr error
 		done     = make(chan struct{})
 	)
-	s.startTime = ctx.Platform.Now()
+	type progressUpdate struct {
+		stage   printer.PrintStage
+		current int64
+		total   int64
+	}
+	progressCh := make(chan progressUpdate, 8)
+	stageState := make(map[printer.PrintStage]progressUpdate)
+	progressVal := float32(0)
+	lastStage := printer.StagePrepare
+	if ctx != nil {
+		ctx.PrintProgress = func(stage printer.PrintStage, current, total int64) {
+			if total <= 0 {
+				return
+			}
+			select {
+			case progressCh <- progressUpdate{stage: stage, current: current, total: total}:
+			default:
+			}
+		}
+		defer func() { ctx.PrintProgress = nil }()
+	}
 	go func() {
 		printErr = ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx)
 		close(done)
@@ -166,14 +183,60 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		default:
 		}
 
+		select {
+		case p := <-progressCh:
+			stageState[p.stage] = p
+			lastStage = p.stage
+			// Mark earlier stages complete if we reached a later stage.
+			ordered := []printer.PrintStage{printer.StagePrepare, printer.StageCompose, printer.StageSend}
+			for _, st := range ordered {
+				if st == p.stage {
+					break
+				}
+				if _, ok := stageState[st]; !ok {
+					stageState[st] = progressUpdate{stage: st, current: 1, total: 1}
+				}
+			}
+			// Compute overall progress as the average of stage fractions.
+			sum := float32(0)
+			for _, st := range ordered {
+				if upd, ok := stageState[st]; ok && upd.total > 0 {
+					f := float32(upd.current) / float32(upd.total)
+					if f < 0 {
+						f = 0
+					}
+					if f > 1 {
+						f = 1
+					}
+					sum += f
+				}
+			}
+			if len(ordered) > 0 {
+				progressVal = sum / float32(len(ordered))
+			}
+		default:
+		}
+
 		ctx.WakeupAt(ctx.Platform.Now().Add(100 * time.Millisecond))
 
 		content := layout.Rectangle{Max: dims}.Shrink(leadingSize, 0, leadingSize, 0)
 		op.Offset(ops, content.Center(assets.ProgressCircle.Bounds().Size()))
-		progress := float32(math.Mod(ctx.Platform.Now().Sub(s.startTime).Seconds(), 1.0))
-		(&ProgressImage{Progress: progress, Src: assets.ProgressCircle}).Add(ops)
+		(&ProgressImage{Progress: progressVal, Src: assets.ProgressCircle}).Add(ops)
 		op.ColorOp(ops, th.Text)
-		label := "Printing... please wait"
+		percentLabel := fmt.Sprintf("%d%%", int(progressVal*100+0.5))
+		pctSz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, assets.ProgressCircle.Bounds().Dx(), th.Text, "%s", percentLabel)
+		op.Position(ops, ops.End(), content.Center(pctSz))
+		label := "Preparing..."
+		if upd, ok := stageState[lastStage]; ok {
+			switch lastStage {
+			case printer.StagePrepare:
+				label = fmt.Sprintf("Rendering plates %d/%d", upd.current, upd.total)
+			case printer.StageCompose:
+				label = "Composing pages..."
+			case printer.StageSend:
+				label = "Sending to printer..."
+			}
+		}
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
 		op.Position(ops, ops.End(), content.Center(sz).Add(image.Pt(0, assets.ProgressCircle.Bounds().Dy()/2+12)))
 
