@@ -410,12 +410,11 @@
               cmdlinetxt =
                 let
                   cmdlineBase = "console=tty1 rootwait";
-                  cmdlineSerial = "console=serial0,115200 " + cmdlineBase;
                 in
                 if usbMode == "gadget" then
                   pkgs.writeText "cmdline.txt" "console=ttyGS0,115200 ${cmdlineBase} modules-load=dwc2,g_serial g_serial.n_ports=2"
                 else
-                  pkgs.writeText "cmdline.txt" "${cmdlineSerial} modules-load=dwc2,usblp";
+                  pkgs.writeText "cmdline.txt" "${cmdlineBase} modules-load=dwc2,usblp";
 
               configtxt =
                 let
