@@ -3,7 +3,6 @@ package gui
 import (
 	"fmt"
 	"image"
-	"math"
 	"time"
 
 	"seedetcher.com/bc/urtypes"
