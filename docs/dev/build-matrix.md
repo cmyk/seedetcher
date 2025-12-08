@@ -26,7 +26,7 @@ Build commands (examples):
 - `nix build .#image-host` → `result/seedetcher-host.img`
 - `nix build .#image-host-debug` → `result/seedetcher-host-debug.img`
 
-Flash via `scripts/flash-sdcard.sh` from macOS, pointing at the built image.
+Flash via `./scripts/flash-sdcard.sh -i seedetcher-host-debug.img` from macOS, pointing at the built image.
 
 ## Reload workflow (debug gadget images)
 - Requires `image-debug` running in gadget mode (serial gadget active).

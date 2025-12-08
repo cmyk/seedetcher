@@ -1,105 +1,98 @@
 
-SeedEtcher Development Notes
+# SeedEtcher Development Notes
 
+When building and you added/removed pkgs, do
 
-nix build .#image-debug
-
-IF BUILD FAILS BECAUSE OF HASH ERROR use --impure
-
-WHEN BUILDING and you added/removed pkgs, do
+```bash
 nix flake lock --update-input nixpkgs
 nix flake update
 
-nix build .#image-debug --impure
+nix build .#image-debug
+```
 
-scp ubuntu:~/seedetcher/result/seedetcher-debug.img ~/Downloads/
+If build fails because of has error use `--impure`
+Debug builds use `--print-build-logs`
 
-nix build .#image-debug --impure --refresh --print-build-logs
-
-nix build .#image-debug --store ssh://ubuntu --impure --print-build-logs
+Copy img from VM:
+`scp ubuntu:~/seedetcher/result/seedetcher-debug.img ~/Downloads/`
 
 To check initramfs contents:
-——————————
+
+```bash
 nix build .#initramfs-debug
 mkdir -p tmp
 cd tmp
 zcat ../result/initramfs.cpio.gz | cpio -idmv
 ls -l bin/sh
+```
+
+## Developemnt Environmet
+
+Ubuntu VM
+
+### USB-GADET DETECTION on VM
+
+#### Recap of Added/Modified Files & Reloading udevadm
+
+##### 1. Added/Modified Files
+
+##### 1.1 /etc/udev/rules.d/99-serial-settings.rules
+- This is the `udev` rule that detects the Pi Zero’s USB serial interfaces and triggers the update script.
+- Example rule:
+  
+  `ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="0525", ATTRS{idProduct}=="a4a7", KERNEL=="ttyACM*", SYMLINK+="usbzero%n", RUN+="/usr/local/bin/usbdev_checker.sh"`
+
+##### 1.2 /usr/local/bin/usbdev_checker.sh
+- This script ensures both serial devices are present before running `update_usbdevs.sh`.
+- It prevents duplicate script execution.
+
+##### 1.3 /usr/local/bin/update_usbdevs.sh
+- This script assigns the detected serial devices and updates the environment variables.
+- It logs device assignments and prevents duplicate messages.
+
+**(ATTENTION: run source ~/.bashrc to update the USBDEVx shell vars)**
+
+#### 2. How to Reload udevadm
+
+##### Reload udev rules:
+
+```bash 
+sudo udevadm control --reload-rules
+```
+
+##### Apply changes immediately:
+
+```bash
+  sudo udevadm trigger
+```
+
+##### Check if udev triggered the script:
+
+```bash
+  journalctl -u systemd-udevd --no-pager | grep usbdev_checker.sh
+```
+
+##### Disabled ModemManager 
+
+```bash
+sudo systemctl stop ModemManager
+sudo systemctl disable ModemManager
+```
+
+#### Apparmor:
+
+```bash
+sudo systemctl stop apparmor
+sudo systemctl disable apparmor
+sudo reboot
+```
 
 
+## NixOS Stuff
 
-If you want to remove all temporary build artifacts (like failed derivations), run:
-nix-store --gc --print-dead | xargs nix-store --delete
-nix build .#<package-name> --show-trace
+Installed multiuser NixOS
 
-nix-store --gc --print-dead
-nix-store --gc
-
-￼
-
-DEBUGGING
-=========================================
-Test PDF creation
-on VM:
-go run cmd/cli/main.go -w multisig -verbose -o /home/cmyk/PDF 
-
-on Pi:
---test-createPlageLayout is needed to access the controller's flags!
-./reload-a --test-createPageLayout -verbose -w singlesig
-(remember to use the running instance of the controller! If you reloaded the controller, it will be either reload-a or reload-b)
-
-Restarting the Controller:
-./controller < /dev/ttyGS1 >> /log/debug.log 2>> /log/debug.log &
-
-
-MUTOOL
-===============================================
-
-mutool convert -O resolution=600,colorspace=mono,spacing=3 -o output.pcl  multisig.pdf
-
-
-
-
-NIX STUFF
-
-Single User nix.conf:
-nano ~/.config/nix/nix.conf
-
-
-If it fails, continue with
-nix build .#image-debug --impure --keep-going
-
-If packages aren't available for the build system (Mac):
-export NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM=1 
-
-Or use nix develop (doesn't work on Mac, because the binaries are for linux)
-
-How to Speed Up the Rebuild (Going Forward)
-	1.	Enable Local Nix Cache to Prevent Future Rebuilds:
-	•	You can enable a local cache to store build results and reuse them in future builds:
-nix build .#image-debug --keep-going --option keep-outputs true --option keep-derivations true
-
-
-GO Dependecies trouble?
-=============================================
-
-go mod tidy
-
-❯ nix build .#go-deps --show-trace --verbose --rebuild                                                   
-checking outputs of '/nix/store/a0wafn6k91jahp9wwaqsp8izx0pi8nvi-go-deps-1.drv'...
-error: hash mismatch in fixed-output derivation '/nix/store/a0wafn6k91jahp9wwaqsp8izx0pi8nvi-go-deps-1.drv':
-         specified: sha256-9T8y/0OLBW+kGUISMgM1RaPy3EsM8Ip6yIy1UuAs21E=
-            got:    sha256-K1aLQiZvP4p3ptJAIsD67u4C7m4WyLCzMw+kjrdcP5w=
-
-Change line 569 in flake.nix to the new hash!
-
-
-
-
-NEW!!!!
-INSTALLED MULTIUSER 28.2.25
-=================================
-
+```bash
 sudo systemctl restart nix-daemon
 sudo systemctl status nix-daemon
 
@@ -110,95 +103,49 @@ trusted-users = root cmyk
 keep-outputs = true
 keep-derivations = true   
 auto-optimise-store = true
+```
+
+If you want to remove all temporary build artifacts (like failed derivations), run:
+nix-store --gc --print-dead | xargs nix-store --delete
+nix build .#<package-name> --show-trace
+
+nix-store --gc --print-dead
+nix-store --gc
 
 
+## Ubuntu config changes
 
-UNINTSTALLING NIX (SINGLE USER LINUX)
-================================
-sudo mv /etc/bash.bashrc.backup-before-nix /etc/bash.bashrc
-sudo mv /etc/zshrc.backup-before-nix /etc/zshrc
-
-rm -rf .local/share/nix
-rm -rf .local/state/nix
-rm -rf .config/nix
-
-UBUNTU CONFIGURATION CHANGES
-================================
 If you want /tmp to be stored in RAM (makes it faster but non-persistent):
-1️⃣ Edit /etc/fstab:
 
-sudo nano /etc/fstab
+1️) Edit /etc/fstab:
+	
+	```bash
+	sudo nano /etc/fstab
+	```
 
-2️⃣ Add this line:
-tmpfs /tmp tmpfs defaults,noatime,mode=1777 0 0
+2️) Add this line:
 
-3️⃣ Reboot
+	```bash
+	tmpfs /tmp tmpfs defaults,noatime,mode=1777 0 0
+	```
 
+3) Reboot
 
+## GO Dependecies trouble?
 
+`go mod tidy`
 
+```shell
+❯ nix build .#go-deps --show-trace --verbose --rebuild                                                   
+checking outputs of '/nix/store/a0wafn6k91jahp9wwaqsp8izx0pi8nvi-go-deps-1.drv'...
+error: hash mismatch in fixed-output derivation '/nix/store/a0wafn6k91jahp9wwaqsp8izx0pi8nvi-go-deps-1.drv':
+         specified: sha256-9T8y/0OLBW+kGUISMgM1RaPy3EsM8Ip6yIy1UuAs21E=
+            got:    sha256-K1aLQiZvP4p3ptJAIsD67u4C7m4WyLCzMw+kjrdcP5w=
+```
 
-
-Unmount sd card
-diskutil unmountDisk /dev/diskX
-
-sudo dd if=result/seedetcher-debug.img of=/dev/rdiskX bs=1m
-
-diskutil eject /dev/disk5
-
-Find the USB device 
-sudo usbdev_checker.sh
-(ATTENTION: run source ~/.bashrc to update the USBDEVx shell vars)
-
-Serial Terminal to Zero
-minicom -D $USBDEV0 -b 115200 -o
-
-Set env var: export USBDEV=/dev/tty.usbmodem101
-
-Build new image:
-nix build .#image-debug --print-build-logs
-
-Upload the new binary with while zero is running! (Rebuild if you modified flake for changes to take effect):
-nix build .#controller-debug --print-build-logs
-nix run .#reload $USBDEV1
-
-Keep an eye on real-time logs using:
-cat $USBDEV
-
-echo "input up" > $USBDEV
-
-echo "runes TEST" > $USBDEV
-
-echo "screenshot" > $USBDEV
-
-Based on the SeedHammer documentation, the available button inputs are:
-	•	Joystick (left side):
-	•	up
-	•	down
-	•	left
-	•	right
-	•	center (pressing the joystick)
-	•	Right-side buttons:
-	•	b1 (top button)
-	•	b2 (middle button)
-	•	b3 (bottom button)
-
+Change line 569 in `flake.nix` to the new hash!
 
 ## Printing
-
-Test output:
-
-```bash
-go run cmd/cli/main.go -w multisig -o ~/PDF -png-out ~/PDF/png -dpi 600 -desc-qr-mm 25
-
-
-go run cmd/cli/main.go -w singlesig \
-	-mnemonic "cash zoo picture text skill steel dragon remove imitate fatal close train recipe april extra void obey sell train chaos noble rice typical below" \
-	-o ~/PDF-test \
-	-png-out ~/PDF-test/png \
-	-dpi 1200 \
-	-desc-qr-mm 25
-```
 
 ### Quick test plates (no hardware)
 - Singlesig fixture (testnet): `cash zoo picture text skill steel dragon remove imitate fatal close train recipe april extra void obey sell train chaos noble rice typical below`
@@ -207,6 +154,8 @@ go run cmd/cli/main.go -w singlesig \
 Examples:
 ```bash
 # Singlesig PDF + PNGs (adjust paths/flags as needed)
+go run cmd/cli/main.go -w multisig -o ~/PDF -png-out ~/PDF/png -dpi 600 -desc-qr-mm 25
+
 go run cmd/cli/main.go -w singlesig \
   -mnemonic "cash zoo picture text skill steel dragon remove imitate fatal close train recipe april extra void obey sell train chaos noble rice typical below" \
   -o ~/PDF-test \
@@ -222,171 +171,91 @@ go run cmd/cli/main.go -w multisig \
   -desc-qr-mm 25
 ```
 
+### Host-mode printer check (usblp)
+- Host/host-debug images load `usblp` automatically (CONFIG_USB_PRINTER). With a USB printer attached you should see dmesg like `usblp0: USB Bidirectional printer` and `/dev/usb/lp0` present.
+- Host mode uses UART for shell (no USB gadget console). Quick probe from UART:
+  ```bash
+  ls -l /dev/usb/lp0
+  echo -e "\033%-12345X@PJL INFO ID\r\n\033%-12345X" > /dev/usb/lp0
+  timeout 2 cat /dev/usb/lp0
+  ```
 
-Shell Commands on Zero
-==========================================
-# Start the controller in the background
+## Shell Commands on Zero
+
+`--test-createPlageLayout` is needed to access the controller's flags!
+
+```bash
+./reload-a --test-createPageLayout -verbose -w singlesig
+```
+
+(remember to use the running instance of the controller! If you reloaded the controller, it will be either reload-a or reload-b)
+
+Restarting the Controller:
+
+```bash
+./controller < /dev/ttyGS1 >> /log/debug.log 2>> /log/debug.log &
+```
+
+### Start the controller in the background
+
 /controller &
 Press Ctrl+Z to pause (suspend) the controller.
 Type bg to send it to the background.
 
-
-Command	Action
-Ctrl+C			Kill the foreground process.
-Ctrl+Z			Suspend (pause) the foreground process.
-jobs -l			List all background jobs with IDs and statuses.
-fg %<job-id>	Bring a background job to the foreground.
-bg %<job-id>	Resume a suspended job in the background.
+### Command	Action
+Ctrl+C					Kill the foreground process.
+Ctrl+Z					Suspend (pause) the foreground process.
+jobs -l					List all background jobs with IDs and statuses.
+fg %<job-id>		Bring a background job to the foreground.
+bg %<job-id>		Resume a suspended job in the background.
 kill %<job-id>	Terminate a background job.
 
 
+## Debugging on Zero
 
-Printing
-==========================================
+Serial Terminal to Zero
+`minicom -D $USBDEV0 -b 115200 -o`
 
-magick /Users/cmyk/Documents/GitHub/seedetcher/backup/testdata/plate-2-side-1-1-of-1-words-24-grayscale.png \
-    -density 100 -resize 393x393! -monochrome pcl:/Users/cmyk/Documents/GitHub/seedetcher/backup/testdata/output-fixed.pcl
+Upload the new binary with while zero is running! (Rebuild if you modified flake for changes to take effect):
 
-lp -d Brother_HL_L5000D_series -o raw /Users/cmyk/Documents/GitHub/seedetcher/backup/testdata/output-fixed.pcl
+```bash
+nix build .#controller-debug --print-build-logs
+nix run .#reload $USBDEV1
+```
 
-==========================================
-Getting USB Serial connection working
+Keep an eye on real-time logs using:
+`cat $USBDEV1`
 
-Check if pi is running Getty on USB serial port:
-sudo systemctl status serial-getty@ttyGS0
+```bash
+echo "input up" > $USBDEV
+echo "runes TEST" > $USBDEV
+echo "screenshot" > $USBDEV
+```
 
-MUST BE STARTED. DISABLED BY DEFAULT!!
-If it's not:
-sudo systemctl enable serial-getty@ttyGS0
-sudo systemctl start serial-getty@ttyGS0
+The available button inputs are:
 
+	•	Joystick (left side):
+	•	up
+	•	down
+	•	left
+	•	right
+	•	center (pressing the joystick)
+	•	Right-side buttons:
+	•	b1 (top button)
+	•	b2 (middle button)
+	•	b3 (bottom button)
 
-SERIAL STUFF
-====================================
-Added 
-sudo nano /etc/udev/rules.d/99-serial-settings.rules
-With
-ACTION=="add", SUBSYSTEM=="tty", KERNEL=="ttyACM0", RUN+="/bin/stty -F /dev/ttyACM0 115200 raw -echo"
+## Notes #reload corrupting the binary sent
 
-Check baudrate:
-stty -F /dev/ttyACM0
-
-
-
-
-USB-GADET DETECTION on VM
-=============================================================================
-# Recap of Added/Modified Files & Reloading udevadm
-
-## 1. Added/Modified Files
-
-### 1.1 /etc/udev/rules.d/99-serial-settings.rules
-- This is the `udev` rule that detects the Pi Zero’s USB serial interfaces and triggers the update script.
-- Example rule:
-  
-  ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="0525", ATTRS{idProduct}=="a4a7", KERNEL=="ttyACM*", SYMLINK+="usbzero%n", RUN+="/usr/local/bin/usbdev_checker.sh"
-
-### 1.2 /usr/local/bin/usbdev_checker.sh
-- This script ensures both serial devices are present before running `update_usbdevs.sh`.
-- It prevents duplicate script execution.
-
-### 1.3 /usr/local/bin/update_usbdevs.sh
-- This script assigns the detected serial devices and updates the environment variables.
-- It logs device assignments and prevents duplicate messages.
-
-----------------------------
-
-## 2. How to Reload udevadm
-
-### Reload udev rules:
-  sudo udevadm control --reload-rules
-
-### Apply changes immediately:
-  sudo udevadm trigger
-
-### Check if udev triggered the script:
-  journalctl -u systemd-udevd --no-pager | grep usbdev_checker.sh
-
-----------------------------
-
-
-Disabled ModemManager 
-
-sudo systemctl stop ModemManager
-sudo systemctl disable ModemManager
-
-APPARMOR!
-
-sudo systemctl stop apparmor
-sudo systemctl disable apparmor
-sudo reboot
-
-
-NOTES ON #reload corrupting the binary sent
-=========================================
+```bash
 stty -F $USBDEV1 raw -echo # needed for transfer of binary!
 echo “” > $USBDEV1 		   # delete whatever is in there
+```
 
+## MUTOOL
 
-GUI
-==================================
-
-
-Confirm Seed > Descriptor > Engrave Plate
-
-=====================
-Grok 3
-=====================
-
-github access token:
-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
-
-git clone https://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@github.com/cmyk/seedetcher.git
-
-
-
-
-Analysis and Next Steps
-Now that I have all the files, I’ll analyze them to help you implement laser printer testing for SeedEtcher, printing a seed phrase and QR code in a 10x10cm area on A4 or letter paper. Here’s a high-level plan based on your setup:
-Key Observations
-	•	seedetcher/cmd/controller/main.go initializes a Platform (via Init() from platform_rpi.go) and runs the GUI loop using gui.Run, which uses /dev/ttyGS1 for output (as seen in debug_rpi.go).
-	•	Platform now targets printing only: plates are rendered in `printer/` and streamed to the printer over /dev/ttyGS1 or /dev/usb/lp0. Engraver support has been removed.
-	•	Your setup uses /dev/ttyGS0 for Busybox shell and /dev/ttyGS1 for controller I/O, ideal for testing via a virtual printer on your Ubuntu host.
-Implementation Plan
-	1	Use the printer path: `CreatePlates` generates PDFs, and data is streamed over /dev/ttyGS1 or /dev/usb/lp0.
-	2	Keep both SeedQR scanning and manual entry with descriptor flows (singlesig + multisig).
-	3	Test on Ubuntu by capturing output over USB, then flash and validate on the Pi Zero with a physical laser printer.
-
+`mutool convert -O resolution=600,colorspace=mono,spacing=3 -o output.pcl  multisig.pdf`
 
 ## Converting Fonts
 
-go run font/bitmap/convert.go -package comfortaa -ppem 17 font/comfortaa/Comfortaa-Bold.ttf font/comfortaa/bold17
-
-
-
-
-go run test_pcl.go
-gpcl6 -sDEVICE=pdfwrite -o ~/PDF/test.pdf test.pcl
-
-
-24 words
-go run ./cmd/cli -mnemonic "abandon ability able about above absent absorb abstract absurd abuse access accident account accuse achieve acid acoustic acquire across act action actor actress blanket" -papersize A4 -o ./plates
-
-12 words
-go run ./cmd/cli -mnemonic "shy east submit check grocery crumble jazz shrimp word myself shoe brisk" -papersize A4 -o ./plates
-
-
-
-	1	Summarize and Archive: I can provide a concise summary of our conversation so far, capturing the key decisions and final print.go code. This allows us to start fresh while preserving the critical information. You can save the summary for reference, reducing the need to retain the full chat history here.
-	2	Focus on New Tasks: If you have new requirements or tasks related to SeedEtcher (e.g., integrating with cmd/cli/main.go, GUI, or Pi controller), I can help with those without revisiting old details, keeping the conversation lean.
-	3	Clear Context: Since the layout and print.go are finalized, we can reset the context to focus on new topics. I’ll remember the final print.go and key settings (e.g., 16/8 word columns, 5mm margins, fonts, QR position) but won’t carry forward unnecessary chat history.
-Summary of Our Conversation (for Reference)
-	•	Goal: Create a PDF backup plate for SeedEtcher with a layout matching SeedHammer’s style (85x85mm, 12/24 words, QR, metadata, title) for a Brother HL-L5000D printer.
-	•	Final print.go:
-
-
-
-Long-Term Plan
-Dev Mode: Keep go-deps hashless while debugging. It’s flexible—deps update as you change go.mod.
-
-Release Mode: Once you’re stable, add the outputHash back for reproducibility. Run nix build .#go-deps, fail it with a dummy hash, grab the real one from the error, and lock it in.
+`go run font/bitmap/convert.go -package comfortaa -ppem 17 font/comfortaa/Comfortaa-Bold.ttf font/comfortaa/bold17`
