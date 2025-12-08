@@ -170,6 +170,7 @@ type Platform interface {
 	Wakeup()
 	CameraFrame(size image.Point)
 	Now() time.Time
+	PrinterStatus() (connected bool, model string)
 	DisplaySize() image.Point
 	// Dirty begins a refresh of the content
 	// specified by r.

@@ -58,6 +58,7 @@ type BackupFlowScreen struct {
 	printMnemonic bip39.Mnemonic
 	confirmKeyIdx int
 	printDesc     *urtypes.OutputDescriptor
+	removeWarn    *ConfirmWarningScreen
 }
 
 type backupStage int
@@ -76,17 +77,23 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	}
 	// Require SD card removal before proceeding, matching the legacy main flow.
 	if !ctx.EmptySDSlot {
-		ws := &ConfirmWarningScreen{
-			Title: "Remove SD card",
-			Body:  "Remove SD card to continue.\n\nHold button to ignore this warning.",
-			Icon:  assets.IconRight,
+		if s.removeWarn == nil {
+			s.removeWarn = &ConfirmWarningScreen{
+				Title: "Remove SD card",
+				Body:  "Remove SD card to continue.\n\nHold button to ignore this warning.",
+				Icon:  assets.IconRight,
+			}
 		}
 		dims := ctx.Platform.DisplaySize()
-		switch ws.Layout(ctx, ops, th, dims) {
+		switch s.removeWarn.Layout(ctx, ops, th, dims) {
 		case ConfirmYes:
 			ctx.EmptySDSlot = true
+			s.removeWarn = nil
 		case ConfirmNo:
+			s.removeWarn = nil
 			return &MainMenuScreen{}
+		case ConfirmNone:
+			// keep showing
 		}
 		ctx.Frame()
 		return s

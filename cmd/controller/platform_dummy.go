@@ -22,6 +22,10 @@ func (p *Platform) Printer() io.Writer {
 	return nil
 }
 
+func (p *Platform) PrinterStatus() (bool, string) {
+	return false, ""
+}
+
 func Init() (*Platform, error) {
 	log.Println("Running platform_dummy.go") // Add this to platform_dummy.go
 	return new(Platform), nil

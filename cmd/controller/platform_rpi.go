@@ -124,6 +124,13 @@ func (p *Platform) Wakeup() {
 	}
 }
 
+func (p *Platform) PrinterStatus() (bool, string) {
+	if _, err := os.Stat("/dev/usb/lp0"); err == nil {
+		return true, readPrinterModel()
+	}
+	return false, ""
+}
+
 func (p *Platform) AppendEvents(deadline time.Time, evts []gui.Event) []gui.Event {
 	c := &p.camera
 	if c.close != nil {
