@@ -146,6 +146,8 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		printErr error
 		done     = make(chan struct{})
 	)
+	finished := false
+	var finishedAt time.Time
 	type progressUpdate struct {
 		stage   printer.PrintStage
 		current int64
@@ -177,10 +179,16 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		op.ColorOp(ops, th.Background)
 		layoutTitle(ctx, ops, dims.X, th.Text, "Printing")
 
-		select {
-		case <-done:
-			return printErr == nil, printErr
-		default:
+		if !finished {
+			select {
+			case <-done:
+				finished = true
+				finishedAt = ctx.Platform.Now()
+				if progressVal < 1 {
+					progressVal = 1
+				}
+			default:
+			}
 		}
 
 		select {
@@ -242,5 +250,9 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 
 		layoutNavigation(&s.inp, ops, th, dims)
 		ctx.Frame()
+
+		if finished && !finishedAt.IsZero() && ctx.Platform.Now().Sub(finishedAt) >= time.Second {
+			return printErr == nil, printErr
+		}
 	}
 }
