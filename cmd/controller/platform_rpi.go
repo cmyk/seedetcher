@@ -235,8 +235,20 @@ func (p *Platform) CameraFrame(dims image.Point) {
 
 // In platform_rpi.go, replace Printer function
 func (p *Platform) Printer() io.Writer {
+	// If we previously failed and cached a non-PCL writer, but lp0 exists now,
+	// clear the cache and try again.
 	if p.printerCached != nil {
-		return p.printerCached
+		if p.supportsPCL {
+			return p.printerCached
+		}
+		if _, err := os.Stat("/dev/usb/lp0"); err == nil {
+			if f, ok := p.printerCached.(*os.File); ok && f != os.Stderr {
+				_ = f.Close()
+			}
+			p.printerCached = nil
+		} else {
+			return p.printerCached
+		}
 	}
 	// Prefer usblp (host-mode printing). Fall back to gadget serial if present.
 	paths := []string{"/dev/usb/lp0", "/dev/ttyGS1"}
@@ -268,7 +280,11 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		logutil.DebugLog("Printer is nil")
 		return fmt.Errorf("no printer available")
 	}
-	logutil.DebugLog("Printer acquired, preparing to write PDF")
+	if p.supportsPCL {
+		logutil.DebugLog("Printer acquired (PCL), preparing to write job")
+	} else {
+		logutil.DebugLog("Printer acquired (non-PCL), falling back to PDF path")
+	}
 
 	p.printing = true
 	defer func() { p.printing = false }()
