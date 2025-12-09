@@ -298,7 +298,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 
 	var mnemonics []bip39.Mnemonic
 	if desc == nil {
-		mnemonics = []bip39.Mnemonic{mnemonic, mnemonic, mnemonic}
+		mnemonics = []bip39.Mnemonic{mnemonic}
 	} else if ctx == nil { // Add this
 		mnemonics = []bip39.Mnemonic{mnemonic} // Use passed mnemonic
 	} else {
