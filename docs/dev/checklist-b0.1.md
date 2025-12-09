@@ -17,14 +17,14 @@
 - [x] Docs: build matrix (controllers/images, USB roles) — see `docs/dev/build-matrix.md`
 - [ ] Printing without Ghostscript (Brother HL-L5000D, prefer PCL5e)
   - [x] Render plates to bitmap in Go at printer DPI with mirror flag
-  - [ ] PCL5e raster writer (start/end job, set resolution/page, stream rows)
+  - [x] PCL5e raster writer (start/end job, set resolution/page, stream rows)
   - [ ] Controller flag for raw PCL vs PDF capture
 - [x] Boot/USB logistics
   - [x] Add host-mode image targets (dr_mode=host, no g_serial) and document log/shell access path (UART when in host mode) — image outputs added (`image-host`, `image-host-debug`); still needs device verification
   - [x] Make init/gadget bring-up tolerant: do not block boot if no USB host on OTG (powerbank + printer on data port)
   - [x] Confirm/restrict shell access: use `controller-debug` only for dev; release image runs non-debug binary (no gadget shell)
 - [ ] Printing workflow notes
-  - [ ] Add CLI flag to emit raw PCL to file (e.g., `-pcl-out`/`-mirror`) for host-side testing
+  - [x] Add CLI flag to emit raw PCL to file (e.g., `-pcl-out`/`-mirror`) for host-side testing
   - [ ] Document host print test: `lp` or `cat out.pcl > /dev/usb/lp0` on Ubuntu before deploying to Zero
 - [ ] Docs update checkpoint (after implementing above)
 - [x] Zero host-mode printing (usblp)
