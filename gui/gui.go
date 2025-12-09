@@ -37,6 +37,7 @@ type Context struct {
 	Keystores        map[uint32]bip39.Mnemonic // Fingerprint -> Mnemonic
 	events           []Event
 	toasts           []toastMsg
+	dirty            bool
 }
 
 type toastMsg struct {
@@ -46,6 +47,11 @@ type toastMsg struct {
 
 func (c *Context) addToast(msg string, dur time.Duration) {
 	c.toasts = append(c.toasts, toastMsg{msg: msg, until: c.Platform.Now().Add(dur)})
+}
+
+// DirtyOnce requests a redraw on the next loop iteration.
+func (c *Context) DirtyOnce() {
+	c.dirty = true
 }
 
 // Session holds the mutable data for a user flow. It makes screen transitions
@@ -347,6 +353,7 @@ func Run(pl Platform, version string) func(yield func() bool) {
 									}
 								}
 								a.ctx.addToast(msg, 2*time.Second)
+								a.ctx.DirtyOnce()
 							}
 						} else {
 							a.ctx.Events(e)
@@ -373,6 +380,11 @@ func Run(pl Platform, version string) func(yield func() bool) {
 						continue
 					}
 					a.ctx.WakeupAt(idleWakeup)
+					if a.ctx.dirty {
+						// Force a redraw if explicitly requested.
+						a.ctx.dirty = false
+						continue
+					}
 					break
 				}
 				a.root.Reset()
