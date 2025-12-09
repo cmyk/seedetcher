@@ -451,12 +451,14 @@ func (p *Platform) initPrinterNotifier() error {
 	go func() {
 		defer f.Close()
 		p.events <- gui.PrinterEvent{Connected: initial, Model: initialModel}.Event()
+		p.Wakeup()
 		var buf [(unix.SizeofInotifyEvent + unix.PathMax + 1) * 20]byte
 		for {
 			n, err := f.Read(buf[:])
 			if err != nil {
 				logutil.DebugLog("printer notifier read err: %v", err)
-				return
+				time.Sleep(100 * time.Millisecond)
+				continue
 			}
 			evts := buf[:n]
 			for len(evts) > 0 {
@@ -488,6 +490,23 @@ func (p *Platform) initPrinterNotifier() error {
 					p.Wakeup()
 				}
 			}
+		}
+	}()
+
+	// Fallback poll in case inotify misses events.
+	go func() {
+		prevConnected, prevModel := initial, initialModel
+		for {
+			connected, model := p.PrinterStatus()
+			if connected != prevConnected || (model != "" && model != prevModel) {
+				prevConnected, prevModel = connected, model
+				p.printerCached = nil
+				p.supportsPCL = false
+				logutil.DebugLog("Printer poll: connected=%v model=%s", connected, model)
+				p.events <- gui.PrinterEvent{Connected: connected, Model: model}.Event()
+				p.Wakeup()
+			}
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 	return nil
