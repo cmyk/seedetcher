@@ -32,11 +32,10 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	}
 	updatePrinterStatus := func() {
 		if ctx != nil {
-			if connected, model := ctx.Platform.PrinterStatus(); connected != ctx.PrinterConnected || model != ctx.PrinterModel {
-				ctx.PrinterConnected = connected
-				if model != "" || !connected {
-					ctx.PrinterModel = model
-				}
+			connected, model := ctx.Platform.PrinterStatus()
+			ctx.PrinterConnected = connected
+			if model != "" || !connected {
+				ctx.PrinterModel = model
 			}
 		}
 	}
