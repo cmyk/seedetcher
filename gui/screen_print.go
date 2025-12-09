@@ -45,8 +45,6 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	}
 	for {
 		updatePrinterStatus()
-		// Ensure the loop wakes periodically to reflect hotplug state even without button input.
-		ctx.WakeupAt(ctx.Platform.Now().Add(250 * time.Millisecond))
 		for {
 			e, ok := inp.Next(ctx, Button1, Button3)
 			if !ok {

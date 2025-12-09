@@ -125,9 +125,14 @@ func (p *Platform) Wakeup() {
 }
 
 func (p *Platform) PrinterStatus() (bool, string) {
-	matches, _ := filepath.Glob("/dev/usb/lp*")
-	if len(matches) > 0 {
-		return true, readPrinterModel()
+	for i := 0; i < 3; i++ {
+		matches, _ := filepath.Glob("/dev/usb/lp*")
+		if len(matches) > 0 {
+			return true, readPrinterModel()
+		}
+		if i < 2 {
+			time.Sleep(50 * time.Millisecond)
+		}
 	}
 	return false, ""
 }
@@ -472,11 +477,13 @@ func (p *Platform) initPrinterNotifier() error {
 					model := readPrinterModel()
 					p.printerCached = nil
 					p.supportsPCL = false
+					logutil.DebugLog("Printer event: connected model=%s", model)
 					p.events <- gui.PrinterEvent{Connected: true, Model: model}.Event()
 					p.Wakeup()
 				case evt.Mask&unix.IN_DELETE != 0:
 					p.printerCached = nil
 					p.supportsPCL = false
+					logutil.DebugLog("Printer event: disconnected")
 					p.events <- gui.PrinterEvent{Connected: false}.Event()
 					p.Wakeup()
 				}
