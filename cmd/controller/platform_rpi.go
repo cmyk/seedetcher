@@ -473,10 +473,12 @@ func (p *Platform) initPrinterNotifier() error {
 					p.printerCached = nil
 					p.supportsPCL = false
 					p.events <- gui.PrinterEvent{Connected: true, Model: model}.Event()
+					p.Wakeup()
 				case evt.Mask&unix.IN_DELETE != 0:
 					p.printerCached = nil
 					p.supportsPCL = false
 					p.events <- gui.PrinterEvent{Connected: false}.Event()
+					p.Wakeup()
 				}
 			}
 		}
