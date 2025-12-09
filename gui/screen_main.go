@@ -157,6 +157,11 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			},
 		}
 	case stageConfirm:
+		if s.desc == nil {
+			// No descriptor present; skip confirm and go to print with the entered seed.
+			s.stage = stagePrint
+			return s.Update(ctx, ops)
+		}
 		return &WalletConfirmScreen{
 			Theme:      th,
 			Descriptor: *s.desc,
