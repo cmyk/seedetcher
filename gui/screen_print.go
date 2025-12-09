@@ -39,7 +39,6 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			}
 		}
 	}
-	updatePrinterStatus()
 	selectedPaper := printer.PaperA4
 	if choice == 1 {
 		selectedPaper = printer.PaperLetter
