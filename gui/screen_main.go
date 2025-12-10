@@ -49,7 +49,7 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		vlabel := fmt.Sprintf("SeedEtcher %s", version.String())
 		lbl := ops.Begin()
 		sz := widget.Labelf(lbl, ctx.Styles.subtitle, singleTheme.Text, "%s", vlabel)
-		op.Position(lbl, lbl.End(), image.Pt(6, dims.Y-sz.Y-6))
+		op.Position(ops, lbl.End(), image.Pt(6, dims.Y-sz.Y-6))
 
 		layoutNavigation(ctx, inp, ops, &singleTheme, dims, []NavButton{
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
