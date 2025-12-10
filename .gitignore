@@ -12,3 +12,4 @@ tmux-client-14578.log
 *.pdf
 ~/PDF/seed1.pdf
 tmux-client*
+**/*.afdesign~lock~
