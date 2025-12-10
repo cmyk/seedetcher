@@ -47,7 +47,7 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		op.Position(ops, ops.End(), center)
 		// Version badge bottom-left.
 		vlabel := fmt.Sprintf("SeedEtcher %s", version.String())
-		sz := widget.Labelf(ops.Begin(), ctx.Styles.subtitle, singleTheme.Text, "%s", vlabel)
+		sz := widget.Labelf(ops.Begin(), ctx.Styles.debug, singleTheme.Text, "%s", vlabel)
 		op.Position(ops, ops.End(), image.Pt(6, dims.Y-sz.Y-6))
 
 		layoutNavigation(ctx, inp, ops, &singleTheme, dims, []NavButton{
