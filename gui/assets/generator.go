@@ -26,6 +26,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	preserveFull := map[string]bool{
+		"seedetcher-logo": true, // Keep original bounds (no cropping) to avoid visual artifacts.
+	}
 	// out is the generated embed.go file.
 	out := new(bytes.Buffer)
 	// data is the binary embed.bin containing image data.
@@ -95,10 +98,12 @@ func main() {
 		data := new(bytes.Buffer)
 		switch img := img.(type) {
 		case *image.Paletted:
-			r := simage.Crop(img)
-			crop := image.NewPaletted(r, img.Palette)
-			draw.Draw(crop, crop.Rect, img, crop.Rect.Min, draw.Src)
-			img = crop
+			if !preserveFull[name] {
+				r := simage.Crop(img)
+				crop := image.NewPaletted(r, img.Palette)
+				draw.Draw(crop, crop.Rect, img, crop.Rect.Min, draw.Src)
+				img = crop
+			}
 			data.Write(img.Pix)
 			start := data.Len()
 			// Write palette.

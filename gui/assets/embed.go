@@ -242,6 +242,14 @@ var (
 	//go:embed progress-circle.bin
 	ProgressCircleData string
 
+	SeedetcherLogo = &paletted.Image{
+		Pix:     unsafe.Slice(unsafe.StringData(SeedetcherLogoData[:16900]), len(SeedetcherLogoData[:16900])),
+		Rect:    paletted.Rectangle{MinX: 0, MinY: 0, MaxX: 130, MaxY: 130},
+		Palette: paletted.Palette(unsafe.Slice(unsafe.StringData(SeedetcherLogoData[16900:]), len(SeedetcherLogoData[16900:]))),
+	}
+	//go:embed seedetcher-logo.bin
+	SeedetcherLogoData string
+
 	Sh02 = &paletted.Image{
 		Pix:     unsafe.Slice(unsafe.StringData(Sh02Data[:5720]), len(Sh02Data[:5720])),
 		Rect:    paletted.Rectangle{MinX: 1, MinY: 0, MaxX: 89, MaxY: 65},
