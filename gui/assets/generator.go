@@ -29,6 +29,9 @@ func main() {
 	preserveFull := map[string]bool{
 		"seedetcher-logo": true, // Keep original bounds (no cropping) to avoid visual artifacts.
 	}
+	flatten := map[string]color.NRGBA{
+		"seedetcher-logo": {R: 0xdd, G: 0x97, B: 0x00, A: 0xff}, // Match main-screen background to avoid dark fringes.
+	}
 	// out is the generated embed.go file.
 	out := new(bytes.Buffer)
 	// data is the binary embed.bin containing image data.
@@ -51,8 +54,19 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		name := p[:len(p)-len(filepath.Ext(p))]
 		// Convert RGBA images to image.Paletted.
 		if nrgba, ok := img.(*image.NRGBA); ok {
+			baseName := name
+			if strings.HasPrefix(baseName, "9.") {
+				baseName = baseName[2:]
+			}
+			if bg, ok := flatten[baseName]; ok {
+				dst := image.NewNRGBA(nrgba.Bounds())
+				draw.Draw(dst, dst.Bounds(), &image.Uniform{C: bg}, image.Point{}, draw.Src)
+				draw.Draw(dst, dst.Bounds(), nrgba, nrgba.Bounds().Min, draw.Over)
+				nrgba = dst
+			}
 			// Convert to alpha pre-multiplied RGBA.
 			rgba := image.NewRGBA(nrgba.Bounds())
 			draw.Draw(rgba, rgba.Bounds(), nrgba, nrgba.Bounds().Min, draw.Src)
@@ -87,7 +101,6 @@ func main() {
 			}
 			img = pimg
 		}
-		name := p[:len(p)-len(filepath.Ext(p))]
 		ninePatchPrefix, ninePatchSuffix := "", ""
 		if ext := filepath.Ext(name); ext == ".9" {
 			name = name[:len(name)-len(ext)]
