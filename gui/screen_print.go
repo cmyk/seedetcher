@@ -19,7 +19,11 @@ type PrintSeedScreen struct {
 	inp InputTracker
 }
 
-func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) bool {
+func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, label string) bool {
+	if label == "" {
+		label = printer.DefaultWalletLabel
+	}
+	printer.SetWalletLabel(label)
 	inp := &s.inp
 	paperChoice := &ChoiceScreen{
 		Title:   "Select Paper Size",

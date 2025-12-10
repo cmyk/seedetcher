@@ -50,7 +50,7 @@ descLoop:
 				ctx.Keystores[mfp] = mnemonic
 				logutil.DebugLog("backupWalletFlow: Keystore updated, printing singlesig")
 				printScreen := &PrintSeedScreen{}
-				if printScreen.Print(ctx, ops, th, mnemonic, nil, 0, printer.PaperA4) {
+				if printScreen.Print(ctx, ops, th, mnemonic, nil, 0, printer.PaperA4, printer.DefaultWalletLabel) {
 					logutil.DebugLog("backupWalletFlow: Print succeeded")
 					return
 				}
@@ -148,7 +148,7 @@ descLoop:
 			}
 			logutil.DebugLog("backupWalletFlow: All %d seeds collected, printing with keyIdx=%d", len(desc.Keys), confirmKeyIdx)
 			printScreen := &PrintSeedScreen{}
-			if printScreen.Print(ctx, ops, th, ds.Mnemonic, desc, confirmKeyIdx, printer.PaperA4) {
+			if printScreen.Print(ctx, ops, th, ds.Mnemonic, desc, confirmKeyIdx, printer.PaperA4, printer.DefaultWalletLabel) {
 				logutil.DebugLog("backupWalletFlow: Print succeeded")
 				return
 			}
