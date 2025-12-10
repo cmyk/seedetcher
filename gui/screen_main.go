@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"fmt"
 	"image"
 
 	"seedetcher.com/bc/urtypes"
@@ -8,8 +9,10 @@ import (
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/layout"
 	"seedetcher.com/gui/op"
+	"seedetcher.com/gui/widget"
 	"seedetcher.com/logutil"
 	"seedetcher.com/printer"
+	"seedetcher.com/version"
 )
 
 // MainMenuScreen renders the landing page and routes into the backup flow.
@@ -42,6 +45,12 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		icon := ops.Begin()
 		op.ImageOp(icon, assets.Hammer, false)
 		op.Position(ops, ops.End(), center)
+		// Version badge bottom-left.
+		vlabel := fmt.Sprintf("SeedEtcher %s", version.String())
+		lbl := ops.Begin()
+		sz := widget.Labelf(lbl, ctx.Styles.subtitle, singleTheme.Text, "%s", vlabel)
+		op.Position(lbl, lbl.End(), image.Pt(6, dims.Y-sz.Y-6))
+
 		layoutNavigation(ctx, inp, ops, &singleTheme, dims, []NavButton{
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
 		}...)
