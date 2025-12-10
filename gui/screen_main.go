@@ -9,6 +9,7 @@ import (
 	"seedetcher.com/gui/layout"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/logutil"
+	"seedetcher.com/printer"
 )
 
 // MainMenuScreen renders the landing page and routes into the backup flow.
@@ -58,6 +59,7 @@ type BackupFlowScreen struct {
 	printMnemonic bip39.Mnemonic
 	confirmKeyIdx int
 	printDesc     *urtypes.OutputDescriptor
+	label         string
 	removeWarn    *ConfirmWarningScreen
 }
 
@@ -67,6 +69,7 @@ const (
 	stageDescriptor backupStage = iota
 	stageSeeds
 	stageConfirm
+	stageLabel
 	stagePrint
 )
 
@@ -108,6 +111,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 				}
 				s.desc = desc
 				ctx.Keystores = make(map[uint32]bip39.Mnemonic)
+				s.label = printer.DefaultWalletLabel
 				s.printDesc = desc
 				if desc == nil {
 					s.totalSeeds = 1
@@ -131,6 +135,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 					ctx.LastDescriptor = nil
 					ctx.Keystores = make(map[uint32]bip39.Mnemonic)
 					s.desc = nil
+					s.label = printer.DefaultWalletLabel
 					s.stage = stageDescriptor
 				}) {
 					return s
@@ -145,7 +150,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 				if s.desc == nil {
 					s.printMnemonic = mnemonic
 					s.confirmKeyIdx = 0
-					s.stage = stagePrint
+					s.stage = stageLabel
 					return s
 				}
 				if len(ctx.Keystores) >= s.totalSeeds {
@@ -158,8 +163,8 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		}
 	case stageConfirm:
 		if s.desc == nil {
-			// No descriptor present; skip confirm and go to print with the entered seed.
-			s.stage = stagePrint
+			// No descriptor present; skip confirm and go to label entry before printing.
+			s.stage = stageLabel
 			return s.Update(ctx, ops)
 		}
 		return &WalletConfirmScreen{
@@ -171,6 +176,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 					ctx.LastDescriptor = nil
 					ctx.Keystores = make(map[uint32]bip39.Mnemonic)
 					s.desc = nil
+					s.label = printer.DefaultWalletLabel
 					s.stage = stageDescriptor
 				}) {
 					return s
@@ -182,20 +188,43 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 					return s
 				}
 				s.confirmKeyIdx = keyIdx
+				s.stage = stageLabel
+				return s
+			},
+		}
+	case stageLabel:
+		return &LabelInputScreen{
+			Theme:   th,
+			Default: printer.DefaultWalletLabel,
+			Value:   s.label,
+			OnCancel: func() Screen {
+				if s.desc != nil {
+					s.stage = stageConfirm
+				} else {
+					s.stage = stageSeeds
+				}
+				return s
+			},
+			OnDone: func(label string) Screen {
+				s.label = label
 				s.stage = stagePrint
 				return s
 			},
 		}
 	case stagePrint:
+		label := s.label
+		if label == "" {
+			label = printer.DefaultWalletLabel
+		}
 		var job PrintJob
 		if s.desc == nil {
-			job = FromSinglesig(s.printMnemonic)
+			job = FromSinglesig(s.printMnemonic, label)
 		} else {
 			desc := s.desc
 			if desc == nil {
 				desc = s.printDesc
 			}
-			job = FromDescriptor(desc, ctx.Keystores[desc.Keys[0].MasterFingerprint], s.confirmKeyIdx)
+			job = FromDescriptor(desc, ctx.Keystores[desc.Keys[0].MasterFingerprint], s.confirmKeyIdx, label)
 		}
 		return &PrintFlowScreen{
 			Theme: th,

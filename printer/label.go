@@ -2,16 +2,18 @@ package printer
 
 import "sync"
 
+const DefaultWalletLabel = "SEEDETCHER"
+
 var (
 	labelOnce sync.Once
-	labelVal  = "SEEDETCHER"
+	labelVal  = DefaultWalletLabel
 )
 
 // walletLabel returns the footer label for plates.
 func walletLabel() string {
 	labelOnce.Do(func() {
 		if labelVal == "" {
-			labelVal = "SEEDETCHER"
+			labelVal = DefaultWalletLabel
 		}
 	})
 	return labelVal

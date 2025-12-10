@@ -19,7 +19,7 @@ func (s *PrintFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		th = &descriptorTheme
 	}
 	printScreen := &PrintSeedScreen{}
-	if printScreen.Print(ctx, ops, th, s.Job.Mnemonic, s.Job.Descriptor, s.Job.KeyIdx, printer.PaperA4) {
+	if printScreen.Print(ctx, ops, th, s.Job.Mnemonic, s.Job.Descriptor, s.Job.KeyIdx, printer.PaperA4, s.Job.Label) {
 		if s.OnSuccess != nil {
 			return s.OnSuccess()
 		}
