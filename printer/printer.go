@@ -22,6 +22,7 @@ import (
 	"seedetcher.com/bip39"
 	"seedetcher.com/logutil"
 	"seedetcher.com/seedqr"
+	"seedetcher.com/version"
 )
 
 // PaperSize defines the supported paper formats for printing.
@@ -126,8 +127,7 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 
 		pdf.SetFont(fontName, "", 5)
 		pdf.Text(40.0, 5.0, fingerprintHex)
-		// Version marker kept for compatibility; could be repurposed if needed.
-		pdf.Text(70.0, 5.0, "V1")
+		pdf.Text(70.0, 5.0, version.String())
 
 		qrContent := seedqr.QR(mnemonic)
 		if len(qrContent) > 0 {

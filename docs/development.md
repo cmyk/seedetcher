@@ -185,6 +185,16 @@ go run cmd/cli/main.go -w multisig \
 - `-pcl-out <path|dir>` writes raw PCL (mirrored/inverted if flags set). If a directory or trailing `/` is provided, the file is auto-named `<wallet>.pcl` inside it.
 - Send PCL over USB: `scripts/print_pcl.sh <file.pcl> [printer_dev]` (defaults `/dev/usb/lp0`, resets channel and streams with `dd bs=16k`).
 
+## Versioning
+
+- Canonical release tag lives in `version.Tag` (update when cutting a release).
+- Optional build override via ldflags, e.g.:
+  ```
+  go build -ldflags "-X seedetcher.com/version.Build=$(git describe --tags --dirty --always)"
+  ```
+  `version.String()` prefers `Build` when set, otherwise falls back to `Tag`.
+- The plate renderer uses `version.String()` (replaces the old hardcoded `V1`).
+
 ## Shell Commands on Zero
 
 `--test-createPlageLayout` is needed to access the controller's flags!
