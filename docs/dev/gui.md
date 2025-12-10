@@ -9,8 +9,9 @@ flowchart TD
     D[backupWalletFlow<br>legacy inline] --> E[Descriptor input<br>Scan/Skip/Re-use<br>validate descriptor+dups]
     E --> F[Seeds loop<br>Scan or manual per key<br>confirm seed<br>check vs descriptor<br>no dup fingerprints]
     F --> G[Confirm wallet<br>Descriptor+seed<br>choose key index]
-    G --> H[PrintSeedScreen<br>Paper A4]
-    H --> A
+    G --> H[Add wallet label]
+    H --> I[PrintSeedScreen<br>Paper A4]
+    I --> A
 ```
 
 Manual entry UX: if the seed is invalid or mismatched, the confirm screen leaves you on the same seed input with your entered words prefilled for correction (no restart).
