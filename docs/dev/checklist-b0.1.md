@@ -32,3 +32,9 @@
   - [x] Ensure kernel has `usblp` (CONFIG_USB_PRINTER) built/loaded; auto-load at boot if modular
   - [x] Verify `/dev/usb/lp0` appears with printer attached; document UART/alt shell for host mode
 
+## slice name feature/input-label
+- [ ] Add label keyboard for A–Z/0–9/-, uppercase only, max 20 chars with live preview
+- [ ] Add LabelInputScreen (title/lead, prefill default, back/clear/confirm controls)
+- [ ] Wire label state into backup flow before print; persist across retries
+- [ ] Apply chosen label to printing path (PCL/PDF) instead of hardcoded default
+- [ ] QA: test-lite script and manual flow: enter label, enforce limits, verify printed footer
