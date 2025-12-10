@@ -58,7 +58,9 @@ func ShowAddressesScreen(ctx *Context, ops op.Ctx, th *Colors, desc urtypes.Outp
 			case 0:
 				addr, err = address.Receive(desc, uint32(counter))
 			case 1:
-				addr, err = address.Change(desc, uint32(counter))
+				// Reset counter for change addresses; start at index 0.
+				idx := len(s.addresses[page])
+				addr, err = address.Change(desc, uint32(idx))
 			}
 			counter++
 			if err != nil {
