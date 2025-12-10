@@ -16,6 +16,10 @@ func main() {
 	f := testutils.DefineFlags()
 	flag.Parse()
 
+	if f.WalletName != "" {
+		printer.SetWalletLabel(f.WalletName)
+	}
+
 	usr, err := user.Current()
 	if err != nil {
 		fmt.Printf("Error getting current user: %v\n", err)

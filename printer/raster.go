@@ -110,6 +110,7 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 					fp := btcutil.Hash160(pubKey.SerializeCompressed())[:4]
 					fingerprintHex := fmt.Sprintf("%X", fp)
 					drawText(canvas, shareFace, dpi, 40.0, 5.0, fingerprintHex)
+					// Version marker kept for compatibility.
 					drawText(canvas, shareFace, dpi, 70.0, 5.0, "V1")
 				}
 			}
@@ -145,7 +146,7 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 			}
 		}
 
-		title := "SATOSHI'S STASH"
+		title := walletLabel()
 		titleFace := loadFace(5, dpi)
 		titleY := plateSizeMM - 5.0
 		drawCenteredText(canvas, titleFace, dpi, titleY, title)

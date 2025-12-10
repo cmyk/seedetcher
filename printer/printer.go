@@ -126,6 +126,7 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 
 		pdf.SetFont(fontName, "", 5)
 		pdf.Text(40.0, 5.0, fingerprintHex)
+		// Version marker kept for compatibility; could be repurposed if needed.
 		pdf.Text(70.0, 5.0, "V1")
 
 		qrContent := seedqr.QR(mnemonic)
@@ -153,7 +154,8 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 		}
 
 		pdf.SetFont(fontName, "", 5)
-		pdf.Text((plateSize-pdf.GetStringWidth("SATOSHI'S STASH"))/2, plateSize-5.0, "SATOSHI'S STASH")
+		label := walletLabel()
+		pdf.Text((plateSize-pdf.GetStringWidth(label))/2, plateSize-5.0, label)
 	}
 
 	var buf bytes.Buffer
