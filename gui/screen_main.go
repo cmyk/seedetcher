@@ -7,7 +7,6 @@ import (
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui/assets"
-	"seedetcher.com/gui/layout"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/gui/widget"
 	"seedetcher.com/logutil"
@@ -40,11 +39,12 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, singleTheme.Background)
 		layoutTitle(ctx, ops, dims.X, singleTheme.Text, "SeedEtcher")
-		// Simple center icon/title; reuse existing assets/layout helpers.
-		center := layout.Rectangle{Max: dims}.Center(image.Pt(assets.Hammer.Bounds().Dx(), assets.Hammer.Bounds().Dy()))
+		// Logo: centered horizontally; top edge 45px from screen top.
+		logoSize := assets.SeedetcherLogo.Bounds().Size()
+		logoPos := image.Pt((dims.X-logoSize.X)/2, 45)
 		icon := ops.Begin()
-		op.ImageOp(icon, assets.Hammer, false)
-		op.Position(ops, ops.End(), center)
+		op.ImageOp(icon, assets.SeedetcherLogo, false)
+		op.Position(ops, ops.End(), logoPos)
 		// Version badge bottom-left.
 		vlabel := fmt.Sprintf("SeedEtcher %s", version.String())
 		sz := widget.Labelf(ops.Begin(), ctx.Styles.debug, singleTheme.Text, "%s", vlabel)
