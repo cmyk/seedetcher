@@ -129,11 +129,16 @@ func derivePubKey(k urtypes.KeyDescriptor, index uint32, change bool) (*secp256k
 		)
 	}
 	xpub := k.ExtendedKey()
-	for _, c := range children {
+	usedChange := false
+	for i, c := range children {
 		var id uint32
 		switch c.Type {
 		case urtypes.ChildDerivation:
 			id = c.Index
+			if change && !usedChange && id == 0 && i+1 < len(children) && children[i+1].Type == urtypes.WildcardDerivation {
+				id = 1
+				usedChange = true
+			}
 		case urtypes.RangeDerivation:
 			if c.End != c.Index+1 {
 				return nil, errors.New("unsupported range path element")
@@ -141,6 +146,7 @@ func derivePubKey(k urtypes.KeyDescriptor, index uint32, change bool) (*secp256k
 			id = c.Index
 			if change {
 				id = c.End
+				usedChange = true
 			}
 		case urtypes.WildcardDerivation:
 			id = index
