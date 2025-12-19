@@ -100,7 +100,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
 		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
-			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
+			{Button: Button3, Style: StylePrimary, Icon: assets.IconPrint},
 		}...)
 		ctx.Frame()
 	}
@@ -152,8 +152,8 @@ func (s *PrintResultScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic 
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", msg)
 		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
 		layoutNavigation(ctx, &s.inp, ops, th, dims, []NavButton{
-			{Button: Button2, Style: StyleSecondary, Icon: assets.IconHammer, Progress: 0}, // Print Again
-			{Button: Button3, Style: StylePrimary, Icon: assets.IconDiscard, Progress: 0},  // Delete Seed
+			{Button: Button2, Style: StyleSecondary, Icon: assets.IconPrint, Progress: 0}, // Print Again
+			{Button: Button3, Style: StylePrimary, Icon: assets.IconDiscard, Progress: 0}, // Delete Seed
 		}...)
 		ctx.Frame()
 	}
