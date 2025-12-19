@@ -11,26 +11,38 @@ import (
 )
 
 var black = rgb(0x000000)
-var bgColor = rgb(0x1a1200)          // Darkened background.
-var dropColor = rgba(0xffa202, 0x99) // Soft orange.
-var glowColor = rgb(0xfff3c4)
+var bgColor = rgb(0x000000)
+var logoColor = rgb(0xff6600)
+var dropColor = logoColor
 var prng = rand.New(rand.NewPCG(1, 2))
 
-// State drives a simple falling-bit saver that highlights the SeedEtcher logo.
+// State drives a falling-bit saver that gradually reveals the SeedEtcher logo.
 type State struct {
 	mask     []bool
+	reveal   []bool
 	maskRect image.Rectangle
 	dims     image.Point
 
-	maskBuf [maxMask]bool
+	maskBuf   [maxMask]bool
+	revealBuf [maxMask]bool
 
 	particles []particle
 	pbuf      [maxParticles]particle
 
 	bg   image.Image
 	drop image.Image
-	glow image.Image
+	logo image.Image
+
+	phase   phase
+	revealN int
 }
+
+type phase int
+
+const (
+	phaseReveal phase = iota
+	phaseDecay
+)
 
 type particle struct {
 	x, y   int
@@ -52,10 +64,12 @@ func (s *State) init(dims image.Point) {
 	s.dims = dims
 	s.bg = bgColor
 	s.drop = dropColor
-	s.glow = glowColor
+	s.logo = logoColor
 
 	s.buildMask(dims)
 	s.initParticles(dims)
+	s.phase = phaseReveal
+	s.revealN = 0
 }
 
 func (s *State) buildMask(dims image.Point) {
@@ -69,15 +83,20 @@ func (s *State) buildMask(dims image.Point) {
 		return
 	}
 	s.mask = s.maskBuf[:size]
-	for i := range s.mask {
+	s.reveal = s.revealBuf[:size]
+	for i := 0; i < size; i++ {
 		s.mask[i] = false
+		s.reveal[i] = false
 	}
 	stride := int(pimg.Rect.MaxX - pimg.Rect.MinX)
 	height := int(pimg.Rect.MaxY - pimg.Rect.MinY)
+	pal := pimg.Palette
 	for y := 0; y < height; y++ {
 		row := pimg.Pix[y*stride : (y+1)*stride]
 		for x := 0; x < stride; x++ {
-			if row[x] == 0 {
+			c := pal.At(row[x])
+			_, _, _, a := c.RGBA()
+			if a == 0 {
 				continue
 			}
 			dx := x + offset.X
@@ -113,6 +132,12 @@ func (s *State) step() {
 			p.speed = prng.IntN(maxSpeed-minSpeed+1) + minSpeed
 		}
 	}
+	if s.phase == phaseDecay && s.revealN == 0 {
+		for i := range s.reveal {
+			s.reveal[i] = false
+		}
+		s.phase = phaseReveal
+	}
 }
 
 func (s *State) Draw(screen Screen) {
@@ -122,7 +147,6 @@ func (s *State) Draw(screen Screen) {
 	}
 	s.step()
 
-	// Redraw full frame for simplicity.
 	dr := image.Rectangle{Max: dims}
 	chunks := newDraw(screen, dr)
 	for {
@@ -136,30 +160,67 @@ func (s *State) Draw(screen Screen) {
 			if !rect.Overlaps(chunk.Bounds()) {
 				continue
 			}
-			// Draw base drop.
 			draw.Draw(chunk, rect.Intersect(chunk.Bounds()), s.drop, image.Point{}, draw.Over)
-			// If intersecting logo mask, brighten.
-			if s.hitMask(rect) {
-				draw.Draw(chunk, rect.Intersect(chunk.Bounds()), s.glow, image.Point{}, draw.Over)
+			if s.phase == phaseReveal {
+				s.markReveal(rect)
+			}
+		}
+		s.drawReveal(chunk)
+	}
+	if s.phase == phaseReveal && len(s.mask) > 0 && s.revealN >= len(s.mask) {
+		s.phase = phaseDecay
+	}
+	if s.phase == phaseDecay && s.revealN > 0 {
+		s.decay()
+	}
+}
+
+func (s *State) markReveal(r image.Rectangle) {
+	inter := r.Intersect(s.maskRect)
+	if inter.Empty() || len(s.mask) == 0 {
+		return
+	}
+	for y := inter.Min.Y; y < inter.Max.Y; y++ {
+		for x := inter.Min.X; x < inter.Max.X; x++ {
+			idx := (y-s.maskRect.Min.Y)*s.maskRect.Dx() + (x - s.maskRect.Min.X)
+			if idx >= 0 && idx < len(s.mask) && s.mask[idx] && !s.reveal[idx] {
+				s.reveal[idx] = true
+				s.revealN++
+				// Stop the drop at this pixel.
+				return
 			}
 		}
 	}
 }
 
-func (s *State) hitMask(r image.Rectangle) bool {
-	inter := r.Intersect(s.maskRect)
-	if inter.Empty() || len(s.mask) == 0 {
-		return false
+func (s *State) decay() {
+	if s.revealN == 0 {
+		return
 	}
-	for y := inter.Min.Y; y < inter.Max.Y; y++ {
-		for x := inter.Min.X; x < inter.Max.X; x++ {
-			idx := (y-s.maskRect.Min.Y)*s.maskRect.Dx() + (x - s.maskRect.Min.X)
-			if idx >= 0 && idx < len(s.mask) && s.mask[idx] {
-				return true
+	clear := 8
+	for i := 0; i < clear && s.revealN > 0; i++ {
+		idx := prng.IntN(len(s.reveal))
+		if s.reveal[idx] {
+			s.reveal[idx] = false
+			s.revealN--
+		}
+	}
+}
+
+func (s *State) drawReveal(chunk draw.RGBA64Image) {
+	b := s.maskRect.Intersect(chunk.Bounds())
+	if b.Empty() {
+		return
+	}
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		rowOff := (y - s.maskRect.Min.Y) * s.maskRect.Dx()
+		for x := b.Min.X; x < b.Max.X; x++ {
+			idx := rowOff + (x - s.maskRect.Min.X)
+			if idx >= 0 && idx < len(s.reveal) && s.reveal[idx] {
+				chunk.Set(x, y, logoColor.At(0, 0))
 			}
 		}
 	}
-	return false
 }
 
 type Screen interface {

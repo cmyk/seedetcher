@@ -29,9 +29,7 @@ func main() {
 	preserveFull := map[string]bool{
 		"seedetcher-logo": true, // Keep original bounds (no cropping) to avoid visual artifacts.
 	}
-	flatten := map[string]color.NRGBA{
-		"seedetcher-logo": {R: 0xdd, G: 0x97, B: 0x00, A: 0xff}, // Match main-screen background to avoid dark fringes.
-	}
+	flatten := map[string]color.NRGBA{}
 	// out is the generated embed.go file.
 	out := new(bytes.Buffer)
 	// data is the binary embed.bin containing image data.
