@@ -27,7 +27,8 @@ func main() {
 		log.Fatal(err)
 	}
 	preserveFull := map[string]bool{
-		"seedetcher-logo": true, // Keep original bounds (no cropping) to avoid visual artifacts.
+		"seedetcher-logo":             true, // Keep original bounds (no cropping) to avoid visual artifacts.
+		"seedetcher-logo-screensaver": true,
 	}
 	flatten := map[string]color.NRGBA{}
 	// out is the generated embed.go file.
