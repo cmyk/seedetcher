@@ -38,10 +38,9 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		}
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, singleTheme.Background)
-		layoutTitle(ctx, ops, dims.X, singleTheme.Text, "SeedEtcher")
-		// Logo: centered horizontally; top edge 45px from screen top.
+		// Logo: centered horizontally and vertically.
 		logoSize := assets.SeedetcherLogo.Bounds().Size()
-		logoPos := image.Pt((dims.X-logoSize.X)/2, 45)
+		logoPos := image.Pt((dims.X-logoSize.X)/2, (dims.Y-logoSize.Y)/2)
 		icon := ops.Begin()
 		op.ImageOp(icon, assets.SeedetcherLogo, false)
 		op.Position(ops, ops.End(), logoPos)
@@ -51,7 +50,7 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		op.Position(ops, ops.End(), image.Pt(6, dims.Y-sz.Y-6))
 
 		layoutNavigation(ctx, inp, ops, &singleTheme, dims, []NavButton{
-			{Button: Button3, Style: StylePrimary, Icon: assets.IconHammer},
+			{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
 		}...)
 		ctx.Frame()
 	}
