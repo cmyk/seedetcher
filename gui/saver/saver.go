@@ -35,6 +35,7 @@ type State struct {
 
 	phase   phase
 	revealN int
+	hold    int
 }
 
 type phase int
@@ -58,6 +59,7 @@ const (
 	maxSpeed     = 3
 	dropWidth    = 2
 	dropHeight   = 8
+	holdFrames   = 90
 )
 
 func (s *State) init(dims image.Point) {
@@ -70,10 +72,11 @@ func (s *State) init(dims image.Point) {
 	s.initParticles(dims)
 	s.phase = phaseReveal
 	s.revealN = 0
+	s.hold = 0
 }
 
 func (s *State) buildMask(dims image.Point) {
-	pimg := assets.SeedetcherLogo
+	pimg := assets.SeedetcherLogoScreensaver
 	logo := pimg.Bounds()
 	offset := image.Pt((dims.X-logo.Dx())/2, (dims.Y-logo.Dy())/2)
 	s.maskRect = logo.Add(offset)
@@ -137,6 +140,7 @@ func (s *State) step() {
 			s.reveal[i] = false
 		}
 		s.phase = phaseReveal
+		s.hold = 0
 	}
 }
 
@@ -169,9 +173,20 @@ func (s *State) Draw(screen Screen) {
 	}
 	if s.phase == phaseReveal && len(s.mask) > 0 && s.revealN >= len(s.mask) {
 		s.phase = phaseDecay
+		s.hold = holdFrames
 	}
-	if s.phase == phaseDecay && s.revealN > 0 {
-		s.decay()
+	if s.phase == phaseDecay {
+		if s.hold > 0 {
+			s.hold--
+		} else {
+			// Clear instantly when hold is over.
+			for i := range s.reveal {
+				s.reveal[i] = false
+			}
+			s.revealN = 0
+			s.phase = phaseReveal
+			s.hold = 0
+		}
 	}
 }
 
