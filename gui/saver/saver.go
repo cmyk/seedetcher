@@ -165,7 +165,9 @@ func (s *State) Draw(screen Screen) {
 		s.init(dims)
 	}
 	s.step()
-	s.revealFrames++
+	if s.phase == phaseReveal {
+		s.revealFrames++
+	}
 
 	dr := image.Rectangle{Max: dims}
 	chunks := newDraw(screen, dr)
