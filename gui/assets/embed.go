@@ -162,6 +162,14 @@ var (
 	//go:embed icon-left.bin
 	IconLeftData string
 
+	IconPrint = &paletted.Image{
+		Pix:     unsafe.Slice(unsafe.StringData(IconPrintData[:552]), len(IconPrintData[:552])),
+		Rect:    paletted.Rectangle{MinX: 6, MinY: 6, MaxX: 29, MaxY: 30},
+		Palette: paletted.Palette(unsafe.Slice(unsafe.StringData(IconPrintData[552:]), len(IconPrintData[552:]))),
+	}
+	//go:embed icon-print.bin
+	IconPrintData string
+
 	IconProgress = &paletted.Image{
 		Pix:     unsafe.Slice(unsafe.StringData(IconProgressData[:529]), len(IconProgressData[:529])),
 		Rect:    paletted.Rectangle{MinX: 6, MinY: 6, MaxX: 29, MaxY: 29},
@@ -177,6 +185,14 @@ var (
 	}
 	//go:embed icon-right.bin
 	IconRightData string
+
+	IconSeedetcher = &paletted.Image{
+		Pix:     unsafe.Slice(unsafe.StringData(IconSeedetcherData[:870]), len(IconSeedetcherData[:870])),
+		Rect:    paletted.Rectangle{MinX: 3, MinY: 3, MaxX: 32, MaxY: 33},
+		Palette: paletted.Palette(unsafe.Slice(unsafe.StringData(IconSeedetcherData[870:]), len(IconSeedetcherData[870:]))),
+	}
+	//go:embed icon-seedetcher.bin
+	IconSeedetcherData string
 
 	IconSkip = &paletted.Image{
 		Pix:     unsafe.Slice(unsafe.StringData(IconSkipData[:270]), len(IconSkipData[:270])),
@@ -243,9 +259,9 @@ var (
 	ProgressCircleData string
 
 	SeedetcherLogo = &paletted.Image{
-		Pix:     unsafe.Slice(unsafe.StringData(SeedetcherLogoData[:16900]), len(SeedetcherLogoData[:16900])),
-		Rect:    paletted.Rectangle{MinX: 0, MinY: 0, MaxX: 130, MaxY: 130},
-		Palette: paletted.Palette(unsafe.Slice(unsafe.StringData(SeedetcherLogoData[16900:]), len(SeedetcherLogoData[16900:]))),
+		Pix:     unsafe.Slice(unsafe.StringData(SeedetcherLogoData[:14400]), len(SeedetcherLogoData[:14400])),
+		Rect:    paletted.Rectangle{MinX: 0, MinY: 0, MaxX: 120, MaxY: 120},
+		Palette: paletted.Palette(unsafe.Slice(unsafe.StringData(SeedetcherLogoData[14400:]), len(SeedetcherLogoData[14400:]))),
 	}
 	//go:embed seedetcher-logo.bin
 	SeedetcherLogoData string
