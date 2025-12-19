@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,8 +34,9 @@ const (
 
 // Load Fonts
 var martianMono = "font/martianmono/MartianMono_Condensed-Regular.ttf" // Path to the UTF-8 TrueType font file
-var descriptorQRSizeMM = 75.0                                          // Max descriptor QR size in mm (configurable)
-var descriptorQRECC = qr.L                                             // Error correction level for descriptor QR
+var martianMonoMedium = "font/martianmono/static/MartianMono-Medium.ttf"
+var descriptorQRSizeMM = 0.0 // Max descriptor QR size in mm (0 = no cap)
+var descriptorQRECC = qr.L   // Error correction level for descriptor QR
 
 // Load font binary data
 func loadFontData(fontPath string) []byte {
@@ -67,8 +67,13 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 	pdf.SetMargins(0, 0, 0)
 	pdf.SetLineWidth(0.2)
 
-	var fontName = "MartianMono"
+	var (
+		fontName       = "MartianMono"
+		fontNameMedium = "MartianMonoMedium"
+		mediumName     = fontName
+	)
 	fontData := loadFontData(martianMono)
+	fontDataMedium := loadFontData(martianMonoMedium)
 	if fontData == nil {
 		pdf.SetFont("Courier", "", 8)
 	} else {
@@ -77,13 +82,19 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 			pdf.SetFont("Courier", "", 8)
 		} else {
 			pdf.SetFont(fontName, "", 8)
+			if fontDataMedium != nil {
+				pdf.AddUTF8FontFromBytes(fontNameMedium, "", fontDataMedium)
+				if !pdf.Err() {
+					mediumName = fontNameMedium
+				}
+			}
 		}
 	}
 
 	plateSize := 85.0
 	pdf.Rect(0, 0, plateSize, plateSize, "D")
 
-	pdf.SetFont(fontName, "", 5)
+	pdf.SetFont(mediumName, "", 6)
 	shareText := fmt.Sprintf("%d/%d", shareNum, totalShares)
 	pdf.Text(5.0, 5.0, shareText)
 
@@ -125,7 +136,7 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 		fingerprint := btcutil.Hash160(pubKey.SerializeCompressed())[:4]
 		fingerprintHex := fmt.Sprintf("%X", fingerprint)
 
-		pdf.SetFont(fontName, "", 5)
+		pdf.SetFont(mediumName, "", 6)
 		pdf.Text(40.0, 5.0, fingerprintHex)
 		pdf.Text(70.0, 5.0, version.String())
 
@@ -136,11 +147,11 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 				return nil, nil, fmt.Errorf("failed to encode QR: %v", err)
 			}
 			qrSize := 25.0
-			qrX := 45.0
 			qrY := plateSize - qrSize - 10.0
 			const quiet = 4
 			step := qrSize / float64(qrCode.Size+2*quiet)
 			offset := float64(quiet) * step
+			qrX := 46.0 - offset
 			for y := 0; y < qrCode.Size; y++ {
 				for x := 0; x < qrCode.Size; x++ {
 					if !qrCode.Black(x, y) {
@@ -153,9 +164,9 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 			}
 		}
 
-		pdf.SetFont(fontName, "", 5)
+		pdf.SetFont(mediumName, "", 6)
 		label := walletLabel()
-		pdf.Text((plateSize-pdf.GetStringWidth(label))/2, plateSize-5.0, label)
+		pdf.Text((plateSize-pdf.GetStringWidth(label))/2, plateSize-3.0, label)
 	}
 
 	var buf bytes.Buffer
@@ -172,8 +183,13 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 	pdf.SetMargins(10, 10, 10) // 10mm margins
 	pdf.SetLineWidth(0.2)
 
-	var fontName = "MartianMono"
+	var (
+		fontName       = "MartianMono"
+		fontNameMedium = "MartianMonoMedium"
+		mediumName     = fontName
+	)
 	fontData := loadFontData(martianMono)
+	fontDataMedium := loadFontData(martianMonoMedium)
 	if fontData == nil {
 		pdf.SetFont("Courier", "", 8)
 	} else {
@@ -182,13 +198,19 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 			pdf.SetFont("Courier", "", 8)
 		} else {
 			pdf.SetFont(fontName, "", 8)
+			if fontDataMedium != nil {
+				pdf.AddUTF8FontFromBytes(fontNameMedium, "", fontDataMedium)
+				if !pdf.Err() {
+					mediumName = fontNameMedium
+				}
+			}
 		}
 	}
 
 	plateSize := 85.0
 	pdf.Rect(0, 0, plateSize, plateSize, "D")
 
-	pdf.SetFont(fontName, "", 5)
+	pdf.SetFont(mediumName, "", 6)
 	shareText := fmt.Sprintf("%d/%d", shareNum, totalShares)
 	pdf.Text(5.0, 5.0, shareText)
 
@@ -196,12 +218,14 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 	pdf.SetXY(20.0, 8.0)
 	key := desc.Keys[keyIdx]
 	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s", desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
-	lines := pdf.SplitText(allText, 75.0) // 65mm width within 10mm margins
+	lines := pdf.SplitText(allText, 77.0) // allow one more character per line
 	y := 10.0                             // distance from top edge
 	for _, line := range lines {
 		pdf.Text(5.0, y, line)
-		y += 5.0 // Adjust line spacing
+		y += 4.0 // Tighter line spacing
 	}
+	pathStr := derivationPathForKey(key, desc.Script)
+	pdf.Text(5.0, y, fmt.Sprintf("Path:%s", pathStr))
 
 	// pdf.SetFont(fontName, "", 8)
 	// pdf.SetXY(4.0, 10.0)
@@ -219,20 +243,19 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode descriptor QR: %v", err)
 	}
-	textHeight := int(y)
-	availableHeight := int(plateSize - float64(textHeight) - 5.0) // 5mm top + 5mm bottom margin
-	qrMax := int(math.Round(descriptorQRSizeMM))
-	if qrMax <= 0 {
-		qrMax = 75
+	textHeight := y
+	availableHeight := plateSize - textHeight - 3.0 - 3.0 // 3mm gap + 3mm bottom margin
+	qrSize := availableHeight
+	if qrSize > descriptorQRSizeMM && descriptorQRSizeMM > 0 {
+		qrSize = descriptorQRSizeMM
 	}
-	qrSize := min(availableHeight, qrMax) // Cap by configured size
 	if qrSize < 5 {
 		qrSize = 5 // Prevent too-small QR
 	}
-	qrX := (plateSize - float64(qrSize)) / 2 // Left margin
-	qrY := plateSize - float64(qrSize) - 5
+	qrX := (plateSize - qrSize) / 2 // Left margin
+	qrY := plateSize - qrSize - 3.0
 	const quiet = 4
-	step := float64(qrSize) / float64(qrCode.Size+2*quiet)
+	step := qrSize / float64(qrCode.Size+2*quiet)
 	offset := float64(quiet) * step
 	for y := 0; y < qrCode.Size; y++ {
 		for x := 0; x < qrCode.Size; x++ {
@@ -255,6 +278,13 @@ func createDescriptorQR(desc *urtypes.OutputDescriptor) string {
 	}
 	// Encode as UR:crypto-output so scan path uses the standard descriptor parser.
 	return ur.Encode("crypto-output", desc.Encode(), 1, 1)
+}
+
+func derivationPathForKey(key urtypes.KeyDescriptor, script urtypes.Script) string {
+	if len(key.DerivationPath) > 0 {
+		return key.DerivationPath.String()
+	}
+	return script.DerivationPath().String()
 }
 
 // SetDescriptorQRSize overrides the maximum descriptor QR size in millimeters.

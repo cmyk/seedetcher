@@ -43,6 +43,12 @@ var (
 	fontErr      error
 	faceMu       sync.Mutex
 	faceCache    = make(map[[2]float64]font.Face) // key: {sizePt, dpi}
+
+	fontOnceMedium     sync.Once
+	fontFaceDataMedium *opentype.Font
+	fontErrMedium      error
+	faceMuMedium       sync.Mutex
+	faceCacheMedium    = make(map[[2]float64]font.Face) // key: {sizePt, dpi}
 )
 
 // CreatePlateBitmaps renders seed/descriptor plates to 1-bit bitmaps using the existing layout.
@@ -96,7 +102,7 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 	}
 	strokeRect(canvas, 0, 0, canvas.Bounds().Dx(), canvas.Bounds().Dy(), border, blackIdx)
 
-	shareFace := loadFace(5, dpi)
+	shareFace := loadFaceMedium(6, dpi)
 	mainFace := loadFace(8, dpi)
 
 	drawText(canvas, shareFace, dpi, 5.0, 5.0, fmt.Sprintf("%d/%d", shareNum, totalShares))
@@ -142,13 +148,18 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		if len(qrContent) > 0 {
 			qrCode, err := qr.Encode(string(qrContent), qr.M)
 			if err == nil {
-				drawQR(canvas, qrCode, dpi, 45.0, plateSizeMM-25.0-10.0, 25.0, blackIdx)
+				qrSize := 25.0
+				const quiet = 4
+				step := qrSize / float64(qrCode.Size+2*quiet)
+				offset := float64(quiet) * step
+				qrX := 46.0 - offset
+				drawQR(canvas, qrCode, dpi, qrX, plateSizeMM-qrSize-10.0, qrSize, blackIdx)
 			}
 		}
 
 		title := walletLabel()
-		titleFace := loadFace(5, dpi)
-		titleY := plateSizeMM - 5.0
+		titleFace := loadFaceMedium(6, dpi)
+		titleY := plateSizeMM - 3.0
 		drawCenteredText(canvas, titleFace, dpi, titleY, title)
 	}
 
@@ -171,7 +182,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 	strokeRect(canvas, 0, 0, canvas.Bounds().Dx(), canvas.Bounds().Dy(), border, blackIdx)
 
-	smallFace := loadFace(5, dpi)
+	smallFace := loadFaceMedium(6, dpi)
 	mainFace := loadFace(8, dpi)
 	drawText(canvas, smallFace, dpi, 5.0, 5.0, fmt.Sprintf("%d/%d", shareNum, totalShares))
 
@@ -183,8 +194,10 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	y := 10.0
 	for _, line := range lines {
 		drawText(canvas, mainFace, dpi, 5.0, y, line)
-		y += 5.0
+		y += 4.0
 	}
+	pathStr := derivationPathForKey(key, desc.Script)
+	drawText(canvas, smallFace, dpi, 5.0, y, fmt.Sprintf("Path:%s", pathStr))
 
 	qrContent := createDescriptorQR(desc)
 	if len(qrContent) == 0 {
@@ -196,16 +209,16 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 
 	textHeight := y
-	availableHeight := plateSizeMM - textHeight - 5.0
+	availableHeight := plateSizeMM - textHeight - 3.0 - 3.0
 	qrSize := availableHeight
-	if qrSize > descriptorQRSizeMM {
+	if qrSize > descriptorQRSizeMM && descriptorQRSizeMM > 0 {
 		qrSize = descriptorQRSizeMM
 	}
 	if qrSize < 5.0 {
 		qrSize = 5.0 // Prevent degenerate QR
 	}
 	qrX := (plateSizeMM - qrSize) / 2
-	qrY := plateSizeMM - qrSize - 5.0
+	qrY := plateSizeMM - qrSize - 3.0
 	drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
 
 	applyPostProcess(canvas, opts)
@@ -412,6 +425,40 @@ func mirrorHorizontal(img *image.Paletted) {
 			row[x], row[w-1-x] = row[w-1-x], row[x]
 		}
 	}
+}
+
+func loadFaceMedium(sizePt, dpi float64) font.Face {
+	key := [2]float64{sizePt, dpi}
+	faceMuMedium.Lock()
+	if face, ok := faceCacheMedium[key]; ok {
+		faceMuMedium.Unlock()
+		return face
+	}
+	faceMuMedium.Unlock()
+
+	fontOnceMedium.Do(func() {
+		data := loadFontData(martianMonoMedium)
+		if data == nil {
+			fontErrMedium = fmt.Errorf("font data %s not found", martianMonoMedium)
+			return
+		}
+		fontFaceDataMedium, fontErrMedium = opentype.Parse(data)
+	})
+
+	if fontErrMedium == nil && fontFaceDataMedium != nil {
+		if face, err := opentype.NewFace(fontFaceDataMedium, &opentype.FaceOptions{
+			Size:    sizePt,
+			DPI:     dpi,
+			Hinting: font.HintingFull,
+		}); err == nil {
+			faceMuMedium.Lock()
+			faceCacheMedium[key] = face
+			faceMuMedium.Unlock()
+			return face
+		}
+	}
+
+	return loadFace(sizePt, dpi)
 }
 
 func invert(img *image.Paletted) {
