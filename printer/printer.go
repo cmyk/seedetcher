@@ -241,10 +241,14 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 		return nil, fmt.Errorf("failed to encode descriptor QR: %v", err)
 	}
 	textLines := float64(len(lines))
-	textBlockHeight := lineHeightMM + (textLines-1)*lineSpacing
-	contentBottom := 10.0 + textBlockHeight
-	availableHeight := plateSize - contentBottom - 1.0 - 3.0 // 1mm gap to text, 3mm bottom margin
-	qrSize := availableHeight
+	textBlockHeight := lineHeightMM
+	if textLines > 1 {
+		textBlockHeight += (textLines - 1) * lineSpacing
+	}
+	textBottom := 7.0 + textBlockHeight
+	qrGap := 2.0    // gap between text block and QR
+	qrBottom := 0.0 // bottom margin
+	qrSize := plateSize - textBottom - qrGap - qrBottom
 	if qrSize > descriptorQRSizeMM && descriptorQRSizeMM > 0 {
 		qrSize = descriptorQRSizeMM
 	}
@@ -252,7 +256,7 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 		qrSize = 5 // Prevent too-small QR
 	}
 	qrX := (plateSize - qrSize) / 2 // Left margin
-	qrY := plateSize - qrSize - 3.0
+	qrY := textBottom + qrGap
 	const quiet = 4
 	step := qrSize / float64(qrCode.Size+2*quiet)
 	offset := float64(quiet) * step

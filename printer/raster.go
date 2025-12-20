@@ -219,10 +219,14 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 
 	textLines := float64(len(lines))
-	textBlockHeight := lineHeightMM + (textLines-1)*lineSpacing
-	contentBottom := 10.0 + textBlockHeight
-	availableHeight := plateSizeMM - contentBottom - 1.0 - 3.0
-	qrSize := availableHeight
+	textBlockHeight := lineHeightMM
+	if textLines > 1 {
+		textBlockHeight += (textLines - 1) * lineSpacing
+	}
+	textBottom := 7.0 + textBlockHeight
+	qrGap := 2.0    // gap between text and QR
+	qrBottom := 0.0 // bottom margin
+	qrSize := plateSizeMM - textBottom - qrGap - qrBottom
 	if qrSize > descriptorQRSizeMM && descriptorQRSizeMM > 0 {
 		qrSize = descriptorQRSizeMM
 	}
@@ -230,7 +234,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		qrSize = 5.0 // Prevent degenerate QR
 	}
 	qrX := (plateSizeMM - qrSize) / 2
-	qrY := plateSizeMM - qrSize - 3.0
+	qrY := textBottom + qrGap
 	drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
 
 	applyPostProcess(canvas, opts)
