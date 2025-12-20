@@ -49,7 +49,7 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 	}
 	pageWpx := mmToPx(pageWmm, dpi)
 	pageHpx := mmToPx(pageHmm, dpi)
-	targetGapPx := mmToPx(5, dpi)    // desired gap between plates
+	targetGapPx := mmToPx(2, dpi)    // desired gap between plates
 	targetMarginPx := mmToPx(5, dpi) // desired margin to page edges
 
 	hasDesc := descPlates != nil && len(descPlates) == len(seedPlates)

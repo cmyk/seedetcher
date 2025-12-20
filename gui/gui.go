@@ -270,7 +270,7 @@ func (b Button) String() string {
 }
 
 // mintues to screensaver activation
-const idleTimeout = 1 * time.Minute
+const idleTimeout = 2 * time.Minute
 
 func Run(pl Platform, version string) func(yield func() bool) {
 	return func(yield func() bool) {

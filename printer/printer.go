@@ -60,9 +60,9 @@ type PlateData struct {
 	IsDescriptor bool
 }
 
-// createSeedPlate generates an 85x85mm PDF plate for a seed phrase with the original layout.
+// createSeedPlate generates a square PDF plate for a seed phrase with the original layout.
 func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*gofpdf.Fpdf, *bytes.Buffer, error) {
-	pdf := gofpdf.NewCustom(&gofpdf.InitType{UnitStr: "mm", Size: gofpdf.SizeType{Wd: 85, Ht: 85}})
+	pdf := gofpdf.NewCustom(&gofpdf.InitType{UnitStr: "mm", Size: gofpdf.SizeType{Wd: plateSizeMM, Ht: plateSizeMM}})
 	pdf.AddPage()
 	pdf.SetMargins(0, 0, 0)
 	pdf.SetLineWidth(0.2)
@@ -91,7 +91,7 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 		}
 	}
 
-	plateSize := 85.0
+	plateSize := plateSizeMM
 	pdf.Rect(0, 0, plateSize, plateSize, "D")
 
 	pdf.SetFont(mediumName, "", 6)
@@ -146,8 +146,9 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 			if err != nil {
 				return nil, nil, fmt.Errorf("failed to encode QR: %v", err)
 			}
-			qrSize := 25.0
-			qrY := plateSize - qrSize - 10.0
+			qrSize := 28.0
+			// Align QR bottom to the 16th word baseline (yLeft base + 15*4mm).
+			qrY := (15.0 + float64(15)*4.0) - qrSize
 			const quiet = 4
 			step := qrSize / float64(qrCode.Size+2*quiet)
 			offset := float64(quiet) * step
@@ -176,9 +177,9 @@ func createSeedPlate(mnemonic bip39.Mnemonic, shareNum int, totalShares int) (*g
 	return pdf, &buf, nil
 }
 
-// createDescriptorPlate generates an 85x85mm PDF plate for a descriptor with all details and a square QR code.
+// createDescriptorPlate generates a square PDF plate for a descriptor with all details and a square QR code.
 func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum int, totalShares int) (*gofpdf.Fpdf, error) {
-	pdf := gofpdf.NewCustom(&gofpdf.InitType{UnitStr: "mm", Size: gofpdf.SizeType{Wd: 85, Ht: 85}})
+	pdf := gofpdf.NewCustom(&gofpdf.InitType{UnitStr: "mm", Size: gofpdf.SizeType{Wd: plateSizeMM, Ht: plateSizeMM}})
 	pdf.AddPage()
 	pdf.SetMargins(10, 10, 10) // 10mm margins
 	pdf.SetLineWidth(0.2)
@@ -207,7 +208,7 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 		}
 	}
 
-	plateSize := 85.0
+	plateSize := plateSizeMM
 	pdf.Rect(0, 0, plateSize, plateSize, "D")
 
 	pdf.SetFont(mediumName, "", 6)
@@ -221,10 +222,10 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 	pdf.SetXY(20.0, 8.0)
 	key := desc.Keys[keyIdx]
 	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s", desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
-	lines := pdf.SplitText(allText, 75.0) // 5mm margins
-	lineHeightMM := pdf.PointConvert(8)   // current font size height in mm
-	lineSpacing := 3.5                    // mm between baselines
-	y := 10.0                             // baseline of first line
+	lines := pdf.SplitText(allText, plateSize-10.0) // 5mm margins
+	lineHeightMM := pdf.PointConvert(8)             // current font size height in mm
+	lineSpacing := 3.5                              // mm between baselines
+	y := 10.0                                       // baseline of first line
 	for i, line := range lines {
 		pdf.Text(5.0, y, line)
 		if i < len(lines)-1 {
@@ -298,7 +299,7 @@ func SetDescriptorQRSize(mm float64) {
 	}
 }
 
-// PrintPDF generates individual 85x85mm PDFs and returns paths to the generated plates.
+// PrintPDF generates individual square PDFs and returns paths to the generated plates.
 func CreatePlates(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, supportsPCL, supportsPostScript bool) ([]string, []string, string, error) {
 	logutil.DebugLog("Starting CreatePlates with %d mnemonics, desc=%v, keyIdx=%d", len(mnemonics), desc != nil, keyIdx)
 	tempDir := filepath.Join(os.TempDir(), "seedetcher-plates")

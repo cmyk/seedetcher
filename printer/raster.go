@@ -32,7 +32,7 @@ type RasterOptions struct {
 }
 
 const (
-	plateSizeMM   = 85.0
+	plateSizeMM   = 90.0
 	borderWidthMM = 0.2
 )
 
@@ -154,12 +154,13 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		if len(qrContent) > 0 {
 			qrCode, err := qr.Encode(string(qrContent), qr.M)
 			if err == nil {
-				qrSize := 25.0
+				qrSize := 28.0
 				const quiet = 4
 				step := qrSize / float64(qrCode.Size+2*quiet)
 				offset := float64(quiet) * step
 				qrX := 48.5 - offset
-				qrY := plateSizeMM - qrSize - 10.0
+				// Align QR bottom to the 16th word baseline (yLeft base + 15*4mm).
+				qrY := (15.0 + float64(15)*4.0) - qrSize
 				drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
 				qrRegions = append(qrRegions, image.Rect(mmToPx(qrX, dpi), mmToPx(qrY, dpi), mmToPx(qrX+qrSize, dpi), mmToPx(qrY+qrSize, dpi)))
 			}
@@ -203,7 +204,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s",
 		desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
 
-	lines := wrapText(mainFace, dpi, allText, 75.0)
+	lines := wrapText(mainFace, dpi, allText, plateSizeMM-10.0)
 	lineHeightPx := float64(mainFace.Metrics().Height.Ceil())
 	lineHeightMM := lineHeightPx * 25.4 / dpi
 	lineSpacing := 3.5
