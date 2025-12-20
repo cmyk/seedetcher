@@ -21,6 +21,7 @@ import (
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/seedqr"
+	"seedetcher.com/version"
 )
 
 // RasterOptions controls the bitmap output used for raw printer jobs.
@@ -115,9 +116,12 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 				if pubKey, err := masterPubKey.ECPubKey(); err == nil {
 					fp := btcutil.Hash160(pubKey.SerializeCompressed())[:4]
 					fingerprintHex := fmt.Sprintf("%X", fp)
-					drawText(canvas, shareFace, dpi, 40.0, 5.0, fingerprintHex)
-					// Version marker kept for compatibility.
-					drawText(canvas, shareFace, dpi, 70.0, 5.0, "V1")
+					fpWidth := textWidthMM(shareFace, dpi, fingerprintHex)
+					fpX := (plateSizeMM - fpWidth) / 2
+					verWidth := textWidthMM(shareFace, dpi, version.String())
+					verX := plateSizeMM - 5.0 - verWidth
+					drawText(canvas, shareFace, dpi, fpX, 5.0, fingerprintHex)
+					drawText(canvas, shareFace, dpi, verX, 5.0, version.String())
 				}
 			}
 		}
@@ -185,20 +189,26 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	smallFace := loadFaceMedium(6, dpi)
 	mainFace := loadFace(8, dpi)
 	drawText(canvas, smallFace, dpi, 5.0, 5.0, fmt.Sprintf("%d/%d", shareNum, totalShares))
+	pathStr := derivationPathForKey(desc.Keys[keyIdx], desc.Script)
+	pathWidth := textWidthMM(smallFace, dpi, fmt.Sprintf("Path:%s", pathStr))
+	pathX := plateSizeMM - 5.0 - pathWidth
+	drawText(canvas, smallFace, dpi, pathX, 5.0, fmt.Sprintf("Path:%s", pathStr))
 
 	key := desc.Keys[keyIdx]
 	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s",
 		desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
 
 	lines := wrapText(mainFace, dpi, allText, 75.0)
+	lineHeightPx := float64(mainFace.Metrics().Height.Ceil())
+	lineHeightMM := lineHeightPx * 25.4 / dpi
+	lineSpacing := 3.0
 	y := 10.0
-	for _, line := range lines {
+	for i, line := range lines {
 		drawText(canvas, mainFace, dpi, 5.0, y, line)
-		y += 4.0
+		if i < len(lines)-1 {
+			y += lineSpacing
+		}
 	}
-	pathStr := derivationPathForKey(key, desc.Script)
-	drawText(canvas, smallFace, dpi, 5.0, y, fmt.Sprintf("Path:%s", pathStr))
-
 	qrContent := createDescriptorQR(desc)
 	if len(qrContent) == 0 {
 		return nil, fmt.Errorf("empty descriptor QR content")
@@ -208,8 +218,10 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		return nil, err
 	}
 
-	textHeight := y
-	availableHeight := plateSizeMM - textHeight - 3.0 - 3.0
+	textLines := float64(len(lines))
+	textBlockHeight := lineHeightMM + (textLines-1)*lineSpacing
+	contentBottom := 10.0 + textBlockHeight
+	availableHeight := plateSizeMM - contentBottom - 1.0 - 3.0
 	qrSize := availableHeight
 	if qrSize > descriptorQRSizeMM && descriptorQRSizeMM > 0 {
 		qrSize = descriptorQRSizeMM
@@ -255,6 +267,14 @@ func mmToPx(mm, dpi float64) int {
 
 func mmToPxFloat(mm, dpi float64) float64 {
 	return mm / 25.4 * dpi
+}
+
+func textWidthMM(face font.Face, dpi float64, text string) float64 {
+	d := font.Drawer{
+		Face: face,
+	}
+	wPx := d.MeasureString(text).Round()
+	return float64(wPx) * 25.4 / dpi
 }
 
 func strokeRect(img *image.Paletted, x, y, w, h, thickness int, idx uint8) {

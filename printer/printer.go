@@ -212,28 +212,25 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 
 	pdf.SetFont(mediumName, "", 6)
 	shareText := fmt.Sprintf("%d/%d", shareNum, totalShares)
+	pathStr := derivationPathForKey(desc.Keys[keyIdx], desc.Script)
+	pathWidth := pdf.GetStringWidth(fmt.Sprintf("Path:%s", pathStr))
 	pdf.Text(5.0, 5.0, shareText)
+	pdf.Text(plateSize-pathWidth-5.0, 5.0, fmt.Sprintf("Path:%s", pathStr))
 
 	pdf.SetFont(fontName, "", 8)
 	pdf.SetXY(20.0, 8.0)
 	key := desc.Keys[keyIdx]
 	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s", desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
-	lines := pdf.SplitText(allText, 77.0) // allow one more character per line
-	y := 10.0                             // distance from top edge
-	for _, line := range lines {
+	lines := pdf.SplitText(allText, 75.0) // 5mm margins
+	lineHeightMM := pdf.PointConvert(8)   // current font size height in mm
+	lineSpacing := 3.0                    // mm between baselines
+	y := 10.0                             // baseline of first line
+	for i, line := range lines {
 		pdf.Text(5.0, y, line)
-		y += 4.0 // Tighter line spacing
+		if i < len(lines)-1 {
+			y += lineSpacing
+		}
 	}
-	pathStr := derivationPathForKey(key, desc.Script)
-	pdf.Text(5.0, y, fmt.Sprintf("Path:%s", pathStr))
-
-	// pdf.SetFont(fontName, "", 8)
-	// pdf.SetXY(4.0, 10.0)
-	// key := desc.Keys[keyIdx]
-	// allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d\nKey%d:%s", desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
-	// strings.TrimRight(allText, "\r\n")                // UTF-8 bug fix to removing trailing newlines
-	// pdf.MultiCell(77.0, 4.0, allText, "", "W", false) // "W" for word wrap, no hyphens
-
 	// QR at bottom, 10mm from edge
 	qrContent := createDescriptorQR(desc)
 	if len(qrContent) == 0 {
@@ -243,8 +240,10 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode descriptor QR: %v", err)
 	}
-	textHeight := y
-	availableHeight := plateSize - textHeight - 3.0 - 3.0 // 3mm gap + 3mm bottom margin
+	textLines := float64(len(lines))
+	textBlockHeight := lineHeightMM + (textLines-1)*lineSpacing
+	contentBottom := 10.0 + textBlockHeight
+	availableHeight := plateSize - contentBottom - 1.0 - 3.0 // 1mm gap to text, 3mm bottom margin
 	qrSize := availableHeight
 	if qrSize > descriptorQRSizeMM && descriptorQRSizeMM > 0 {
 		qrSize = descriptorQRSizeMM
