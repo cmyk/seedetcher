@@ -94,6 +94,7 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 // RenderSeedPlateBitmap mirrors the PDF layout at 600dpi as a 1-bit paletted image.
 func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions) (*image.Paletted, error) {
 	dpi := opts.dpi()
+	opts.Invert = true
 	canvas := newPlateCanvas(dpi)
 	blackIdx := uint8(1)
 
@@ -147,6 +148,7 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		yRight += 4.0
 	}
 
+	qrRegions := []image.Rectangle{}
 	if seed != nil {
 		qrContent := seedqr.QR(mnemonic)
 		if len(qrContent) > 0 {
@@ -156,8 +158,10 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 				const quiet = 4
 				step := qrSize / float64(qrCode.Size+2*quiet)
 				offset := float64(quiet) * step
-				qrX := 46.0 - offset
-				drawQR(canvas, qrCode, dpi, qrX, plateSizeMM-qrSize-10.0, qrSize, blackIdx)
+				qrX := 48.5 - offset
+				qrY := plateSizeMM - qrSize - 10.0
+				drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
+				qrRegions = append(qrRegions, image.Rect(mmToPx(qrX, dpi), mmToPx(qrY, dpi), mmToPx(qrX+qrSize, dpi), mmToPx(qrY+qrSize, dpi)))
 			}
 		}
 
@@ -167,6 +171,7 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		drawCenteredText(canvas, titleFace, dpi, titleY, title)
 	}
 
+	invertExcept(canvas, qrRegions)
 	applyPostProcess(canvas, opts)
 	return canvas, nil
 }
@@ -201,7 +206,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	lines := wrapText(mainFace, dpi, allText, 75.0)
 	lineHeightPx := float64(mainFace.Metrics().Height.Ceil())
 	lineHeightMM := lineHeightPx * 25.4 / dpi
-	lineSpacing := 3.0
+	lineSpacing := 3.5
 	y := 10.0
 	for i, line := range lines {
 		drawText(canvas, mainFace, dpi, 5.0, y, line)
@@ -225,7 +230,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 	textBottom := 7.0 + textBlockHeight
 	qrGap := 2.0    // gap between text and QR
-	qrBottom := 0.0 // bottom margin
+	qrBottom := 1.0 // bottom margin
 	qrSize := plateSizeMM - textBottom - qrGap - qrBottom
 	if qrSize > descriptorQRSizeMM && descriptorQRSizeMM > 0 {
 		qrSize = descriptorQRSizeMM
@@ -237,6 +242,10 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	qrY := textBottom + qrGap
 	drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
 
+	qrRegions := []image.Rectangle{
+		image.Rect(mmToPx(qrX, dpi), mmToPx(qrY, dpi), mmToPx(qrX+qrSize, dpi), mmToPx(qrY+qrSize, dpi)),
+	}
+	invertExcept(canvas, qrRegions)
 	applyPostProcess(canvas, opts)
 	return canvas, nil
 }
@@ -436,8 +445,33 @@ func applyPostProcess(img *image.Paletted, opts RasterOptions) {
 	if opts.Mirror {
 		mirrorHorizontal(img)
 	}
-	if opts.Invert {
-		invert(img)
+}
+
+func invertExcept(img *image.Paletted, keep []image.Rectangle) {
+	keepMask := make([]bool, img.Bounds().Dx()*img.Bounds().Dy())
+	for _, r := range keep {
+		for y := r.Min.Y; y < r.Max.Y; y++ {
+			for x := r.Min.X; x < r.Max.X; x++ {
+				idx := y*img.Stride + x
+				if idx >= 0 && idx < len(keepMask) {
+					keepMask[idx] = true
+				}
+			}
+		}
+	}
+	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+		row := img.Pix[y*img.Stride:]
+		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			idx := y*img.Stride + x
+			if keepMask[idx] {
+				continue
+			}
+			if row[x] == 0 {
+				row[x] = 1
+			} else if row[x] == 1 {
+				row[x] = 0
+			}
+		}
 	}
 }
 

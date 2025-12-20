@@ -223,7 +223,7 @@ func createDescriptorPlate(desc *urtypes.OutputDescriptor, keyIdx int, shareNum 
 	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s", desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
 	lines := pdf.SplitText(allText, 75.0) // 5mm margins
 	lineHeightMM := pdf.PointConvert(8)   // current font size height in mm
-	lineSpacing := 3.0                    // mm between baselines
+	lineSpacing := 3.5                    // mm between baselines
 	y := 10.0                             // baseline of first line
 	for i, line := range lines {
 		pdf.Text(5.0, y, line)
