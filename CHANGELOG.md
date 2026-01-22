@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Screen saver now absorbs button presses when active so the first input only wakes it instead of triggering the underlying screen action.
 - GUI refactor: helpers split into per-screen files and run loop now starts at `MainMenuScreen` via the `Screen` state machine (no behavioral changes expected).
 - Lightweight test helper remains `GOCACHE=/tmp/gocache ./scripts/test-lite.sh` (skips libcamera/wshat CGO deps).
 - Fixed descriptor QR payloads: UR encoder now writes valid range derivations and QRs render with proper quiet zones, so descriptor scans work again (PDF + PNG).
@@ -8,3 +9,4 @@
 - Wallet label entry: added on-device label keyboard/screen (A–Z/0–9/- capped at 20 chars), wired label through backup flow to print jobs, and apply chosen label to PCL/PDF output; simplified hint text and layout.
 - Versioning: added `version` package with release `Tag` and optional build override; plates now print `version.String()` instead of a hardcoded "V1".
 - Host prod hardening: `image-host` no longer enables the UART console/getty; debug host image keeps UART.
+- Screen saver now absorbs button presses when active so the first input only wakes it instead of triggering the underlying screen action.

@@ -336,8 +336,10 @@ func Run(pl Platform, version string) func(yield func() bool) {
 					a.ctx.Reset()
 					for _, e := range a.ctx.Platform.AppendEvents(wakeup, evts[:0]) {
 						a.idle.start = a.ctx.Platform.Now()
+						handled := false
 						if se, ok := e.AsSDCard(); ok {
 							a.ctx.EmptySDSlot = !se.Inserted
+							handled = true
 						} else if pe, ok := e.AsPrinter(); ok {
 							prev := a.ctx.PrinterConnected
 							a.ctx.PrinterConnected = pe.Connected
@@ -356,9 +358,18 @@ func Run(pl Platform, version string) func(yield func() bool) {
 								a.ctx.addToast(msg, 2*time.Second)
 								a.ctx.DirtyOnce()
 							}
-						} else {
-							a.ctx.Events(e)
+							handled = true
 						}
+						if handled {
+							continue
+						}
+						if a.idle.active {
+							if _, isBtn := e.AsButton(); isBtn {
+								// Button input wakes the saver but should not trigger actions.
+								continue
+							}
+						}
+						a.ctx.Events(e)
 					}
 					idleWakeup := a.idle.start.Add(idleTimeout)
 					now := a.ctx.Platform.Now()
