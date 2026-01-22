@@ -79,7 +79,7 @@ sudo systemctl stop ModemManager
 sudo systemctl disable ModemManager
 ```
 
-#### Apparmor:
+##### Apparmor:
 
 ```bash
 sudo systemctl stop apparmor
@@ -90,7 +90,7 @@ sudo reboot
 
 ## NixOS Stuff
 
-Installed multiuser NixOS
+Install multiuser NixOS
 
 ```bash
 sudo systemctl restart nix-daemon
@@ -266,10 +266,6 @@ The available button inputs are:
 stty -F $USBDEV1 raw -echo # needed for transfer of binary!
 echo “” > $USBDEV1 		   # delete whatever is in there
 ```
-
-## MUTOOL
-
-`mutool convert -O resolution=600,colorspace=mono,spacing=3 -o output.pcl  multisig.pdf`
 
 ## Converting Fonts
 
