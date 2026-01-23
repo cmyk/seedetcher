@@ -9,7 +9,7 @@ Seed generation is **not** included — only processing of existing seeds.
 
 ## 2. Build & Deployment
 - Dev: macOS + UTM VM with Nix cross-compile → ARMv6.
-- Output: `seedetcher.img` flashed to Pi Zero.
+- Output: `seedetcher*.img` flashed to Pi Zero.
 - Debugging: serial shell, screenshots, reloads via `/dev/ttyGS1`.
 - PDF capture via `/dev/ttyACM1` → VM script `capture_print.sh`.
 

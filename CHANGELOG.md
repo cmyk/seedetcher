@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## Release v0.1.0-beta.1
 - Screen saver now absorbs button presses when active so the first input only wakes it instead of triggering the underlying screen action.
 - GUI refactor: helpers split into per-screen files and run loop now starts at `MainMenuScreen` via the `Screen` state machine (no behavioral changes expected).
 - Lightweight test helper remains `GOCACHE=/tmp/gocache ./scripts/test-lite.sh` (skips libcamera/wshat CGO deps).

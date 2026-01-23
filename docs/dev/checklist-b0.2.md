@@ -1,0 +1,98 @@
+# Release checklist (b0.2 Descriptor Hardening — Shamir Descriptor Shards)
+
+**DRAFT**
+
+Goal: No single plate reveals the wallet descriptor. Descriptor is recoverable offline via SeedEtcher by scanning ≥t shards and exporting the full descriptor as QR.
+
+## 0) Security model (must be explicit)
+- [ ] Define threat model: "plate compromised" => attacker must NOT learn wallet descriptor/xpub set
+- [ ] Define what remains non-secret on plates (e.g., wallet label, network, script type hint) and why
+- [ ] Define what is secret: full descriptor string (incl xpubs/paths)
+- [ ] Decide policy for xpub presence on plates:
+  - [ ] Option A (strict): no xpubs anywhere except reconstructed descriptor in recovery mode
+  - [ ] Option B (pragmatic): allow “this plate’s xpub” only; still Shamir the full descriptor
+
+## 1) Shard scheme + encoding
+- [ ] Pick scheme:
+  - [ ] Use SLIP-39 (Shamir) style encoding OR
+  - [ ] Use SSKR / GF(256) Shamir for arbitrary bytes
+- [ ] Define shard metadata (must be in every shard):
+  - [ ] wallet_id (short hash / fingerprint)
+  - [ ] group_id / set_id (random per wallet)
+  - [ ] threshold t, share index i, total n (or infer n)
+  - [ ] version + network (main/test) + script type (wsh/wpkh/tr) as non-secret hints
+  - [ ] checksum/MAC for integrity (detect typos + wrong shares)
+- [ ] Canonicalize descriptor before splitting (must be deterministic):
+  - [ ] Normalize whitespace
+  - [ ] Ensure checksum handling is consistent (store with/without checksum; document it)
+- [ ] Decide maximum QR size / encoding (base32/base64/UR):
+  - [ ] Confirm shard fits as single QR for typical multisig descriptors
+  - [ ] If not: define UR/multipart strategy for shards and for reconstructed descriptor
+
+## 2) UI/UX changes (controller)
+- [ ] Add “Descriptor mode” choice in backup flow:
+  - [ ] Full descriptor (legacy / expert-only / discouraged)
+  - [ ] Sharded descriptor (recommended)
+- [ ] Sharded descriptor creation screens:
+  - [ ] Choose n and t (guardrails: t>=2, t<=n, sensible presets like 2-of-3, 3-of-5)
+  - [ ] Generate wallet_id + set_id; show confirmation
+  - [ ] Display each shard as QR and/or print it per plate
+  - [ ] Ensure shards are shown/printed one-at-a-time with explicit “Next share” action
+- [ ] Validation:
+  - [ ] Refuse to mix shards with different wallet_id/set_id
+  - [ ] Refuse wrong threshold / version mismatch
+  - [ ] Detect invalid checksum/MAC
+
+## 3) Plate / print layout changes
+- [ ] Define what each plate contains (recommended):
+  - [ ] Seed phrase / key material for that plate (existing)
+  - [ ] Descriptor shard QR for that plate (new)
+  - [ ] Wallet label (non-secret)
+  - [ ] wallet_id + share index i + threshold t (human-readable)
+- [ ] Remove full descriptor from plate layout when sharded mode is used
+- [ ] Add clear on-plate warning text:
+  - [ ] “Descriptor is sharded — need t shares to recover”
+- [ ] QA: printing pipeline supports shard QR (contrast, size, error correction)
+
+## 4) Recovery mode (SeedEtcher as reconstructor)
+- [ ] Add MainMenu entry: “Recover Descriptor”
+- [ ] Recovery flow:
+  - [ ] Scan share 1
+  - [ ] Scan share 2..t (progress indicator)
+  - [ ] Validate all shares (wallet_id/set_id/version/network)
+  - [ ] Reconstruct full descriptor (in RAM only)
+  - [ ] Display reconstructed descriptor as QR (single or UR animated)
+  - [ ] Optional: show descriptor text behind “hold-to-reveal”
+  - [ ] “Done” exits and wipes RAM state
+- [ ] No persistence:
+  - [ ] Do not write descriptor/shares to disk
+  - [ ] Do not log secret material
+
+## 5) Interop targets (Sparrow etc.)
+- [ ] Verify Sparrow import path for descriptor QR (what exact payload it expects)
+- [ ] Ensure QR payload matches standard descriptor format Sparrow accepts
+- [ ] If multipart/UR is needed:
+  - [ ] Confirm target wallets support it; otherwise keep single-QR as requirement
+
+## 6) Tests
+- [ ] Unit: descriptor canonicalization is stable
+- [ ] Unit: split/reconstruct round-trip for many random descriptors
+- [ ] Unit: wrong-share detection (wallet_id mismatch, checksum fail)
+- [ ] Unit: threshold behavior (need <t fails; >=t succeeds)
+- [ ] Integration: simulated scan flow reconstructs descriptor and renders QR
+- [ ] Regression: legacy “full descriptor on plate” remains available (if kept), but gated
+
+## 7) Docs
+- [ ] Update workflow doc: explain why descriptor is secret + sharded
+- [ ] Add recovery instructions (cold-room guidance):
+  - [ ] “Scan t shards -> export descriptor QR -> import in Sparrow”
+- [ ] Add attack-surface notes:
+  - [ ] “Recovery QR reveals wallet structure; treat as sensitive”
+- [ ] Add troubleshooting: mixed shares, checksum fail, QR too large
+
+## 8) Release gates
+- [ ] End-to-end hardware test:
+  - [ ] Create sharded wallet -> print plates -> recover descriptor -> import in Sparrow -> derive addresses match
+- [ ] test-lite clean
+- [ ] No secret material in logs (grep quick check)
+- [ ] Tag + signed release notes mention descriptor hardening + migration notes
