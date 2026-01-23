@@ -13,22 +13,10 @@ nix build .#image-debug
 If build fails because of has error use `--impure`
 Debug builds use `--print-build-logs`
 
-Copy img from VM:
-`scp ubuntu:~/seedetcher/result/seedetcher-debug.img ~/Downloads/`
-
-To check initramfs contents:
-
-```bash
-nix build .#initramfs-debug
-mkdir -p tmp
-cd tmp
-zcat ../result/initramfs.cpio.gz | cpio -idmv
-ls -l bin/sh
-```
 
 ## Developemnt Environmet
 
-Ubuntu VM
+Ubuntu VM on Mac.
 
 ### USB-GADET DETECTION on VM
 
