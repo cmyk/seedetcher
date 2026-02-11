@@ -1,21 +1,28 @@
 # Release checklist (b0.2 Descriptor Hardening — Shamir Descriptor Shards)
 
-**DRAFT**
+**DRAFT (implementation-scoped)**
 
 Goal: No single plate reveals the wallet descriptor. Descriptor is recoverable offline via SeedEtcher by scanning ≥t shards and exporting the full descriptor as QR.
 
+## Locked decisions for b0.2
+- Policy: **Option A (strict)** for sharded mode.
+- Shard scheme: **GF(256) Shamir for arbitrary bytes (SSKR-style split/reconstruct)**.
+- Canonical descriptor payload: normalized descriptor string **with checksum included**.
+- Legacy full-descriptor plate mode remains available as explicit legacy/expert flow.
+- Recovery reconstructs descriptor in RAM only and exports QR; no secret persistence/logging.
+
 ## 0) Security model (must be explicit)
-- [ ] Define threat model: "plate compromised" => attacker must NOT learn wallet descriptor/xpub set
-- [ ] Define what remains non-secret on plates (e.g., wallet label, network, script type hint) and why
-- [ ] Define what is secret: full descriptor string (incl xpubs/paths)
+- [x] Define threat model: "plate compromised" => attacker must NOT learn wallet descriptor/xpub set
+- [x] Define what remains non-secret on plates (e.g., wallet label, network, script type hint) and why
+- [x] Define what is secret: full descriptor string (incl xpubs/paths)
 - [ ] Decide policy for xpub presence on plates:
-  - [ ] Option A (strict): no xpubs anywhere except reconstructed descriptor in recovery mode
+  - [x] Option A (strict): no xpubs anywhere except reconstructed descriptor in recovery mode
   - [ ] Option B (pragmatic): allow “this plate’s xpub” only; still Shamir the full descriptor
 
 ## 1) Shard scheme + encoding
 - [ ] Pick scheme:
   - [ ] Use SLIP-39 (Shamir) style encoding OR
-  - [ ] Use SSKR / GF(256) Shamir for arbitrary bytes
+  - [x] Use SSKR / GF(256) Shamir for arbitrary bytes
 - [ ] Define shard metadata (must be in every shard):
   - [ ] wallet_id (short hash / fingerprint)
   - [ ] group_id / set_id (random per wallet)
@@ -23,8 +30,8 @@ Goal: No single plate reveals the wallet descriptor. Descriptor is recoverable o
   - [ ] version + network (main/test) + script type (wsh/wpkh/tr) as non-secret hints
   - [ ] checksum/MAC for integrity (detect typos + wrong shares)
 - [ ] Canonicalize descriptor before splitting (must be deterministic):
-  - [ ] Normalize whitespace
-  - [ ] Ensure checksum handling is consistent (store with/without checksum; document it)
+  - [x] Normalize whitespace
+  - [x] Ensure checksum handling is consistent (store with/without checksum; document it)
 - [ ] Decide maximum QR size / encoding (base32/base64/UR):
   - [ ] Confirm shard fits as single QR for typical multisig descriptors
   - [ ] If not: define UR/multipart strategy for shards and for reconstructed descriptor
