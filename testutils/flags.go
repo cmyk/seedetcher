@@ -31,7 +31,7 @@ func DefineFlags() *Flags {
 	flag.BoolVar(&f.Mirror, "mirror", false, "Mirror raster output horizontally (toner transfer)")
 	flag.BoolVar(&f.Invert, "invert", false, "Invert raster output (white/black swap)")
 	flag.Float64Var(&f.DescQRMM, "desc-qr-mm", 75.0, "Maximum descriptor QR size in millimeters")
-	flag.StringVar(&f.PCLOut, "pcl-out", "", "Optional output path for raw PCL (bitmap raster) instead of PDF capture")
+	flag.StringVar(&f.PCLOut, "pcl-out", "", "Optional output path for raw PCL (bitmap raster)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	return f
 }

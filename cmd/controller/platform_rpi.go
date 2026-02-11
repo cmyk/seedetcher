@@ -283,18 +283,11 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	if p.supportsPCL {
 		logutil.DebugLog("Printer acquired (PCL), preparing to write job")
 	} else {
-		logutil.DebugLog("Printer acquired (non-PCL), falling back to PDF path")
+		logutil.DebugLog("Printer acquired (non-PCL), using raster-to-PDF path")
 	}
 
 	p.printing = true
 	defer func() { p.printing = false }()
-
-	tempFile, err := os.Create("/tmp/seedetcher-output.pdf")
-	if err != nil {
-		logutil.DebugLog("Failed to create temp file: %v", err)
-		return err
-	}
-	defer tempFile.Close() // No os.Remove needed, will overwrite next run
 
 	var mnemonics []bip39.Mnemonic
 	if desc == nil {
@@ -318,21 +311,22 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		}
 	}
 
+	opts := printer.RasterOptions{
+		DPI:    600, // Safe default for Zero; adjust if needed
+		Mirror: true,
+		Invert: true,
+	}
+	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
+	if err != nil {
+		return fmt.Errorf("render: plate bitmaps: %w", err)
+	}
+	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperA4, opts.DPI, progress)
+	if err != nil {
+		return fmt.Errorf("render: compose pages: %w", err)
+	}
+
 	if p.supportsPCL {
 		// Default to PCL in host mode (usblp).
-		opts := printer.RasterOptions{
-			DPI:    600, // Safe default for Zero; adjust if needed
-			Mirror: true,
-			Invert: true,
-		}
-		seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
-		if err != nil {
-			return fmt.Errorf("pcl: plate bitmaps: %w", err)
-		}
-		pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperA4, opts.DPI, progress)
-		if err != nil {
-			return fmt.Errorf("pcl: compose pages: %w", err)
-		}
 		if err := printer.WritePCL(printerDev, pages, opts.DPI, printer.PaperA4, progress); err != nil {
 			return fmt.Errorf("pcl: write: %w", err)
 		}
@@ -340,27 +334,15 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		return nil
 	}
 
-	// Fallback: PDF path (gadget capture/dev)
-	seedPaths, descPaths, tempDir, err := printer.CreatePlates(tempFile, mnemonics, desc, keyIdx, p.supportsPCL, p.supportsPostScript)
-	if err != nil {
-		logutil.DebugLog("PDF generation failed: %v", err)
-		return err
+	// Fallback: serialize canonical raster pages as PDF (gadget capture/dev).
+	var pdf bytes.Buffer
+	if err := printer.WritePDFRaster(&pdf, pages, printer.PaperA4); err != nil {
+		return fmt.Errorf("pdf: write: %w", err)
 	}
-	logutil.DebugLog("Generated %d seed plates and %d desc plates in %s", len(seedPaths), len(descPaths), tempDir)
-
-	if err := printer.CreatePageLayout(tempFile, tempDir, printer.PaperA4, seedPaths, descPaths); err != nil {
-		logutil.DebugLog("Failed to merge PDF: %v", err)
-		return err
-	}
-
-	data, err := os.ReadFile(tempFile.Name())
-	if err != nil {
-		logutil.DebugLog("Failed to read temp file: %v", err)
-		return err
-	}
-	logutil.DebugLog("Merged PDF file, size: %d bytes", len(data))
+	data := pdf.Bytes()
+	logutil.DebugLog("Raster-based PDF generated, size: %d bytes", len(data))
 	if len(data) == 0 {
-		logutil.DebugLog("Merged PDF is empty")
+		logutil.DebugLog("Generated PDF is empty")
 		return fmt.Errorf("no data to write to printer")
 	}
 

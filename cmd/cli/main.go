@@ -81,21 +81,34 @@ func main() {
 	}
 
 	printer.SetDescriptorQRSize(f.DescQRMM)
+	opts := printer.RasterOptions{
+		DPI:    float64(f.DPI),
+		Mirror: f.Mirror,
+		Invert: f.Invert,
+	}
+	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, 0, opts, nil)
+	if err != nil {
+		fmt.Printf("Error creating raster plates: %v\n", err)
+		os.Exit(1)
+	}
+	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, nil)
+	if err != nil {
+		fmt.Printf("Error composing pages: %v\n", err)
+		os.Exit(1)
+	}
+
 	file, err := os.Create(filepath.Join(outputDir, config.Name+".pdf"))
 	if err != nil {
 		fmt.Printf("Error creating PDF file %s: %v\n", config.Name+".pdf", err)
 		os.Exit(1)
 	}
-	defer file.Close()
-
-	seedPaths, descPaths, tempDir, err := printer.CreatePlates(file, mnemonics, desc, 0, false, false)
-	if err != nil {
-		fmt.Printf("Error generating plates: %v\n", err)
+	if err := printer.WritePDFRaster(file, pages, printer.PaperSize(f.PaperSize)); err != nil {
+		file.Close()
+		fmt.Printf("Error writing PDF: %v\n", err)
 		os.Exit(1)
 	}
-	defer os.RemoveAll(tempDir) // Move cleanup here
-	if err := printer.CreatePageLayout(file, tempDir, printer.PaperSize(f.PaperSize), seedPaths, descPaths); err != nil {
-		fmt.Printf("Error merging PDF: %v\n", err)
+	if err := file.Close(); err != nil {
+		fmt.Printf("Error closing PDF file: %v\n", err)
 		os.Exit(1)
 	}
 	if f.Verbose {
@@ -103,65 +116,47 @@ func main() {
 	}
 	fmt.Println("PDF generation completed")
 
-	needRaster := pngDir != "" || pclPath != ""
-	if needRaster {
-		opts := printer.RasterOptions{
-			DPI:    float64(f.DPI),
-			Mirror: f.Mirror,
-			Invert: f.Invert,
+	if pngDir != "" {
+		for i, img := range seedImgs {
+			path := filepath.Join(pngDir, fmt.Sprintf("%s_seed_%d.png", config.Name, i+1))
+			if err := printer.SavePNG(path, img); err != nil {
+				fmt.Printf("Error writing %s: %v\n", path, err)
+				os.Exit(1)
+			}
 		}
-		seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, 0, opts, nil)
-		if err != nil {
-			fmt.Printf("Error creating raster plates: %v\n", err)
-			os.Exit(1)
-		}
-		if pngDir != "" {
-			for i, img := range seedImgs {
-				path := filepath.Join(pngDir, fmt.Sprintf("%s_seed_%d.png", config.Name, i+1))
+		if descImgs != nil {
+			for i, img := range descImgs {
+				if img == nil {
+					continue
+				}
+				path := filepath.Join(pngDir, fmt.Sprintf("%s_desc_%d.png", config.Name, i+1))
 				if err := printer.SavePNG(path, img); err != nil {
 					fmt.Printf("Error writing %s: %v\n", path, err)
 					os.Exit(1)
 				}
 			}
-			if descImgs != nil {
-				for i, img := range descImgs {
-					if img == nil {
-						continue
-					}
-					path := filepath.Join(pngDir, fmt.Sprintf("%s_desc_%d.png", config.Name, i+1))
-					if err := printer.SavePNG(path, img); err != nil {
-						fmt.Printf("Error writing %s: %v\n", path, err)
-						os.Exit(1)
-					}
-				}
-			}
-			if f.Verbose {
-				fmt.Printf("Generated PNG plates at %s (mirror=%v invert=%v dpi=%d)\n", pngDir, f.Mirror, f.Invert, f.DPI)
-			}
 		}
-		if pclPath != "" {
-			pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, nil)
-			if err != nil {
-				fmt.Printf("Error composing PCL pages: %v\n", err)
-				os.Exit(1)
-			}
-			pclFile, err := os.Create(pclPath)
-			if err != nil {
-				fmt.Printf("Error creating PCL file %s: %v\n", pclPath, err)
-				os.Exit(1)
-			}
-			if err := printer.WritePCL(pclFile, pages, opts.DPI, printer.PaperSize(f.PaperSize), nil); err != nil {
-				pclFile.Close()
-				fmt.Printf("Error writing PCL file: %v\n", err)
-				os.Exit(1)
-			}
-			if err := pclFile.Close(); err != nil {
-				fmt.Printf("Error closing PCL file: %v\n", err)
-				os.Exit(1)
-			}
-			if f.Verbose {
-				fmt.Printf("Generated PCL at %s (pages=%d mirror=%v invert=%v dpi=%d)\n", pclPath, len(pages), f.Mirror, f.Invert, f.DPI)
-			}
+		if f.Verbose {
+			fmt.Printf("Generated PNG plates at %s (mirror=%v invert=%v dpi=%d)\n", pngDir, f.Mirror, f.Invert, f.DPI)
+		}
+	}
+	if pclPath != "" {
+		pclFile, err := os.Create(pclPath)
+		if err != nil {
+			fmt.Printf("Error creating PCL file %s: %v\n", pclPath, err)
+			os.Exit(1)
+		}
+		if err := printer.WritePCL(pclFile, pages, opts.DPI, printer.PaperSize(f.PaperSize), nil); err != nil {
+			pclFile.Close()
+			fmt.Printf("Error writing PCL file: %v\n", err)
+			os.Exit(1)
+		}
+		if err := pclFile.Close(); err != nil {
+			fmt.Printf("Error closing PCL file: %v\n", err)
+			os.Exit(1)
+		}
+		if f.Verbose {
+			fmt.Printf("Generated PCL at %s (pages=%d mirror=%v invert=%v dpi=%d)\n", pclPath, len(pages), f.Mirror, f.Invert, f.DPI)
 		}
 	}
 }

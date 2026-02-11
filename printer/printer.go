@@ -299,7 +299,8 @@ func SetDescriptorQRSize(mm float64) {
 	}
 }
 
-// PrintPDF generates individual square PDFs and returns paths to the generated plates.
+// Deprecated: legacy vector-PDF plate generator.
+// Use CreatePlateBitmaps + ComposePages + WritePDFRaster/WritePCL instead.
 func CreatePlates(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, supportsPCL, supportsPostScript bool) ([]string, []string, string, error) {
 	logutil.DebugLog("Starting CreatePlates with %d mnemonics, desc=%v, keyIdx=%d", len(mnemonics), desc != nil, keyIdx)
 	tempDir := filepath.Join(os.TempDir(), "seedetcher-plates")
@@ -352,7 +353,8 @@ func CreatePlates(w io.Writer, mnemonics []bip39.Mnemonic, desc *urtypes.OutputD
 	return seedPaths, descPaths, tempDir, nil
 }
 
-// createPageLayout merges the generated plates into an A4 PDF with a 2x3 layout and writes to w.
+// Deprecated: legacy vector-PDF n-up page layout path.
+// Use CreatePlateBitmaps + ComposePages + WritePDFRaster/WritePCL instead.
 func CreatePageLayout(w io.Writer, tempDir string, paperFormat PaperSize, seedPaths, descPaths []string) error {
 	logutil.DebugLog("Starting CreatePageLayout with tempDir: %s", tempDir)
 

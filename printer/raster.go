@@ -94,7 +94,6 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 // RenderSeedPlateBitmap mirrors the PDF layout at 600dpi as a 1-bit paletted image.
 func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions) (*image.Paletted, error) {
 	dpi := opts.dpi()
-	opts.Invert = true
 	canvas := newPlateCanvas(dpi)
 	blackIdx := uint8(1)
 
@@ -172,7 +171,9 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		drawCenteredText(canvas, titleFace, dpi, titleY, title)
 	}
 
-	invertExcept(canvas, qrRegions)
+	if opts.Invert {
+		invertExcept(canvas, qrRegions)
+	}
 	applyPostProcess(canvas, opts)
 	return canvas, nil
 }
@@ -246,7 +247,9 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	qrRegions := []image.Rectangle{
 		image.Rect(mmToPx(qrX, dpi), mmToPx(qrY, dpi), mmToPx(qrX+qrSize, dpi), mmToPx(qrY+qrSize, dpi)),
 	}
-	invertExcept(canvas, qrRegions)
+	if opts.Invert {
+		invertExcept(canvas, qrRegions)
+	}
 	applyPostProcess(canvas, opts)
 	return canvas, nil
 }
@@ -518,14 +521,4 @@ func loadFaceMedium(sizePt, dpi float64) font.Face {
 	}
 
 	return loadFace(sizePt, dpi)
-}
-
-func invert(img *image.Paletted) {
-	for i, v := range img.Pix {
-		if v == 0 {
-			img.Pix[i] = 1
-		} else if v == 1 {
-			img.Pix[i] = 0
-		}
-	}
 }
