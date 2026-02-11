@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+- Output unification: canonical plate/page rendering is now bitmap-based; both PDF and PCL are serialized from the same composed raster pages to keep host test artifacts aligned with printer jobs.
+- CLI now renders once and fans out outputs from the same page set (PDF always, optional PNG plates, optional PCL via `-pcl-out`).
+- Controller print path now uses the canonical bitmap pipeline for both host-mode PCL and non-PCL fallback PDF serialization.
+- `-invert` now works as a real switch in raster rendering (no longer forced on when omitted).
+- Controller `--test-createPageLayout` test mode now exercises the canonical bitmap pipeline and writes `/tmp/test_output.pdf` (plus optional PCL via `-pcl-out`).
+- Legacy vector-PDF helpers in `printer/printer.go` are now marked deprecated.
+
 ## Release v0.1.0-beta.1
 - Screen saver now absorbs button presses when active so the first input only wakes it instead of triggering the underlying screen action.
 - GUI refactor: helpers split into per-screen files and run loop now starts at `MainMenuScreen` via the `Screen` state machine (no behavioral changes expected).

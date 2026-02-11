@@ -185,7 +185,7 @@ go run cmd/cli/main.go -w multisig \
 
 ## Shell Commands on Zero
 
-`--test-createPlageLayout` is needed to access the controller's flags!
+`--test-createPageLayout` is needed to access the controller's flags!
 
 ```bash
 ./reload-a --test-createPageLayout -verbose -w singlesig

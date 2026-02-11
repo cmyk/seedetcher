@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"runtime"
+	"path/filepath"
+	"strings"
 	"time"
 
-	"seedetcher.com/bip39"
 	"seedetcher.com/gui"
 	"seedetcher.com/logutil"
 	"seedetcher.com/printer"
@@ -37,10 +37,10 @@ func initPlatform() (*Platform, error) {
 
 func main() {
 	f := testutils.DefineFlags()
-	testMode := flag.Bool("test-createPageLayout", false, "Run test mode") // Bool flag, no arg
+	testMode := flag.Bool("test-createPageLayout", false, "Run canonical bitmap page rendering test mode")
 	flag.Parse()
 
-	if *testMode { // Just check the flag
+	if *testMode {
 		if err := runCLI(f); err != nil {
 			fmt.Fprintf(os.Stderr, "controller CLI: %v\n", err)
 			os.Exit(2)
@@ -55,10 +55,6 @@ func main() {
 }
 
 func runCLI(f *testutils.Flags) error {
-	p, err := initPlatform()
-	if err != nil {
-		return err
-	}
 	config, ok := testutils.WalletConfigs[f.WalletType]
 	if !ok {
 		return fmt.Errorf("invalid wallet type: %s", f.WalletType)
@@ -71,99 +67,66 @@ func runCLI(f *testutils.Flags) error {
 		logutil.DebugLog("Processing %s wallet", config.Name)
 	}
 
-	tempFile, err := os.Create("/tmp/seedetcher-output.pdf") // Match here
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %v", err)
+	if f.WalletName != "" {
+		printer.SetWalletLabel(f.WalletName)
 	}
-	defer tempFile.Close()
+	printer.SetDescriptorQRSize(f.DescQRMM)
 
-	if err := p.CreatePlates(nil, mnemonics[0], desc, 0); err != nil {
-		return fmt.Errorf("error generating PDF: %v", err)
+	opts := printer.RasterOptions{
+		DPI:    float64(f.DPI),
+		Mirror: f.Mirror,
+		Invert: f.Invert,
 	}
-	logutil.DebugLog("PDF generated at %s", tempFile.Name())
+	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, 0, opts, nil)
+	if err != nil {
+		return fmt.Errorf("render bitmaps: %w", err)
+	}
+	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, nil)
+	if err != nil {
+		return fmt.Errorf("compose pages: %w", err)
+	}
+
+	const outPDF = "/tmp/test_output.pdf"
+	pdfFile, err := os.Create(outPDF)
+	if err != nil {
+		return fmt.Errorf("failed to create output PDF: %v", err)
+	}
+	if err := printer.WritePDFRaster(pdfFile, pages, printer.PaperSize(f.PaperSize)); err != nil {
+		pdfFile.Close()
+		return fmt.Errorf("write PDF: %w", err)
+	}
+	if err := pdfFile.Close(); err != nil {
+		return fmt.Errorf("close output PDF: %w", err)
+	}
+	if f.Verbose {
+		logutil.DebugLog("PDF generated at %s", outPDF)
+	}
+
+	pclPath := strings.TrimSpace(f.PCLOut)
+	if pclPath != "" {
+		if strings.HasSuffix(pclPath, "/") || isDir(pclPath) {
+			pclPath = filepath.Join(strings.TrimRight(pclPath, "/"), config.Name+".pcl")
+		}
+		if err := os.MkdirAll(filepath.Dir(pclPath), 0o755); err != nil {
+			return fmt.Errorf("create PCL output directory: %w", err)
+		}
+		pclFile, err := os.Create(pclPath)
+		if err != nil {
+			return fmt.Errorf("create PCL output file: %w", err)
+		}
+		if err := printer.WritePCL(pclFile, pages, opts.DPI, printer.PaperSize(f.PaperSize), nil); err != nil {
+			pclFile.Close()
+			return fmt.Errorf("write PCL: %w", err)
+		}
+		if err := pclFile.Close(); err != nil {
+			return fmt.Errorf("close PCL output file: %w", err)
+		}
+		if f.Verbose {
+			logutil.DebugLog("PCL generated at %s", pclPath)
+		}
+	}
+
 	return nil
-}
-
-// Debug function to test createPageLayout
-func testCreatePageLayout(f *testutils.Flags, tempDir string) {
-	config, ok := testutils.WalletConfigs[f.WalletType]
-	if !ok {
-		fmt.Printf("Invalid wallet type: %s\n", f.WalletType)
-		os.Exit(1)
-	}
-	mnemonics, desc, err := testutils.ParseWallet(config, f.Mnemonic, f.Descriptor)
-	if err != nil {
-		fmt.Printf("Error parsing wallet: %v\n", err)
-		os.Exit(1)
-	}
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	logutil.DebugLog("Memory before plates: HeapAlloc=%.2f MB", float64(m.HeapAlloc)/1024/1024)
-	file, err := os.Create("/tmp/test_output.pdf")
-	if err != nil {
-		fmt.Printf("Error creating output file: %v\n", err)
-		os.Exit(1)
-	}
-	defer file.Close()
-	paperSize := printer.PaperSize(f.PaperSize)
-	seedPaths, descPaths, tempDir, err := printer.CreatePlates(file, mnemonics, desc, 0, false, false)
-	if err != nil {
-		fmt.Printf("Error generating PDF: %v\n", err)
-		os.Exit(1)
-	}
-	runtime.ReadMemStats(&m)
-	logutil.DebugLog("Memory after plates: HeapAlloc=%.2f MB", float64(m.HeapAlloc)/1024/1024)
-	logutil.DebugLog("Before CreatePageLayout: seedPaths=%v, descPaths=%v, tempDir=%s", seedPaths, descPaths, tempDir)
-	for _, path := range seedPaths {
-		if path != "" {
-			if info, err := os.Stat(path); err == nil {
-				logutil.DebugLog("Seed file %s exists, size: %d bytes", path, info.Size())
-			} else {
-				logutil.DebugLog("Seed file %s stat failed: %v", path, err)
-			}
-		}
-	}
-	for _, path := range descPaths {
-		if path != "" {
-			if info, err := os.Stat(path); err == nil {
-				logutil.DebugLog("Desc file %s exists, size: %d bytes", path, info.Size())
-			} else {
-				logutil.DebugLog("Desc file %s stat failed: %v", path, err)
-			}
-		}
-	}
-	if err := printer.CreatePageLayout(file, tempDir, paperSize, seedPaths, descPaths); err != nil {
-		logutil.DebugLog("CreatePageLayout failed: %v", err)
-		fmt.Printf("Error merging PDF: %v\n", err)
-		os.Exit(1)
-	}
-	runtime.ReadMemStats(&m)
-	logutil.DebugLog("Memory after merge: HeapAlloc=%.2f MB", float64(m.HeapAlloc)/1024/1024)
-	logutil.DebugLog("Merged PDF saved to /tmp/test_output.pdf")
-	for _, path := range seedPaths {
-		if path != "" {
-			os.Remove(path)
-		}
-	}
-	for _, path := range descPaths {
-		if path != "" {
-			os.Remove(path)
-		}
-	}
-	os.RemoveAll(tempDir)
-
-	fmt.Println("Test succeeded")
-	os.Exit(0)
-}
-
-// Helper function to parse mnemonic and exit on error
-func mustParseMnemonic(mnemonic string) bip39.Mnemonic {
-	m, err := bip39.ParseMnemonic(mnemonic)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to parse mnemonic: %v\n", err)
-		os.Exit(1)
-	}
-	return m
 }
 
 func run() error {
@@ -187,4 +150,13 @@ func (p *Platform) Debug() bool {
 
 func (p *Platform) Now() time.Time {
 	return time.Now()
+}
+
+// isDir reports whether the given path exists and is a directory.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	if err != nil {
+		return false
+	}
+	return info.IsDir()
 }
