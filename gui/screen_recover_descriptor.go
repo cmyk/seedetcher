@@ -33,7 +33,7 @@ func (s *SDCardGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	}
 	th := s.Theme
 	if th == nil {
-		th = &descriptorTheme
+		th = &singleTheme
 	}
 	if s.warn == nil {
 		s.warn = &ConfirmWarningScreen{
@@ -80,7 +80,7 @@ type RecoverDescriptorFlowScreen struct {
 func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	th := s.Theme
 	if th == nil {
-		th = &descriptorTheme
+		th = &singleTheme
 	}
 	if s.decodedShares == nil {
 		s.decodedShares = make(map[uint8]shard.Share)
@@ -109,9 +109,10 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 	case urtypes.OutputDescriptor:
 		return s.loadRecoveredDescriptor(ctx, v)
 	case []byte:
-		shareText := strings.TrimSpace(string(v))
-		if strings.HasPrefix(strings.ToUpper(shareText), shard.Prefix) {
-			sh, err := shard.Decode(strings.ToUpper(shareText))
+		raw := strings.TrimSpace(string(v))
+		up := strings.ToUpper(raw)
+		if strings.HasPrefix(up, shard.Prefix) {
+			sh, err := shard.Decode(up)
 			if err != nil {
 				showError(ctx, ops, th, fmt.Errorf("invalid share QR: %v", err))
 				return s
@@ -139,6 +140,18 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 				showError(ctx, ops, th, fmt.Errorf("parsed descriptor invalid: %v", err))
 				return s
 			}
+			return s.loadRecoveredDescriptor(ctx, desc)
+		}
+		// Plain descriptor text / legacy input path.
+		desc, err := nonstandard.OutputDescriptor([]byte(raw))
+		if err == nil {
+			return s.loadRecoveredDescriptor(ctx, desc)
+		}
+		showError(ctx, ops, th, fmt.Errorf("unsupported QR payload"))
+		return s
+	case string:
+		desc, err := nonstandard.OutputDescriptor([]byte(strings.TrimSpace(v)))
+		if err == nil {
 			return s.loadRecoveredDescriptor(ctx, desc)
 		}
 		showError(ctx, ops, th, fmt.Errorf("unsupported QR payload"))

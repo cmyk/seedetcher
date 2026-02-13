@@ -22,7 +22,7 @@ type ShardedPolicyScreen struct {
 func (s *ShardedPolicyScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	th := s.Theme
 	if th == nil {
-		th = &descriptorTheme
+		th = &singleTheme
 	}
 	desc := s.Descriptor
 	if desc == nil {
@@ -58,15 +58,15 @@ func (s *ShardedPolicyScreen) Update(ctx *Context, ops op.Ctx) Screen {
 
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
-		layoutTitle(ctx, ops, dims.X, th.Text, "Sharded Descriptor")
+		layoutTitle(ctx, ops, dims.X, th.Text, "Sharding")
 
 		body := fmt.Sprintf(
-			"Multisig descriptor shares are derived from the wallet descriptor.\n\nThreshold (t): %d\nTotal shares (n): %d\n\nNo manual t/n selection in b0.2.",
+			"Using descriptor values:\n\nt = %d\nn = %d",
 			desc.Threshold,
 			len(desc.Keys),
 		)
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.body, dims.X-16, th.Text, "%s", body)
-		op.Position(ops, ops.End(), image.Pt((dims.X-sz.X)/2, leadingSize+10))
+		op.Position(ops, ops.End(), image.Pt((dims.X-sz.X)/2, leadingSize+20))
 
 		layoutNavigation(ctx, inp, ops, th, dims,
 			NavButton{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},

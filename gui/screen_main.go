@@ -21,7 +21,7 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	inp := new(InputTracker)
 	for {
 		for {
-			e, ok := inp.Next(ctx, Button1, Button2, Button3)
+			e, ok := inp.Next(ctx, Button1, Button3)
 			if !ok {
 				break
 			}
@@ -31,15 +31,10 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			switch e.Button {
 			case Button1:
 				return s // No-op back on root
-			case Button2:
-				return &SDCardGateScreen{
-					Theme: &descriptorTheme,
-					Next:  &RecoverDescriptorFlowScreen{Theme: &descriptorTheme},
-				}
 			case Button3:
 				return &SDCardGateScreen{
-					Theme: &descriptorTheme,
-					Next:  &BackupFlowScreen{Theme: &descriptorTheme},
+					Theme: &singleTheme,
+					Next:  &ActionChoiceScreen{Theme: &singleTheme},
 				}
 			}
 		}
@@ -57,7 +52,6 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		op.Position(ops, ops.End(), image.Pt(6, dims.Y-sz.Y-6))
 
 		layoutNavigation(ctx, inp, ops, &singleTheme, dims, []NavButton{
-			{Button: Button2, Style: StyleSecondary, Icon: assets.IconInfo},
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
 		}...)
 		ctx.Frame()
