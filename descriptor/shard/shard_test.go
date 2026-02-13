@@ -56,6 +56,21 @@ func TestSplitCombineRoundTrip(t *testing.T) {
 	}
 }
 
+func TestSplitCombinePayloadRoundTrip(t *testing.T) {
+	payload := "UR:CRYPTO-OUTPUT/TESTPAYLOAD123"
+	shares, err := SplitPayload(payload, SplitOptions{Threshold: 2, Total: 3})
+	if err != nil {
+		t.Fatalf("split payload failed: %v", err)
+	}
+	got, err := CombinePayload([]Share{shares[0], shares[2]})
+	if err != nil {
+		t.Fatalf("combine payload failed: %v", err)
+	}
+	if got != payload {
+		t.Fatalf("payload mismatch\\n got: %s\\nwant: %s", got, payload)
+	}
+}
+
 func TestCombineFailsBelowThreshold(t *testing.T) {
 	desc := testDescriptor(t)
 	shares, err := Split(desc, SplitOptions{Threshold: 3, Total: 5})

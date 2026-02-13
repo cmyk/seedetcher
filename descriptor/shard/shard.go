@@ -92,13 +92,37 @@ func Split(descriptor string, opts SplitOptions) ([]Share, error) {
 	if err != nil {
 		return nil, err
 	}
+	network, script, err := inferHints(canonical)
+	if err != nil {
+		return nil, err
+	}
+	return splitPayloadBytes([]byte(canonical), opts, network, script)
+}
+
+// SplitPayload splits an arbitrary payload into sharded shares.
+// This is used for transport payloads such as UR strings.
+func SplitPayload(payload string, opts SplitOptions) ([]Share, error) {
+	if strings.TrimSpace(payload) == "" {
+		return nil, errors.New("empty payload")
+	}
+	return splitPayloadBytes([]byte(payload), opts, NetworkUnknown, ScriptUnknown)
+}
+
+// SplitPayloadBytes splits arbitrary bytes into sharded shares.
+func SplitPayloadBytes(payload []byte, opts SplitOptions) ([]Share, error) {
+	if len(payload) == 0 {
+		return nil, errors.New("empty payload")
+	}
+	return splitPayloadBytes(payload, opts, NetworkUnknown, ScriptUnknown)
+}
+
+func splitPayloadBytes(payload []byte, opts SplitOptions, network NetworkHint, script ScriptHint) ([]Share, error) {
 	if opts.Total < minThreshold || opts.Total > maxShareCount {
 		return nil, fmt.Errorf("invalid total shares: %d", opts.Total)
 	}
 	if opts.Threshold < minThreshold || opts.Threshold > opts.Total {
 		return nil, fmt.Errorf("invalid threshold: %d", opts.Threshold)
 	}
-	payload := []byte(canonical)
 	setID := opts.SetID
 	if setID == [setIDLen]byte{} {
 		if _, err := rand.Read(setID[:]); err != nil {
@@ -106,10 +130,6 @@ func Split(descriptor string, opts SplitOptions) ([]Share, error) {
 		}
 	}
 	walletID := walletIDForPayload(payload)
-	network, script, err := inferHints(canonical)
-	if err != nil {
-		return nil, err
-	}
 
 	parts, err := splitBytes(payload, int(opts.Total), int(opts.Threshold))
 	if err != nil {
@@ -133,32 +153,60 @@ func Split(descriptor string, opts SplitOptions) ([]Share, error) {
 }
 
 func Combine(shares []Share) (string, error) {
+	payload, err := combinePayload(shares)
+	if err != nil {
+		return "", err
+	}
+	canonical := string(payload)
+	if _, err := CanonicalizeDescriptor(canonical); err != nil {
+		return "", fmt.Errorf("reconstructed descriptor failed canonical validation: %w", err)
+	}
+	return canonical, nil
+}
+
+// CombinePayload reconstructs raw payload text without enforcing descriptor
+// canonicalization rules.
+func CombinePayload(shares []Share) (string, error) {
+	payload, err := combinePayload(shares)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
+// CombinePayloadBytes reconstructs raw payload bytes without descriptor
+// canonicalization checks.
+func CombinePayloadBytes(shares []Share) ([]byte, error) {
+	return combinePayload(shares)
+}
+
+func combinePayload(shares []Share) ([]byte, error) {
 	if len(shares) == 0 {
-		return "", errors.New("no shares")
+		return nil, errors.New("no shares")
 	}
 	base := shares[0]
 	if base.Version != Version {
-		return "", fmt.Errorf("unsupported version: %d", base.Version)
+		return nil, fmt.Errorf("unsupported version: %d", base.Version)
 	}
 	if base.Threshold < minThreshold || base.Total < base.Threshold {
-		return "", errors.New("invalid threshold/total in shares")
+		return nil, errors.New("invalid threshold/total in shares")
 	}
 
 	seen := make(map[uint8]bool)
 	unique := make([]Share, 0, len(shares))
 	for _, s := range shares {
 		if err := validateShareMatch(base, s); err != nil {
-			return "", err
+			return nil, err
 		}
 		if seen[s.Index] {
-			return "", fmt.Errorf("duplicate share index: %d", s.Index)
+			return nil, fmt.Errorf("duplicate share index: %d", s.Index)
 		}
 		seen[s.Index] = true
 		unique = append(unique, s)
 	}
 
 	if len(unique) < int(base.Threshold) {
-		return "", fmt.Errorf("insufficient shares: have %d need %d", len(unique), base.Threshold)
+		return nil, fmt.Errorf("insufficient shares: have %d need %d", len(unique), base.Threshold)
 	}
 
 	sort.Slice(unique, func(i, j int) bool { return unique[i].Index < unique[j].Index })
@@ -170,16 +218,12 @@ func Combine(shares []Share) (string, error) {
 	}
 	payload, err := combineBytes(parts, x)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if walletIDForPayload(payload) != base.WalletID {
-		return "", errors.New("wallet_id mismatch after reconstruction")
+		return nil, errors.New("wallet_id mismatch after reconstruction")
 	}
-	canonical := string(payload)
-	if _, err := CanonicalizeDescriptor(canonical); err != nil {
-		return "", fmt.Errorf("reconstructed descriptor failed canonical validation: %w", err)
-	}
-	return canonical, nil
+	return payload, nil
 }
 
 func Encode(share Share) (string, error) {

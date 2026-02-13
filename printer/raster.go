@@ -20,6 +20,7 @@ import (
 	"golang.org/x/image/math/fixed"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
+	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/seedqr"
 	"seedetcher.com/version"
 )
@@ -65,6 +66,14 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 	if hasDesc {
 		descImgs = make([]*image.Paletted, totalShares)
 	}
+	var shardQRCodes []string
+	if hasDesc {
+		var err error
+		shardQRCodes, err = descriptorShardQRCodes(desc, totalShares)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 
 	for i := 0; i < totalShares; i++ {
 		mnemonic := mnemonics[i%len(mnemonics)]
@@ -76,7 +85,11 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 
 		if hasDesc {
 			descKeyIdx := i % len(desc.Keys)
-			descImg, err := RenderDescriptorPlateBitmap(desc, descKeyIdx, i+1, totalShares, opts)
+			descQR := ""
+			if i < len(shardQRCodes) {
+				descQR = shardQRCodes[i]
+			}
+			descImg, err := RenderDescriptorPlateBitmap(desc, descKeyIdx, i+1, totalShares, opts, descQR)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -179,7 +192,7 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 }
 
 // RenderDescriptorPlateBitmap mirrors the descriptor PDF layout at 600dpi as a 1-bit paletted image.
-func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNum, totalShares int, opts RasterOptions) (*image.Paletted, error) {
+func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNum, totalShares int, opts RasterOptions, qrPayload string) (*image.Paletted, error) {
 	if desc == nil {
 		return nil, fmt.Errorf("descriptor is nil")
 	}
@@ -216,7 +229,10 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 			y += lineSpacing
 		}
 	}
-	qrContent := createDescriptorQR(desc)
+	qrContent := qrPayload
+	if qrContent == "" {
+		qrContent = createDescriptorQR(desc)
+	}
 	if len(qrContent) == 0 {
 		return nil, fmt.Errorf("empty descriptor QR content")
 	}
@@ -252,6 +268,39 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 	applyPostProcess(canvas, opts)
 	return canvas, nil
+}
+
+func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]string, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("descriptor is nil")
+	}
+	if totalShares <= 0 {
+		return nil, fmt.Errorf("invalid share count: %d", totalShares)
+	}
+	threshold := desc.Threshold
+	if threshold < 2 || threshold > totalShares {
+		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
+	}
+	payload := desc.Encode()
+	if len(payload) == 0 {
+		return nil, fmt.Errorf("empty descriptor payload")
+	}
+	shares, err := shard.SplitPayloadBytes(payload, shard.SplitOptions{
+		Threshold: uint8(threshold),
+		Total:     uint8(totalShares),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("split descriptor payload: %w", err)
+	}
+	out := make([]string, len(shares))
+	for i, sh := range shares {
+		enc, err := shard.Encode(sh)
+		if err != nil {
+			return nil, fmt.Errorf("encode share %d: %w", i+1, err)
+		}
+		out[i] = enc
+	}
+	return out, nil
 }
 
 // SavePNG writes a paletted image to disk.
