@@ -4,6 +4,8 @@
 
 Goal: No single plate reveals the wallet descriptor. Descriptor is recoverable offline via SeedEtcher by scanning ≥t shards and exporting the full descriptor as QR.
 
+Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
+
 ## Locked decisions for b0.2
 - Policy: **Option A (strict)** for sharded mode.
 - Shard scheme: **GF(256) Shamir for arbitrary bytes (SSKR-style split/reconstruct)**.
