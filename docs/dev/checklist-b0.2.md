@@ -10,7 +10,8 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
 - Policy: **Option A (strict)** for sharded mode.
 - Shard scheme: **GF(256) Shamir for arbitrary bytes (SSKR-style split/reconstruct)**.
 - Canonical descriptor payload: normalized descriptor string **with checksum included**.
-- Legacy full-descriptor plate mode remains available as explicit legacy/expert flow.
+- Multisig backup uses **sharded descriptor only** (no legacy full-descriptor plate mode).
+- Singlesig backup does not require descriptor sharding.
 - Recovery reconstructs descriptor in RAM only and exports QR; no secret persistence/logging.
 
 ## 0) Security model (must be explicit)
@@ -39,11 +40,11 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [ ] If not: define UR/multipart strategy for shards and for reconstructed descriptor
 
 ## 2) UI/UX changes (controller)
-- [ ] Add “Descriptor mode” choice in backup flow:
-  - [ ] Full descriptor (legacy / expert-only / discouraged)
-  - [ ] Sharded descriptor (recommended)
+- [ ] Enforce descriptor policy in backup flow:
+  - [ ] Multisig: sharded descriptor only (no legacy full-descriptor option)
+  - [ ] Singlesig: keep non-sharded flow
 - [ ] Sharded descriptor creation screens:
-  - [ ] Choose n and t (guardrails: t>=2, t<=n, sensible presets like 2-of-3, 3-of-5)
+  - [ ] Derive n and t from descriptor (read-only confirmation, no user choice)
   - [ ] Generate wallet_id + set_id; show confirmation
   - [ ] Display each shard as QR and/or print it per plate
   - [ ] Ensure shards are shown/printed one-at-a-time with explicit “Next share” action
@@ -66,6 +67,7 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
 ## 4) Recovery mode (SeedEtcher as reconstructor)
 - [ ] Add MainMenu entry: “Recover Descriptor”
 - [ ] Recovery flow:
+  - [ ] Accept plain descriptor QR (legacy/singlesig) and validate immediately (no shard threshold loop)
   - [ ] Scan share 1
   - [ ] Scan share 2..t (progress indicator)
   - [ ] Validate all shares (wallet_id/set_id/version/network)
@@ -73,6 +75,7 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [ ] Display reconstructed descriptor as QR (single or UR animated)
   - [ ] Optional: show descriptor text behind “hold-to-reveal”
   - [ ] “Done” exits and wipes RAM state
+  - [ ] If input is plain descriptor QR, route directly to export/confirm screen
 - [ ] No persistence:
   - [ ] Do not write descriptor/shares to disk
   - [ ] Do not log secret material
@@ -89,7 +92,7 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
 - [x] Unit: wrong-share detection (wallet_id mismatch, checksum fail)
 - [x] Unit: threshold behavior (need <t fails; >=t succeeds)
 - [ ] Integration: simulated scan flow reconstructs descriptor and renders QR
-- [ ] Regression: legacy “full descriptor on plate” remains available (if kept), but gated
+- [ ] Regression: multisig backup path offers sharded descriptor only
 
 ## 7) Docs
 - [ ] Update workflow doc: explain why descriptor is secret + sharded

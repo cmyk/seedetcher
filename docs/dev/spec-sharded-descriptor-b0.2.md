@@ -10,15 +10,20 @@ Goals:
 - No single share reveals the full descriptor.
 - Any `t` valid shares from the same set reconstruct the full descriptor.
 - Recovery is offline and in-RAM only.
+- For multisig backups in b0.2, descriptor sharding is mandatory.
 
 ## 1. Security policy
 
 - Mode: strict (Option A).
-- In sharded mode, no xpub-bearing full descriptor is printed on plates.
+- In b0.2 multisig mode, no xpub-bearing full descriptor is printed on plates.
 - Non-secret hints may be printed: wallet label, network, script type, `wallet_id`, share index, threshold.
 - Secret material:
   - canonical descriptor payload bytes
   - reconstructed descriptor string
+
+Backup-mode policy:
+- Multisig: sharded descriptor only (no legacy full-descriptor plate mode).
+- Singlesig: no descriptor sharding required.
 
 ## 2. Canonical descriptor payload
 
@@ -49,7 +54,8 @@ For one wallet backup operation:
 
 Constraints:
 - `2 <= t <= n`
-- b0.2 presets should prefer 2-of-3 and 3-of-5.
+- For multisig backups, `t` and `n` are derived directly from the parsed descriptor (`threshold`, key count).
+- User does not choose `t/n` in b0.2 multisig flow.
 
 ## 4. Shard container (logical fields)
 
@@ -104,6 +110,10 @@ On successful reconstruction:
 - Optional text reveal is gated by explicit user action.
 - On exit/done, wipe in-memory buffers best-effort.
 
+Recovery input compatibility:
+- Recovery accepts both sharded share QR input and plain descriptor QR input.
+- Plain descriptor QR bypasses threshold accumulation and proceeds directly to validate/export.
+
 ## 8. Logging and persistence rules
 
 Must not log:
@@ -125,3 +135,4 @@ Must not persist secret material to disk.
 - Mixed-set and mixed-wallet shares are rejected.
 - Corrupted share checksum is rejected.
 - Recovered descriptor imports in Sparrow and derives expected addresses.
+- Multisig backup flow does not offer legacy full-descriptor mode.
