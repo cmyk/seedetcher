@@ -22,16 +22,16 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [ ] Option B (pragmatic): allow “this plate’s xpub” only; still Shamir the full descriptor
 
 ## 1) Shard scheme + encoding
-- [ ] Pick scheme:
+- [x] Pick scheme:
   - [ ] Use SLIP-39 (Shamir) style encoding OR
   - [x] Use SSKR / GF(256) Shamir for arbitrary bytes
-- [ ] Define shard metadata (must be in every shard):
-  - [ ] wallet_id (short hash / fingerprint)
-  - [ ] group_id / set_id (random per wallet)
-  - [ ] threshold t, share index i, total n (or infer n)
-  - [ ] version + network (main/test) + script type (wsh/wpkh/tr) as non-secret hints
-  - [ ] checksum/MAC for integrity (detect typos + wrong shares)
-- [ ] Canonicalize descriptor before splitting (must be deterministic):
+- [x] Define shard metadata (must be in every shard):
+  - [x] wallet_id (short hash / fingerprint)
+  - [x] group_id / set_id (random per wallet)
+  - [x] threshold t, share index i, total n (or infer n)
+  - [x] version + network (main/test) + script type (wsh/wpkh/tr) as non-secret hints
+  - [x] checksum/MAC for integrity (detect typos + wrong shares)
+- [x] Canonicalize descriptor before splitting (must be deterministic):
   - [x] Normalize whitespace
   - [x] Ensure checksum handling is consistent (store with/without checksum; document it)
 - [ ] Decide maximum QR size / encoding (base32/base64/UR):
@@ -84,10 +84,10 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [ ] Confirm target wallets support it; otherwise keep single-QR as requirement
 
 ## 6) Tests
-- [ ] Unit: descriptor canonicalization is stable
-- [ ] Unit: split/reconstruct round-trip for many random descriptors
-- [ ] Unit: wrong-share detection (wallet_id mismatch, checksum fail)
-- [ ] Unit: threshold behavior (need <t fails; >=t succeeds)
+- [x] Unit: descriptor canonicalization is stable
+- [x] Unit: split/reconstruct round-trip for many random descriptors
+- [x] Unit: wrong-share detection (wallet_id mismatch, checksum fail)
+- [x] Unit: threshold behavior (need <t fails; >=t succeeds)
 - [ ] Integration: simulated scan flow reconstructs descriptor and renders QR
 - [ ] Regression: legacy “full descriptor on plate” remains available (if kept), but gated
 
