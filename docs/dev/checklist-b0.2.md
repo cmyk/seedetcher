@@ -40,11 +40,11 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [ ] If not: define UR/multipart strategy for shards and for reconstructed descriptor
 
 ## 2) UI/UX changes (controller)
-- [ ] Enforce descriptor policy in backup flow:
-  - [ ] Multisig: sharded descriptor only (no legacy full-descriptor option)
-  - [ ] Singlesig: keep non-sharded flow
+- [x] Enforce descriptor policy in backup flow:
+  - [x] Multisig: sharded descriptor only (no legacy full-descriptor option)
+  - [x] Singlesig: keep non-sharded flow
 - [ ] Sharded descriptor creation screens:
-  - [ ] Derive n and t from descriptor (read-only confirmation, no user choice)
+  - [x] Derive n and t from descriptor (read-only confirmation, no user choice)
   - [ ] Generate wallet_id + set_id; show confirmation
   - [ ] Display each shard as QR and/or print it per plate
   - [ ] Ensure shards are shown/printed one-at-a-time with explicit “Next share” action
@@ -65,17 +65,17 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
 - [ ] QA: printing pipeline supports shard QR (contrast, size, error correction)
 
 ## 4) Recovery mode (SeedEtcher as reconstructor)
-- [ ] Add MainMenu entry: “Recover Descriptor”
+- [x] Add MainMenu entry: “Recover Descriptor”
 - [ ] Recovery flow:
-  - [ ] Accept plain descriptor QR (legacy/singlesig) and validate immediately (no shard threshold loop)
-  - [ ] Scan share 1
-  - [ ] Scan share 2..t (progress indicator)
-  - [ ] Validate all shares (wallet_id/set_id/version/network)
-  - [ ] Reconstruct full descriptor (in RAM only)
-  - [ ] Display reconstructed descriptor as QR (single or UR animated)
+  - [x] Accept plain descriptor QR (legacy/singlesig) and validate immediately (no shard threshold loop)
+  - [x] Scan share 1
+  - [x] Scan share 2..t (progress indicator)
+  - [x] Validate all shares (wallet_id/set_id/version/network)
+  - [x] Reconstruct full descriptor (in RAM only)
+  - [x] Display reconstructed descriptor as QR (single or UR animated)
   - [ ] Optional: show descriptor text behind “hold-to-reveal”
   - [ ] “Done” exits and wipes RAM state
-  - [ ] If input is plain descriptor QR, route directly to export/confirm screen
+  - [x] If input is plain descriptor QR, route directly to export/confirm screen
 - [ ] No persistence:
   - [ ] Do not write descriptor/shares to disk
   - [ ] Do not log secret material

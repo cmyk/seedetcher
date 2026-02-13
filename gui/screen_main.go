@@ -21,7 +21,7 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	inp := new(InputTracker)
 	for {
 		for {
-			e, ok := inp.Next(ctx, Button1, Button3)
+			e, ok := inp.Next(ctx, Button1, Button2, Button3)
 			if !ok {
 				break
 			}
@@ -31,9 +31,16 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			switch e.Button {
 			case Button1:
 				return s // No-op back on root
+			case Button2:
+				return &SDCardGateScreen{
+					Theme: &descriptorTheme,
+					Next:  &RecoverDescriptorFlowScreen{Theme: &descriptorTheme},
+				}
 			case Button3:
-				// Enter backup/print flow as its own screen.
-				return &BackupFlowScreen{Theme: &singleTheme}
+				return &SDCardGateScreen{
+					Theme: &descriptorTheme,
+					Next:  &BackupFlowScreen{Theme: &descriptorTheme},
+				}
 			}
 		}
 		dims := ctx.Platform.DisplaySize()
@@ -50,6 +57,7 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		op.Position(ops, ops.End(), image.Pt(6, dims.Y-sz.Y-6))
 
 		layoutNavigation(ctx, inp, ops, &singleTheme, dims, []NavButton{
+			{Button: Button2, Style: StyleSecondary, Icon: assets.IconInfo},
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
 		}...)
 		ctx.Frame()
@@ -67,13 +75,13 @@ type BackupFlowScreen struct {
 	confirmKeyIdx int
 	printDesc     *urtypes.OutputDescriptor
 	label         string
-	removeWarn    *ConfirmWarningScreen
 }
 
 type backupStage int
 
 const (
 	stageDescriptor backupStage = iota
+	stageShardInfo
 	stageSeeds
 	stageConfirm
 	stageLabel
@@ -84,29 +92,6 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	th := s.Theme
 	if th == nil {
 		th = &descriptorTheme
-	}
-	// Require SD card removal before proceeding, matching the legacy main flow.
-	if !ctx.EmptySDSlot {
-		if s.removeWarn == nil {
-			s.removeWarn = &ConfirmWarningScreen{
-				Title: "Remove SD card",
-				Body:  "Remove SD card to continue.\n\nHold button to ignore this warning.",
-				Icon:  assets.IconRight,
-			}
-		}
-		dims := ctx.Platform.DisplaySize()
-		switch s.removeWarn.Layout(ctx, ops, th, dims) {
-		case ConfirmYes:
-			ctx.EmptySDSlot = true
-			s.removeWarn = nil
-		case ConfirmNo:
-			s.removeWarn = nil
-			return &MainMenuScreen{}
-		case ConfirmNone:
-			// keep showing
-		}
-		ctx.Frame()
-		return s
 	}
 	switch s.stage {
 	case stageDescriptor:
@@ -122,11 +107,29 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 				s.printDesc = desc
 				if desc == nil {
 					s.totalSeeds = 1
+					s.stage = stageSeeds
 				} else {
 					s.totalSeeds = len(desc.Keys)
+					s.stage = stageShardInfo
 				}
 				s.currentSeed = 1
 				s.printMnemonic = nil
+				return s
+			},
+		}
+	case stageShardInfo:
+		if s.desc == nil {
+			s.stage = stageSeeds
+			return s
+		}
+		return &ShardedPolicyScreen{
+			Theme:      th,
+			Descriptor: s.desc,
+			OnBack: func() Screen {
+				s.stage = stageDescriptor
+				return s
+			},
+			OnContinue: func() Screen {
 				s.stage = stageSeeds
 				return s
 			},
