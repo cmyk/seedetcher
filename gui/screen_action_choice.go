@@ -15,7 +15,7 @@ func (s *ActionChoiceScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	cs := &ChoiceScreen{
 		Title:   "Action",
 		Lead:    "Choose action",
-		Choices: []string{"BACKUP WALLET", "RECOVER DESCRIPTOR"},
+		Choices: []string{"BACKUP WALLET", "RECOVER DESCR."},
 	}
 	choice, ok := cs.Choose(ctx, ops, th)
 	if !ok {

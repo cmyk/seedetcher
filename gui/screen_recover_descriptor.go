@@ -7,14 +7,12 @@ import (
 	"strings"
 
 	"github.com/kortschak/qr"
-	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/gui/widget"
 	"seedetcher.com/logutil"
-	"seedetcher.com/nonstandard"
 )
 
 // SDCardGateScreen enforces SD-card removal before entering sensitive flows.
@@ -71,7 +69,6 @@ const (
 type RecoverDescriptorFlowScreen struct {
 	Theme         *Colors
 	stage         recoverStage
-	recovered     *urtypes.OutputDescriptor
 	recoveredUR   string
 	recoveredQR   image.Image
 	decodedShares map[uint8]shard.Share
@@ -96,7 +93,16 @@ func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	}
 }
 
-func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Colors) Screen {
+func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Colors) (next Screen) {
+	next = s
+	defer func() {
+		if r := recover(); r != nil {
+			logutil.DebugLog("recover flow panic: %v", r)
+			showError(ctx, ops, th, fmt.Errorf("recovery failed for scanned payload"))
+			next = s
+		}
+	}()
+
 	res, ok := (&ScanScreen{
 		Title: "Recover Descriptor",
 		Lead:  "Scan descriptor or share",
@@ -107,7 +113,8 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 
 	switch v := res.(type) {
 	case urtypes.OutputDescriptor:
-		return s.loadRecoveredDescriptor(ctx, v)
+		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
+		return s
 	case []byte:
 		raw := strings.TrimSpace(string(v))
 		up := strings.ToUpper(raw)
@@ -135,44 +142,26 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 				showError(ctx, ops, th, fmt.Errorf("combine shares failed: %v", err))
 				return s
 			}
-			desc, err := nonstandard.OutputDescriptor([]byte(descText))
-			if err != nil {
-				showError(ctx, ops, th, fmt.Errorf("parsed descriptor invalid: %v", err))
-				return s
-			}
-			return s.loadRecoveredDescriptor(ctx, desc)
+			// Keep reconstruction in-memory and show as text/QR payload only.
+			s.recoveredUR = descText
+			s.recoveredQR = renderQRImage(descText, 180)
+			s.stage = recoverStageExport
+			ctx.addToast("Descriptor recovered", 1200)
+			return s
 		}
-		// Plain descriptor text / legacy input path.
-		desc, err := nonstandard.OutputDescriptor([]byte(raw))
-		if err == nil {
-			return s.loadRecoveredDescriptor(ctx, desc)
-		}
-		showError(ctx, ops, th, fmt.Errorf("unsupported QR payload"))
+		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
 		return s
 	case string:
-		desc, err := nonstandard.OutputDescriptor([]byte(strings.TrimSpace(v)))
-		if err == nil {
-			return s.loadRecoveredDescriptor(ctx, desc)
-		}
-		showError(ctx, ops, th, fmt.Errorf("unsupported QR payload"))
+		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
 		return s
 	default:
-		showError(ctx, ops, th, fmt.Errorf("unsupported QR payload"))
+		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
 		return s
 	}
 }
 
-func (s *RecoverDescriptorFlowScreen) loadRecoveredDescriptor(ctx *Context, desc urtypes.OutputDescriptor) Screen {
-	s.recovered = &desc
-	s.recoveredUR = ur.Encode("crypto-output", desc.Encode(), 1, 1)
-	s.recoveredQR = renderQRImage(s.recoveredUR, 180)
-	s.stage = recoverStageExport
-	ctx.addToast("Descriptor recovered", 1200)
-	return s
-}
-
 func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *Colors) Screen {
-	if s.recovered == nil || s.recoveredQR == nil {
+	if strings.TrimSpace(s.recoveredUR) == "" || s.recoveredQR == nil {
 		s.stage = recoverStageScan
 		return s
 	}
@@ -193,7 +182,6 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 				return s
 			case Button2:
 				// Trash wipes recovery state and restarts scanning.
-				s.recovered = nil
 				s.recoveredUR = ""
 				s.recoveredQR = nil
 				s.decodedShares = make(map[uint8]shard.Share)

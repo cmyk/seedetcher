@@ -65,8 +65,8 @@ func (s *ShardedPolicyScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			desc.Threshold,
 			len(desc.Keys),
 		)
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.body, dims.X-16, th.Text, "%s", body)
-		op.Position(ops, ops.End(), image.Pt((dims.X-sz.X)/2, leadingSize+20))
+		sz := widget.Labelwf(ops.Begin(), ctx.Styles.body, dims.X-88, th.Text, "%s", body)
+		op.Position(ops, ops.End(), image.Pt((dims.X-sz.X)/2, leadingSize+34))
 
 		layoutNavigation(ctx, inp, ops, th, dims,
 			NavButton{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
