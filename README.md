@@ -23,7 +23,8 @@ A documented, repeatable workflow for chemically etching printed layouts onto st
 ---
 
 ## Features
-- Scan SeedQR / CompactSeedQR with Pi camera (libcamera + zbar).
+- b0.2 uses Shamir descriptor shares. No single plate contains the full descriptor. An m-of-n wallet uses `t=m` descriptor shares for recovery (e.g., a 2/3 wallet needs 2 descriptor shares).
+- The SeedEtcher controller has a descriptor recovery mode. TODO: cross-platform binaries will make this inheritance-friendly.
 - Manual mnemonic input with validation (`bip39`).
 - GUI-driven, with physical button navigation.
 - Outputs plates layouts with words + QR codes directly via serial USB

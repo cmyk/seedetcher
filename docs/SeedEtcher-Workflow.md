@@ -2,20 +2,25 @@
 
 A word of warning:\
 This process is involved. It’s not a machine that you flip on and off and be done with it.\
-But the idea was to create a process that doesn’t require a $400 machine. Most of the items you need you might already have. Also, you won’t create multisig backups very often.
+But the idea was to create a process that doesn’t require a $500 machine. Most of the items you need you might already have. Also, you won’t create multisig backups very often.
 So, investing a bit more time instead of money might be for you.
 This workflow has many unknown variables (like the laser printer or iron you use). I tried to rule out as many variables as possible. Still, your mileage may vary. Do not expect this to work on your first try.
+
+Here's a video of the process: https://youtu.be/O1ZcKIli9hk?si=wur4efhf88QD2LMY \
+The video DOES NOT REPLACE this guide. Please do read this guide for best results.
 
 What you need:
 
 - [ ] Raspi Pi Zero with screen and cam (same hardware as SeedSigner)
 - [ ] micro SD-Card
 - [ ] SeedEtcher Firmware
-- [ ] Laser Printer (air gapped), I only tested Brother HL series, avoid eco toners
+- [ ] Laser Printer (air gapped), I only tested Brother HL series, avoid eco toners, needs to understand PCL
 - [ ] Micro-USB male to USB-A female ([amazon](https://a.co/d/drLFF49))
 - [ ] Steel Plates, 10x10cm (make sure they are really flat). You can get them on ebay or amazon or cut your own.
 - [ ] Iron (for ironing clothes)
+- [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for better heat transfer from iron plate
 - [ ] Transfer Paper ([amazon](https://a.co/d/dmR4RUL))
+- [ ] Anti-etching pens ([amazon](https://a.co/d/5DnOhRR)), stop out ground e.g. from [Lascaux](https://lascaux.ch/en/products/brushes-printmaking-sets-various/lascaux-etching?shp3_product=1704) or [Charbonnel](https://intaglioprintmaker.com/product/charbonnel-lamour-black-covering-varnish/) or nail polish
 - [ ] Packaging or electrical tape
 - [ ] Acetone
 - [ ] Isopropyl Alcohol
@@ -23,8 +28,6 @@ What you need:
 Note: FeCl is for etching brass, copper and steel. It does not work for titanium! Etching titanium with hydrofluoric acid is not recommended unless you have a lab and know what you are doing.
 - [ ] Nitrile Gloves, eye protection
 - [ ] Baking Soda (sodium bicarbonate, NaHCO₃), NOT baking powder (contains acids + starch)
-\
-\
 
 ## Flash SeedEtcher to SD-card
 
@@ -47,9 +50,42 @@ Note: Sparrow just needs the xpubs of the seedphrases for this and not the actua
 Example: Create the 3 seedphrases for a 2/3 multisig on SeedSigner. Use sparrow to create the descriptor.
 Scan the descriptor from sparrow with SeedEtcher and then each seedphrase QR.
 
+## Descriptor Sharding (b0.2)
+
+For multisig backups, SeedEtcher now prints descriptor shares (`SE1:`) instead of a full descriptor on each plate.
+
+- No single plate reveals the full descriptor.
+- You must scan at least `t` descriptor shares to reconstruct and export the descriptor QR.
+- For this flow, descriptor-share threshold matches the wallet signing threshold: an m-of-n wallet uses t=m descriptor shares for recovery.
+- Singlesig backup flow is unchanged (no descriptor sharding required).
+- Recovery QR is sensitive: once reconstructed, treat it like wallet metadata and keep cameras/devices away.
+
+### Recovery (cold-room flow)
+
+1. Open `Recover Descr.` on SeedEtcher.
+2. Scan descriptor share QRs until threshold is reached.
+3. Choose `Single QR` or `Multipart UR`.
+4. Scan the exported descriptor QR with Sparrow.
+5. Verify first receive/change addresses before trusting the backup.
+
+### Troubleshooting
+
+- Mixed share sets:
+  - Error: `share set mismatch: different wallet or shard set`
+  - Cause: shares from different backups mixed together.
+- Checksum/invalid share:
+  - Error includes `invalid share QR` or `combine shares failed`.
+  - Cause: damaged/partial scan or wrong share.
+- QR too dense:
+  - Use `Multipart UR` on the 240x240 recovery screen.
+  - Current practical etched-plate target is `n <= 10`.
+- Sparrow red derivation/network fields:
+  - Ensure Sparrow is in Testnet mode for testnet descriptors.
+  - Keep xpub/tpub serialization and coin-type path consistent.
+
 ## Printing the Layouts
 
-Connect the dataport of the Pi Zero (it’s the one closer to the center) to the printer’s USB port. Connect a power source the the other port. SeedEtcher sends a bitmap via this USB serial connection using PCL that most laser printers understand.
+Connect the dataport of the Pi Zero (it’s the one closer to the center) to the printer’s USB port. Connect a power source to the other port. SeedEtcher sends a bitmap via this USB serial connection using PCL that most laser printers understand.
 Tip: Print the layout to paper first to check.
 Use the manual feed to print onto the transfer paper. Make sure it prints onto the glossy side!
 
@@ -78,7 +114,7 @@ Use a scotch brite, steel wool or 600 grit sand paper to thoroughly clean the pl
 Tape the transfer paper with the laser print face down onto the steel plate. Masking tape works well for this, since it is easily removable after transfer. Only tape one side, preferebly the side where there is just black (left or right side). A tiny strip is enough. ONLY use masking tape for holding the transfer paper, not for etch masking!
 
 Put 2 layers of a thin cotton rag (no texture!) over the plate.
-TIP: Get some 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)). Cut it to 10x10cm and use that instead of the cotton rag. Pressure and heat distribution is better with silicone.
+TIP (highly recommended!): Get some 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)). Cut it to 10x10cm and use that instead of the cotton rag. Pressure and heat distribution is better with silicone.
 
 Put the plate on a wood block on the floor. Some household paper folded 4 times underneath the plate helps to keep it from sliding. Your contraption for this should be stable, no wiggling.
 
@@ -101,7 +137,7 @@ Bake for 8 minutes.
 This reflows the toner and makes it stick even more to the plate.
 
 Repairs:\
-If the transfer wasn’t perfect you can do repairs by using nail polish and a small brush or anti-etching pens ([amazon](https://a.co/d/5DnOhRR))
+If the transfer wasn’t perfect you can do repairs by using nail polish or stop out ground and a small brush or anti-etching pens ([amazon](https://a.co/d/5DnOhRR))
 
 
 ## Etching
@@ -124,8 +160,9 @@ Tip: make a holding flap from tape, so you can hold the plate easily.
 3. Set timer to 5 minutes and start. Submerge the plate fully into the FeCl, ideally keep it vertical. Get the FeCl moving slightly by either moving the container or the plate. Don’t go crazy, a slight movement of the fluid every 30s is enough.
 4. Take the plate out, let it drip off, submerge it into the baking soda bowl. This neutralises the acidic ferric-chloride residue.
 5. Rinse the plate under running water (no hot water!). \
-You can use a very soft brush to clean the plate carefully from etching remains. Just be careful to not destroy the mask!
-6. Repeat steps 3–5 three to four times. This depends on how deep you want to etch and how well your toner mask is holding up.\
+You can use a very soft brush to clean the plate carefully from etching remains. Just be careful to not destroy the mask!\
+This prevents the neutralizer to mess with your ferric chloride.
+1. Repeat steps 3–5 three to four times. This depends on how deep you want to etch and how well your toner mask is holding up.\
 Important: Never put the plate back into the acid right after neutralizing it. The etchant solution will be slowly destroyed by this.\
 And obviously: Do not etch unattended!
 
@@ -153,7 +190,6 @@ Carefully sand the etched plate until the undesired etching errors are mostly go
 Do not keep failed prints or transfer sheets: destroy immediately!
 
 And lastly: Please do test your backup before calling it done.
-
 
 
 
