@@ -47,6 +47,38 @@ Note: Sparrow just needs the xpubs of the seedphrases for this and not the actua
 Example: Create the 3 seedphrases for a 2/3 multisig on SeedSigner. Use sparrow to create the descriptor.
 Scan the descriptor from sparrow with SeedEtcher and then each seedphrase QR.
 
+## Descriptor Sharding (b0.2)
+
+For multisig backups, SeedEtcher now prints descriptor shares (`SE1:`) instead of a full descriptor on each plate.
+
+- No single plate reveals the full descriptor.
+- You must scan at least `t` descriptor shares to reconstruct and export the descriptor QR.
+- Singlesig backup flow is unchanged (no descriptor sharding required).
+- Recovery QR is sensitive: once reconstructed, treat it like wallet metadata and keep cameras/devices away.
+
+### Recovery (cold-room flow)
+
+1. Open `Recover Descr.` on SeedEtcher.
+2. Scan descriptor share QRs until threshold is reached.
+3. Choose `Single QR` or `Multipart UR`.
+4. Scan the exported descriptor QR with Sparrow.
+5. Verify first receive/change addresses before trusting the backup.
+
+### Troubleshooting
+
+- Mixed share sets:
+  - Error: `share set mismatch: different wallet or shard set`
+  - Cause: shares from different backups mixed together.
+- Checksum/invalid share:
+  - Error includes `invalid share QR` or `combine shares failed`.
+  - Cause: damaged/partial scan or wrong share.
+- QR too dense:
+  - Use `Multipart UR` on the 240x240 recovery screen.
+  - Current practical etched-plate target is `n <= 10`.
+- Sparrow red derivation/network fields:
+  - Ensure Sparrow is in Testnet mode for testnet descriptors.
+  - Keep xpub/tpub serialization and coin-type path consistent.
+
 ## Printing the Layouts
 
 Connect the dataport of the Pi Zero (it’s the one closer to the center) to the printer’s USB port. Connect a power source the the other port. SeedEtcher sends a bitmap via this USB serial connection using PCL that most laser printers understand.
@@ -153,7 +185,6 @@ Carefully sand the etched plate until the undesired etching errors are mostly go
 Do not keep failed prints or transfer sheets: destroy immediately!
 
 And lastly: Please do test your backup before calling it done.
-
 
 
 

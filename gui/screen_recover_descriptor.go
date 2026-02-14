@@ -240,8 +240,8 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 				s.recoveredQR = nil
 				s.decodedShares = make(map[uint8]shard.Share)
 				s.stage = recoverStageScan
-				ctx.addToast("Recovery state deleted", 1200)
-				return s
+				ctx.addToast("Done - recovery state deleted", 1200)
+				return &MainMenuScreen{}
 			case Button3:
 				s.stage = recoverStageMode
 				return s

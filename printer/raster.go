@@ -1,6 +1,7 @@
 package printer
 
 import (
+	"encoding/hex"
 	"fmt"
 	"image"
 	"image/color"
@@ -51,6 +52,9 @@ var (
 	fontErrMedium      error
 	faceMuMedium       sync.Mutex
 	faceCacheMedium    = make(map[[2]float64]font.Face) // key: {sizePt, dpi}
+
+	shardSetMu     sync.RWMutex
+	forcedShardSet *[16]byte
 )
 
 // CreatePlateBitmaps renders seed/descriptor plates to 1-bit bitmaps using the existing layout.
@@ -236,6 +240,12 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	if len(qrContent) == 0 {
 		return nil, fmt.Errorf("empty descriptor QR content")
 	}
+	var shMeta *shard.Share
+	if strings.HasPrefix(strings.ToUpper(qrContent), shard.Prefix) {
+		if sh, err := shard.Decode(strings.ToUpper(qrContent)); err == nil {
+			shMeta = &sh
+		}
+	}
 	qrCode, err := qr.Encode(qrContent, descriptorQRECC)
 	if err != nil {
 		return nil, err
@@ -259,6 +269,18 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	qrX := (plateSizeMM - qrSize) / 2
 	qrY := textBottom + qrGap
 	drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
+
+	if shMeta != nil {
+		wid := hex.EncodeToString(shMeta.WalletID[:])
+		sid := hex.EncodeToString(shMeta.SetID[:4])
+		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", strings.ToUpper(wid), strings.ToUpper(sid), shMeta.Index, shMeta.Threshold)
+		drawText(canvas, smallFace, dpi, 5.0, plateSizeMM-9.0, meta)
+		warn := "Descriptor sharded - need t shares"
+		drawText(canvas, smallFace, dpi, 5.0, plateSizeMM-5.0, warn)
+	}
+	title := walletLabel()
+	titleFace := loadFaceMedium(6, dpi)
+	drawCenteredText(canvas, titleFace, dpi, plateSizeMM-1.5, title)
 
 	qrRegions := []image.Rectangle{
 		image.Rect(mmToPx(qrX, dpi), mmToPx(qrY, dpi), mmToPx(qrX+qrSize, dpi), mmToPx(qrY+qrSize, dpi)),
@@ -285,10 +307,14 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 	if len(payload) == 0 {
 		return nil, fmt.Errorf("empty descriptor payload")
 	}
-	shares, err := shard.SplitPayloadBytes(payload, shard.SplitOptions{
+	opts := shard.SplitOptions{
 		Threshold: uint8(threshold),
 		Total:     uint8(totalShares),
-	})
+	}
+	if setID, ok := forcedDescriptorShardSetID(); ok {
+		opts.SetID = setID
+	}
+	shares, err := shard.SplitPayloadBytes(payload, opts)
 	if err != nil {
 		return nil, fmt.Errorf("split descriptor payload: %w", err)
 	}
@@ -301,6 +327,28 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 		out[i] = enc
 	}
 	return out, nil
+}
+
+// SetDescriptorShardSetID forces the descriptor shard set_id used during plate
+// generation. Pass nil to clear and return to random per-job set IDs.
+func SetDescriptorShardSetID(id *[16]byte) {
+	shardSetMu.Lock()
+	defer shardSetMu.Unlock()
+	if id == nil {
+		forcedShardSet = nil
+		return
+	}
+	v := *id
+	forcedShardSet = &v
+}
+
+func forcedDescriptorShardSetID() ([16]byte, bool) {
+	shardSetMu.RLock()
+	defer shardSetMu.RUnlock()
+	if forcedShardSet == nil {
+		return [16]byte{}, false
+	}
+	return *forcedShardSet, true
 }
 
 // SavePNG writes a paletted image to disk.

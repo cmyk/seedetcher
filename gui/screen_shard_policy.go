@@ -1,10 +1,13 @@
 package gui
 
 import (
+	"encoding/hex"
 	"fmt"
 	"image"
+	"strings"
 
 	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/gui/widget"
@@ -15,6 +18,8 @@ import (
 type ShardedPolicyScreen struct {
 	Theme      *Colors
 	Descriptor *urtypes.OutputDescriptor
+	SetID      [16]byte
+	Shares     []shard.Share
 	OnBack     func() Screen
 	OnContinue func() Screen
 }
@@ -60,11 +65,12 @@ func (s *ShardedPolicyScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		op.ColorOp(ops, th.Background)
 		layoutTitle(ctx, ops, dims.X, th.Text, "Sharding")
 
-		body := fmt.Sprintf(
-			"Using descriptor values:\n\nt = %d\nn = %d",
-			desc.Threshold,
-			len(desc.Keys),
-		)
+		walletID := "N/A"
+		setID := strings.ToUpper(hex.EncodeToString(s.SetID[:4]))
+		if len(s.Shares) > 0 {
+			walletID = strings.ToUpper(hex.EncodeToString(s.Shares[0].WalletID[:]))
+		}
+		body := fmt.Sprintf("Using descriptor values:\n\nt = %d\nn = %d\nwallet_id = %s\nset_id = %s", desc.Threshold, len(desc.Keys), walletID, setID)
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.body, dims.X-88, th.Text, "%s", body)
 		op.Position(ops, ops.End(), image.Pt((dims.X-sz.X)/2, leadingSize+34))
 

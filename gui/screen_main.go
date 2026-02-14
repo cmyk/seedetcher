@@ -1,11 +1,13 @@
 package gui
 
 import (
+	"crypto/rand"
 	"fmt"
 	"image"
 
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
+	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/gui/widget"
@@ -69,6 +71,9 @@ type BackupFlowScreen struct {
 	confirmKeyIdx int
 	printDesc     *urtypes.OutputDescriptor
 	label         string
+	shardSetID    [16]byte
+	shardShares   []shard.Share
+	shardQRCodes  []string
 }
 
 type backupStage int
@@ -79,6 +84,7 @@ const (
 	stageSeeds
 	stageConfirm
 	stageLabel
+	stageShardPreview
 	stagePrint
 )
 
@@ -104,6 +110,9 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 					s.stage = stageSeeds
 				} else {
 					s.totalSeeds = len(desc.Keys)
+					s.shardSetID = [16]byte{}
+					_, _ = rand.Read(s.shardSetID[:])
+					s.shardShares, s.shardQRCodes = buildShardPreview(desc, s.shardSetID)
 					s.stage = stageShardInfo
 				}
 				s.currentSeed = 1
@@ -119,6 +128,8 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		return &ShardedPolicyScreen{
 			Theme:      th,
 			Descriptor: s.desc,
+			SetID:      s.shardSetID,
+			Shares:     s.shardShares,
 			OnBack: func() Screen {
 				s.stage = stageDescriptor
 				return s
@@ -211,6 +222,24 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			},
 			OnDone: func(label string) Screen {
 				s.label = label
+				if s.desc != nil {
+					s.stage = stageShardPreview
+				} else {
+					s.stage = stagePrint
+				}
+				return s
+			},
+		}
+	case stageShardPreview:
+		return &ShardPreviewScreen{
+			Theme:  th,
+			Shares: s.shardShares,
+			QRs:    s.shardQRCodes,
+			OnBack: func() Screen {
+				s.stage = stageLabel
+				return s
+			},
+			OnDone: func() Screen {
 				s.stage = stagePrint
 				return s
 			},
@@ -230,13 +259,18 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			}
 			job = FromDescriptor(desc, ctx.Keystores[desc.Keys[0].MasterFingerprint], s.confirmKeyIdx, label)
 		}
+		if s.desc != nil {
+			printer.SetDescriptorShardSetID(&s.shardSetID)
+		}
 		return &PrintFlowScreen{
 			Theme: th,
 			Job:   job,
 			OnSuccess: func() Screen {
+				printer.SetDescriptorShardSetID(nil)
 				return &MainMenuScreen{}
 			},
 			OnRetry: func() Screen {
+				printer.SetDescriptorShardSetID(nil)
 				s.stage = stageConfirm
 				return s
 			},

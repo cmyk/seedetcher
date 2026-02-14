@@ -6,6 +6,7 @@
 - Interop validation: recovered animated multipart `UR:CRYPTO-OUTPUT` descriptor was verified importable in Sparrow with a `7/10` test wallet.
 - Added larger multisig fixtures for stress testing: `-w multisig-3of5` and `-w multisig-7of10` in `testutils`.
 - Practical guidance: current etched-plate reliability target is `n <= 10` shares pending additional physical QA.
+- Release/migration note for b0.2: multisig backups now print sharded descriptor shares only (`SE1:`); full descriptor plate mode is removed in strict policy. Recovery requires scanning at least `t` shares and exporting descriptor QR to coordinator.
 - Output unification: canonical plate/page rendering is now bitmap-based; both PDF and PCL are serialized from the same composed raster pages to keep host test artifacts aligned with printer jobs.
 - CLI now renders once and fans out outputs from the same page set (PDF always, optional PNG plates, optional PCL via `-pcl-out`).
 - Controller print path now uses the canonical bitmap pipeline for both host-mode PCL and non-PCL fallback PDF serialization.
