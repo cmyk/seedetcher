@@ -1,59 +1,46 @@
 # SeedEtcher b0.3 Checklist
 
 ## Goal
-- Deliver a standalone, cross-platform, offline recovery tool for descriptor shares (`SE1:`), suitable for inheritance and break-glass recovery without Pi hardware.
+- Deliver the new etch-optimized plate layout with the custom rounded font and circular QR module rendering for improved transfer/etch reliability.
 
 ## Scope
 - In scope:
-  - Host CLI to recover descriptor payload from `SE1:` shares.
-  - Cross-platform builds (macOS, Linux, Windows).
-  - Offline-first docs and reproducible release artifacts.
+  - New plate typography/layout using custom etching font.
+  - Circular QR module rendering on plate outputs.
+  - Keep descriptor/seed content and share semantics unchanged.
+  - Validate print readability and recovery scan reliability.
 - Out of scope:
-  - Webcam/camera scanning.
-  - Network services.
-  - Browser app as canonical recovery path.
+  - New sharding formats.
+  - Recovery CLI/break-glass tooling (moved to b0.4).
 
 ## Milestones
 
-### 1) CLI recovery command
-- [ ] Add `cmd/recover/main.go`.
-- [ ] Accept share input via file and stdin.
-- [ ] Parse and validate `SE1:` shares.
-- [ ] Reconstruct payload via `descriptor/shard`.
-- [ ] Output:
-  - [ ] descriptor text
-  - [ ] `UR:CRYPTO-OUTPUT`
-- [ ] Add clear, deterministic error messages for:
-  - [ ] duplicate share index
-  - [ ] mixed set IDs
-  - [ ] insufficient shares
-  - [ ] malformed share payload
+### 1) Font integration and layout update
+- [ ] Add/integrate custom etching font asset(s).
+- [ ] Wire font into plate renderer(s) used for print output.
+- [ ] Increase type size and rebalance spacing for available plate area.
+- [ ] Ensure no clipping at plate edges across A4/Letter page layouts.
+- [ ] Keep bitmap output canonical and match host-mode print path.
 
-### 2) Test vectors and verification
-- [ ] Add roundtrip tests for CLI using known fixture shares.
-- [ ] Add negative tests (bad/mixed/incomplete share sets).
-- [ ] Verify CLI output matches controller recovery output for same inputs.
+### 2) Circular QR rendering on plates
+- [ ] Implement circular module rendering for plate QR generation.
+- [ ] Preserve finder/alignment behavior needed for scanner reliability.
+- [ ] Keep quiet zone and module spacing standards-compliant.
+- [ ] Verify mirrored/inverted print flags still behave correctly.
 
-### 3) Build and release artifacts
-- [ ] Add `scripts/build-recover-cli.sh`.
-- [ ] Build targets:
-  - [ ] `darwin/arm64`
-  - [ ] `darwin/amd64`
-  - [ ] `linux/amd64`
-  - [ ] `linux/arm64`
-  - [ ] `windows/amd64`
-- [ ] Use `CGO_ENABLED=0` for portable binaries.
-- [ ] Generate `SHA256SUMS` for all artifacts.
+### 3) Output parity and regression checks
+- [ ] Ensure captured print output matches intended plate geometry.
+- [ ] Verify singlesig and multisig plate outputs against current fixtures.
+- [ ] Confirm descriptor-share QR decode/recover still works end-to-end.
+- [ ] Confirm no controller crashes/regressions in print/recover flows.
 
-### 4) Documentation
-- [ ] Add `docs/dev/recover-cli.md`:
-  - [ ] offline usage workflow
-  - [ ] sample commands
-  - [ ] inheritance/break-glass instructions
-  - [ ] compatibility limits (`SE1:` is SeedEtcher-native)
-- [ ] Update top-level docs index to link b0.3 checklist and recovery CLI doc.
+### 4) Test artifacts and docs
+- [ ] Add visual reference fixtures for new layout (seed + descriptor plates).
+- [ ] Add manual QA checklist for scan/readability on real laser prints.
+- [ ] Update docs (`docs/dev/gui.md` or dedicated layout doc) with new design constraints.
+- [ ] Document known scanner limits/tradeoffs for circular QR modules.
 
-### 5) Stretch goals (if time allows)
-- [ ] Optional output file formats (`.txt`, `.json`).
-- [ ] Optional strict mode requiring exact threshold count.
-- [ ] Optional share order normalization output for auditing.
+### 5) Release prep
+- [ ] Validate at least one full physical run: print -> transfer mask -> recovery scan.
+- [ ] Record printer model(s), toner settings, and DPI used for acceptance.
+- [ ] Freeze b0.3 layout constants after acceptance testing.
