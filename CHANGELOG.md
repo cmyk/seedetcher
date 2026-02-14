@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- (no changes yet)
+
+## Release v0.2.0-beta.1
 - Sharded descriptor recovery/export: added fullscreen display-mode chooser (`Single QR` vs animated `Multipart UR`) with overlay-free viewer; recovery now hardens non-`SE1` inputs with explicit user-facing errors instead of crashes.
 - Logging hardening: removed descriptor-content debug logging in QR scan path to avoid leaking descriptor payload details in logs.
 - Interop validation: recovered animated multipart `UR:CRYPTO-OUTPUT` descriptor was verified importable in Sparrow with a `7/10` test wallet.
