@@ -36,7 +36,7 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [x] Normalize whitespace
   - [x] Ensure checksum handling is consistent (store with/without checksum; document it)
 - [ ] Decide maximum QR size / encoding (base32/base64/UR):
-  - [ ] Confirm shard fits as single QR for typical multisig descriptors
+  - [x] Confirm shard fits as single QR for typical multisig descriptors (validated with `multisig-3of5` and `multisig-7of10`; practical cap currently treated as `n <= 10` for etch reliability)
   - [x] If not: define UR/multipart strategy for shards and for reconstructed descriptor
 
 ## 2) UI/UX changes (controller)
@@ -81,10 +81,10 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [x] Do not log secret material
 
 ## 5) Interop targets (Sparrow etc.)
-- [ ] Verify Sparrow import path for descriptor QR (what exact payload it expects)
-- [ ] Ensure QR payload matches standard descriptor format Sparrow accepts
+- [x] Verify Sparrow import path for descriptor QR (what exact payload it expects)
+- [x] Ensure QR payload matches standard descriptor format Sparrow accepts
 - [ ] If multipart/UR is needed:
-  - [ ] Confirm target wallets support it; otherwise keep single-QR as requirement
+  - [x] Confirm target wallets support it; otherwise keep single-QR as requirement
 
 ## 6) Tests
 - [x] Unit: descriptor canonicalization is stable
@@ -104,7 +104,8 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
 
 ## 8) Release gates
 - [ ] End-to-end hardware test:
-  - [ ] Create sharded wallet -> print plates -> recover descriptor -> import in Sparrow -> derive addresses match
+  - [x] Create sharded wallet -> print plates -> recover descriptor -> import in Sparrow
+  - [ ] Derive addresses match
 - [x] test-lite clean
 - [ ] No secret material in logs (grep quick check)
 - [ ] Tag + signed release notes mention descriptor hardening + migration notes
