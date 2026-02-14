@@ -23,8 +23,10 @@
 - [ ] Keep bitmap output canonical and match host-mode print path.
 
 ### 2) Circular QR rendering on plates
-- [ ] Implement circular module rendering for plate QR generation.
-- [ ] Preserve finder/alignment behavior needed for scanner reliability.
+- [ ] Implement hybrid QR rendering for plate output:
+  - [ ] data modules rendered as circular dots
+  - [ ] structural modules remain square (finder/alignment/timing and other required islands)
+- [ ] Preserve scanner reliability while using circular data modules.
 - [ ] Keep quiet zone and module spacing standards-compliant.
 - [ ] Verify mirrored/inverted print flags still behave correctly.
 
@@ -38,7 +40,7 @@
 - [ ] Add visual reference fixtures for new layout (seed + descriptor plates).
 - [ ] Add manual QA checklist for scan/readability on real laser prints.
 - [ ] Update docs (`docs/dev/gui.md` or dedicated layout doc) with new design constraints.
-- [ ] Document known scanner limits/tradeoffs for circular QR modules.
+- [ ] Document known scanner limits/tradeoffs for hybrid QR rendering (square islands + circular data dots).
 
 ### 5) Release prep
 - [ ] Validate at least one full physical run: print -> transfer mask -> recovery scan.

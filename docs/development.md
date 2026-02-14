@@ -87,7 +87,7 @@ sudo systemctl status nix-daemon
 sudo nvim /etc/nix/nix.conf
 >> 
 extra-experimental-features = nix-command flakes
-trusted-users = root cmyk
+trusted-users = root <user>
 keep-outputs = true
 keep-derivations = true   
 auto-optimise-store = true
@@ -181,7 +181,7 @@ go run cmd/cli/main.go -w multisig \
   go build -ldflags "-X seedetcher.com/version.Build=$(git describe --tags --dirty --always)"
   ```
   `version.String()` prefers `Build` when set, otherwise falls back to `Tag`.
-- The plate renderer uses `version.String()` (replaces the old hardcoded `V1`).
+- The plate renderer uses `version.String()`.
 
 ## Shell Commands on Zero
 
