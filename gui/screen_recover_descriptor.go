@@ -160,6 +160,10 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 				showError(ctx, ops, th, fmt.Errorf("invalid share QR: %v", err))
 				return s
 			}
+			if base, ok := firstDecodedShare(s.decodedShares); ok && !sharesCompatible(base, sh) {
+				showError(ctx, ops, th, fmt.Errorf("share set mismatch: different wallet or shard set"))
+				return s
+			}
 			if _, exists := s.decodedShares[sh.Index]; exists {
 				showError(ctx, ops, th, fmt.Errorf("share %d already scanned", sh.Index))
 				return s
@@ -387,6 +391,23 @@ func (s *RecoverDescriptorFlowScreen) scanLead() string {
 		parts = append(parts, fmt.Sprintf("#%d", id))
 	}
 	return fmt.Sprintf("Captured %d/%d: %s", len(ids), threshold, strings.Join(parts, " "))
+}
+
+func firstDecodedShare(m map[uint8]shard.Share) (shard.Share, bool) {
+	for _, sh := range m {
+		return sh, true
+	}
+	return shard.Share{}, false
+}
+
+func sharesCompatible(a, b shard.Share) bool {
+	return a.Version == b.Version &&
+		a.SetID == b.SetID &&
+		a.WalletID == b.WalletID &&
+		a.Network == b.Network &&
+		a.Script == b.Script &&
+		a.Threshold == b.Threshold &&
+		a.Total == b.Total
 }
 
 func renderQRImage(content string, size int) image.Image {
