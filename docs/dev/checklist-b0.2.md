@@ -107,5 +107,5 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [x] Create sharded wallet -> print plates -> recover descriptor -> import in Sparrow
   - [ ] Derive addresses match
 - [x] test-lite clean
-- [ ] No secret material in logs (grep quick check)
+- [x] No secret material in logs (grep quick check; descriptor-content debug log removed from scan path)
 - [ ] Tag + signed release notes mention descriptor hardening + migration notes

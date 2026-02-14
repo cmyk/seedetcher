@@ -2,6 +2,7 @@
 
 ## Unreleased
 - Sharded descriptor recovery/export: added fullscreen display-mode chooser (`Single QR` vs animated `Multipart UR`) with overlay-free viewer; recovery now hardens non-`SE1` inputs with explicit user-facing errors instead of crashes.
+- Logging hardening: removed descriptor-content debug logging in QR scan path to avoid leaking descriptor payload details in logs.
 - Interop validation: recovered animated multipart `UR:CRYPTO-OUTPUT` descriptor was verified importable in Sparrow with a `7/10` test wallet.
 - Added larger multisig fixtures for stress testing: `-w multisig-3of5` and `-w multisig-7of10` in `testutils`.
 - Practical guidance: current etched-plate reliability target is `n <= 10` shares pending additional physical QA.
