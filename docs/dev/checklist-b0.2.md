@@ -37,7 +37,7 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [x] Ensure checksum handling is consistent (store with/without checksum; document it)
 - [ ] Decide maximum QR size / encoding (base32/base64/UR):
   - [ ] Confirm shard fits as single QR for typical multisig descriptors
-  - [ ] If not: define UR/multipart strategy for shards and for reconstructed descriptor
+  - [x] If not: define UR/multipart strategy for shards and for reconstructed descriptor
 
 ## 2) UI/UX changes (controller)
 - [x] Enforce descriptor policy in backup flow:
@@ -49,17 +49,17 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [ ] Display each shard as QR and/or print it per plate
   - [ ] Ensure shards are shown/printed one-at-a-time with explicit “Next share” action
 - [ ] Validation:
-  - [ ] Refuse to mix shards with different wallet_id/set_id
-  - [ ] Refuse wrong threshold / version mismatch
-  - [ ] Detect invalid checksum/MAC
+  - [x] Refuse to mix shards with different wallet_id/set_id
+  - [x] Refuse wrong threshold / version mismatch
+  - [x] Detect invalid checksum/MAC
 
 ## 3) Plate / print layout changes
 - [ ] Define what each plate contains (recommended):
   - [ ] Seed phrase / key material for that plate (existing)
-  - [ ] Descriptor shard QR for that plate (new)
+  - [x] Descriptor shard QR for that plate (new)
   - [ ] Wallet label (non-secret)
   - [ ] wallet_id + share index i + threshold t (human-readable)
-- [ ] Remove full descriptor from plate layout when sharded mode is used
+- [x] Remove full descriptor from plate layout when sharded mode is used
 - [ ] Add clear on-plate warning text:
   - [ ] “Descriptor is sharded — need t shares to recover”
 - [ ] QA: printing pipeline supports shard QR (contrast, size, error correction)
@@ -67,7 +67,7 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
 ## 4) Recovery mode (SeedEtcher as reconstructor)
 - [x] Add MainMenu entry: “Recover Descriptor”
 - [ ] Recovery flow:
-  - [x] Accept plain descriptor QR (legacy/singlesig) and validate immediately (no shard threshold loop)
+  - [x] Reject plain descriptor QR with explicit message in shard recovery flow
   - [x] Scan share 1
   - [x] Scan share 2..t (progress indicator)
   - [x] Validate all shares (wallet_id/set_id/version/network)
@@ -75,10 +75,10 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
   - [x] Display reconstructed descriptor as QR (single or UR animated)
   - [ ] Optional: show descriptor text behind “hold-to-reveal”
   - [ ] “Done” exits and wipes RAM state
-  - [x] If input is plain descriptor QR, route directly to export/confirm screen
+  - [x] If input is plain descriptor QR, show non-sharded warning and continue scanning
 - [ ] No persistence:
-  - [ ] Do not write descriptor/shares to disk
-  - [ ] Do not log secret material
+  - [x] Do not write descriptor/shares to disk
+  - [x] Do not log secret material
 
 ## 5) Interop targets (Sparrow etc.)
 - [ ] Verify Sparrow import path for descriptor QR (what exact payload it expects)
@@ -105,6 +105,6 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
 ## 8) Release gates
 - [ ] End-to-end hardware test:
   - [ ] Create sharded wallet -> print plates -> recover descriptor -> import in Sparrow -> derive addresses match
-- [ ] test-lite clean
+- [x] test-lite clean
 - [ ] No secret material in logs (grep quick check)
 - [ ] Tag + signed release notes mention descriptor hardening + migration notes
