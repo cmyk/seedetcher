@@ -99,7 +99,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			Theme: th,
 			OnDone: func(desc *urtypes.OutputDescriptor, ok bool) Screen {
 				if !ok {
-					return &MainMenuScreen{}
+					return &ActionChoiceScreen{Theme: &singleTheme}
 				}
 				s.desc = desc
 				ctx.Keystores = make(map[uint32]bip39.Mnemonic)

@@ -24,10 +24,10 @@ func (s *DescriptorInputScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		return s.OnDone(desc, ok)
 	}
 	if !ok {
-		return &MainMenuScreen{}
+		return &ActionChoiceScreen{Theme: th}
 	}
 	// Default: go back to menu.
-	return &MainMenuScreen{}
+	return &ActionChoiceScreen{Theme: th}
 }
 
 func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors) (*urtypes.OutputDescriptor, bool) {
