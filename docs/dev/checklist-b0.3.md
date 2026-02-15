@@ -40,9 +40,11 @@
 - [ ] Add visual reference fixtures for new layout (seed + descriptor plates).
 - [ ] Add manual QA checklist for scan/readability on real laser prints.
 - [ ] Update docs (`docs/dev/gui.md` or dedicated layout doc) with new design constraints.
+- [ ] Update CHANGELOG.md
 - [ ] Document known scanner limits/tradeoffs for hybrid QR rendering (square islands + circular data dots).
 
 ### 5) Release prep
 - [ ] Validate at least one full physical run: print -> transfer mask -> recovery scan.
 - [ ] Record printer model(s), toner settings, and DPI used for acceptance.
 - [ ] Freeze b0.3 layout constants after acceptance testing.
+- [ ] Bumb version
