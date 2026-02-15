@@ -21,6 +21,7 @@ import (
 	"golang.org/x/image/math/fixed"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
+	"seedetcher.com/descriptor/legacy"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/seedqr"
 	"seedetcher.com/version"
@@ -269,19 +270,12 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	qrX := (plateSizeMM - qrSize) / 2
 	qrY := textBottom + qrGap
 	drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
-
 	if shMeta != nil {
-		wid := hex.EncodeToString(shMeta.WalletID[:])
-		sid := hex.EncodeToString(shMeta.SetID[:4])
-		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", strings.ToUpper(wid), strings.ToUpper(sid), shMeta.Index, shMeta.Threshold)
-		drawText(canvas, smallFace, dpi, 5.0, plateSizeMM-9.0, meta)
-		warn := "Descriptor sharded - need t shares"
-		drawText(canvas, smallFace, dpi, 5.0, plateSizeMM-5.0, warn)
+		wid := strings.ToUpper(hex.EncodeToString(shMeta.WalletID[:4]))
+		sid := strings.ToUpper(hex.EncodeToString(shMeta.SetID[:4]))
+		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, shMeta.Index, shMeta.Threshold)
+		drawRotatedSideMeta(canvas, smallFace, dpi, qrX, qrY, qrSize, meta, blackIdx)
 	}
-	title := walletLabel()
-	titleFace := loadFaceMedium(6, dpi)
-	drawCenteredText(canvas, titleFace, dpi, plateSizeMM-1.5, title)
-
 	qrRegions := []image.Rectangle{
 		image.Rect(mmToPx(qrX, dpi), mmToPx(qrY, dpi), mmToPx(qrX+qrSize, dpi), mmToPx(qrY+qrSize, dpi)),
 	}
@@ -303,7 +297,8 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 	if threshold < 2 || threshold > totalShares {
 		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
 	}
-	payload := desc.Encode()
+	normalized := legacy.NormalizeDescriptorForLegacyUR(*desc)
+	payload := normalized.Encode()
 	if len(payload) == 0 {
 		return nil, fmt.Errorf("empty descriptor payload")
 	}
@@ -449,6 +444,102 @@ func drawCenteredText(img *image.Paletted, face font.Face, dpi, yMm float64, tex
 		Y: fixed.I(int(math.Round(mmToPxFloat(yMm, dpi)))),
 	}
 	d.DrawString(text)
+}
+
+func drawRotatedSideMeta(img *image.Paletted, face font.Face, dpi, qrX, qrY, qrSize float64, text string, idx uint8) {
+	if text == "" {
+		return
+	}
+	const (
+		sideMarginMM = 1.2
+		qrGapMM      = 1.2
+	)
+	rotWmm, rotHmm := rotatedTextSizeMM(face, dpi, text)
+	if rotWmm <= 0 || rotHmm <= 0 {
+		return
+	}
+	leftAvail := (qrX - qrGapMM) - sideMarginMM
+	rightAvail := (plateSizeMM - sideMarginMM) - (qrX + qrSize + qrGapMM)
+	if rotWmm > leftAvail && rotWmm > rightAvail {
+		return // no safe strip wide enough; never overlap QR
+	}
+	xMm := sideMarginMM
+	if rightAvail >= rotWmm && rightAvail >= leftAvail {
+		xMm = qrX + qrSize + qrGapMM
+	} else {
+		xMm = sideMarginMM + (leftAvail-rotWmm)/2
+	}
+	yMm := qrY + (qrSize-rotHmm)/2
+	if yMm < sideMarginMM {
+		yMm = sideMarginMM
+	}
+	maxY := plateSizeMM - sideMarginMM - rotHmm
+	if yMm > maxY {
+		yMm = maxY
+	}
+	drawTextRotatedCW90(img, face, dpi, xMm, yMm, text, idx)
+}
+
+func rotatedTextSizeMM(face font.Face, dpi float64, text string) (wMm, hMm float64) {
+	if text == "" {
+		return 0, 0
+	}
+	d := font.Drawer{Face: face}
+	wPx := d.MeasureString(text).Ceil()
+	if wPx <= 0 {
+		return 0, 0
+	}
+	m := face.Metrics()
+	hPx := (m.Ascent + m.Descent).Ceil()
+	if hPx <= 0 {
+		return 0, 0
+	}
+	// Rotated CW 90: width/height swap.
+	return float64(hPx) * 25.4 / dpi, float64(wPx) * 25.4 / dpi
+}
+
+func drawTextRotatedCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8) {
+	d := font.Drawer{Face: face}
+	srcW := d.MeasureString(text).Ceil()
+	if srcW <= 0 {
+		return
+	}
+	metrics := face.Metrics()
+	srcH := (metrics.Ascent + metrics.Descent).Ceil()
+	if srcH <= 0 {
+		return
+	}
+
+	src := image.NewAlpha(image.Rect(0, 0, srcW, srcH))
+	d = font.Drawer{
+		Dst:  src,
+		Src:  image.NewUniform(color.Alpha{A: 0xff}),
+		Face: face,
+		Dot: fixed.Point26_6{
+			X: 0,
+			Y: fixed.I(metrics.Ascent.Ceil()),
+		},
+	}
+	d.DrawString(text)
+
+	x0 := mmToPx(xMm, dpi)
+	y0 := mmToPx(yMm, dpi)
+	b := img.Bounds()
+	for sy := 0; sy < srcH; sy++ {
+		for sx := 0; sx < srcW; sx++ {
+			if src.AlphaAt(sx, sy).A == 0 {
+				continue
+			}
+			dx := srcH - 1 - sy
+			dy := sx
+			x := x0 + dx
+			y := y0 + dy
+			if x < b.Min.X || x >= b.Max.X || y < b.Min.Y || y >= b.Max.Y {
+				continue
+			}
+			img.Pix[y*img.Stride+x] = idx
+		}
+	}
 }
 
 func drawQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float64, idx uint8) {

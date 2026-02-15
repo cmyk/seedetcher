@@ -5,12 +5,14 @@ import (
 	"image"
 	"image/color"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/kortschak/qr"
 	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/descriptor/legacy"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
@@ -73,8 +75,9 @@ const (
 type recoverDisplayMode int
 
 const (
-	recoverDisplaySingle recoverDisplayMode = iota
-	recoverDisplayMultipart
+	recoverDisplayDescriptor recoverDisplayMode = iota
+	recoverDisplayURSingle
+	recoverDisplayURMultipart
 )
 
 // RecoverDescriptorFlowScreen handles descriptor recovery from sharded shares
@@ -83,6 +86,7 @@ type RecoverDescriptorFlowScreen struct {
 	Theme            *Colors
 	stage            recoverStage
 	recoveredUR      string
+	recoveredText    string
 	recoveredPayload []byte
 	recoveredQR      image.Image
 	decodedShares    map[uint8]shard.Share
@@ -101,6 +105,7 @@ func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			showError(ctx, ops, &singleTheme, fmt.Errorf("recovery failed for scanned payload"))
 			s.stage = recoverStageScan
 			s.recoveredUR = ""
+			s.recoveredText = ""
 			s.recoveredPayload = nil
 			s.recoveredQR = nil
 			s.decodedShares = make(map[uint8]shard.Share)
@@ -190,6 +195,7 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 				return s
 			}
 			s.recoveredUR = recoveredUR
+			s.recoveredText = descriptorTextFromPayload(payload)
 			s.recoveredPayload = payload
 			dims := ctx.Platform.DisplaySize()
 			qrSize := dims.X
@@ -236,6 +242,7 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 			case Button2:
 				// Trash wipes recovery state and restarts scanning.
 				s.recoveredUR = ""
+				s.recoveredText = ""
 				s.recoveredPayload = nil
 				s.recoveredQR = nil
 				s.decodedShares = make(map[uint8]shard.Share)
@@ -292,7 +299,7 @@ func (s *RecoverDescriptorFlowScreen) modeStep(ctx *Context, ops op.Ctx, th *Col
 	choice := (&ChoiceScreen{
 		Title:   "Display mode",
 		Lead:    "Choose output mode",
-		Choices: []string{"Single QR", "Multipart UR"},
+		Choices: []string{"Descriptor QR", "UR Single", "UR Multipart"},
 		choice:  s.modeChoice,
 	})
 	idx, ok := choice.Choose(ctx, ops, th)
@@ -301,10 +308,13 @@ func (s *RecoverDescriptorFlowScreen) modeStep(ctx *Context, ops op.Ctx, th *Col
 		s.stage = recoverStageExport
 		return s
 	}
-	if idx == 1 {
-		s.displayMode = recoverDisplayMultipart
-	} else {
-		s.displayMode = recoverDisplaySingle
+	switch idx {
+	case 2:
+		s.displayMode = recoverDisplayURMultipart
+	case 1:
+		s.displayMode = recoverDisplayURSingle
+	default:
+		s.displayMode = recoverDisplayDescriptor
 	}
 	s.viewQR = nil
 	s.viewNextTick = time.Time{}
@@ -344,7 +354,7 @@ func (s *RecoverDescriptorFlowScreen) qrStep(ctx *Context, ops op.Ctx, th *Color
 func (s *RecoverDescriptorFlowScreen) updateViewerQR(ctx *Context, dims image.Point) {
 	now := ctx.Platform.Now()
 	switch s.displayMode {
-	case recoverDisplayMultipart:
+	case recoverDisplayURMultipart:
 		if len(s.recoveredPayload) == 0 {
 			// Fallback if payload is unavailable for any reason.
 			s.viewQR = renderQRImageRect(s.recoveredUR, dims.X, dims.Y)
@@ -366,9 +376,17 @@ func (s *RecoverDescriptorFlowScreen) updateViewerQR(ctx *Context, dims image.Po
 			s.viewNextTick = now.Add(300 * time.Millisecond)
 		}
 		ctx.WakeupAt(s.viewNextTick)
-	default:
+	case recoverDisplayURSingle:
 		if s.viewQR == nil || s.viewQR.Bounds().Dx() != dims.X || s.viewQR.Bounds().Dy() != dims.Y {
 			s.viewQR = renderQRImageRect(s.recoveredUR, dims.X, dims.Y)
+		}
+	default:
+		if s.viewQR == nil || s.viewQR.Bounds().Dx() != dims.X || s.viewQR.Bounds().Dy() != dims.Y {
+			content := s.recoveredText
+			if strings.TrimSpace(content) == "" {
+				content = s.recoveredUR
+			}
+			s.viewQR = renderQRImageRect(content, dims.X, dims.Y)
 		}
 	}
 }
@@ -466,25 +484,41 @@ func renderQRImageRect(content string, width, height int) image.Image {
 	if height < maxSide {
 		maxSide = height
 	}
-	step := maxSide / modules
-	if step < 1 {
-		step = 1
+	if modules <= maxSide {
+		// Integer module blocks when it fits on screen.
+		step := maxSide / modules
+		qrSide := modules * step
+		xOff := (width - qrSide) / 2
+		yOff := (height - qrSide) / 2
+		for y := 0; y < code.Size; y++ {
+			for x := 0; x < code.Size; x++ {
+				if !code.Black(x, y) {
+					continue
+				}
+				x0 := xOff + (x+quiet)*step
+				y0 := yOff + (y+quiet)*step
+				for yy := y0; yy < y0+step; yy++ {
+					row := img.Pix[yy*img.Stride:]
+					for xx := x0; xx < x0+step; xx++ {
+						row[xx] = color.Gray{Y: 0}.Y
+					}
+				}
+			}
+		}
+		return img
 	}
-	qrSide := modules * step
-	xOff := (width - qrSide) / 2
-	yOff := (height - qrSide) / 2
-	for y := 0; y < code.Size; y++ {
-		for x := 0; x < code.Size; x++ {
-			if !code.Black(x, y) {
+	// Fallback for very dense payloads: map pixels to module coordinates
+	// to avoid clipping when module count exceeds display resolution.
+	for y := 0; y < height; y++ {
+		my := y * modules / height
+		row := img.Pix[y*img.Stride:]
+		for x := 0; x < width; x++ {
+			mx := x * modules / width
+			if mx < quiet || my < quiet || mx >= quiet+code.Size || my >= quiet+code.Size {
 				continue
 			}
-			x0 := xOff + (x+quiet)*step
-			y0 := yOff + (y+quiet)*step
-			for yy := y0; yy < y0+step; yy++ {
-				row := img.Pix[yy*img.Stride:]
-				for xx := x0; xx < x0+step; xx++ {
-					row[xx] = color.Gray{Y: 0}.Y
-				}
+			if code.Black(mx-quiet, my-quiet) {
+				row[x] = color.Gray{Y: 0}.Y
 			}
 		}
 	}
@@ -509,18 +543,120 @@ func chooseMultipartSeqLen(payloadLen int) int {
 	return n
 }
 
+func descriptorTextFromPayload(payload []byte) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	v, err := urtypes.Parse("crypto-output", payload)
+	if err != nil {
+		return ""
+	}
+	desc, ok := v.(urtypes.OutputDescriptor)
+	if !ok {
+		return ""
+	}
+	desc = legacy.NormalizeDescriptorExportOrder(desc)
+	return formatDescriptorText(desc)
+}
+
+func formatDescriptorText(desc urtypes.OutputDescriptor) string {
+	var wrap func(urtypes.Script, string) string
+	wrap = func(script urtypes.Script, inner string) string {
+		switch script {
+		case urtypes.P2WSH:
+			return "wsh(" + inner + ")"
+		case urtypes.P2SH_P2WSH:
+			return "sh(wsh(" + inner + "))"
+		case urtypes.P2SH:
+			return "sh(" + inner + ")"
+		case urtypes.P2WPKH:
+			return "wpkh(" + inner + ")"
+		case urtypes.P2SH_P2WPKH:
+			return "sh(wpkh(" + inner + "))"
+		case urtypes.P2PKH:
+			return "pkh(" + inner + ")"
+		case urtypes.P2TR:
+			return "tr(" + inner + ")"
+		default:
+			return inner
+		}
+	}
+
+	formatChild := func(d urtypes.Derivation) string {
+		switch d.Type {
+		case urtypes.WildcardDerivation:
+			if d.Hardened {
+				return "*'"
+			}
+			return "*"
+		case urtypes.RangeDerivation:
+			start := strconv.FormatUint(uint64(d.Index), 10)
+			end := strconv.FormatUint(uint64(d.End), 10)
+			if d.Hardened {
+				return "<" + start + ";" + end + ">'"
+			}
+			return "<" + start + ";" + end + ">"
+		default:
+			v := strconv.FormatUint(uint64(d.Index), 10)
+			if d.Hardened {
+				return v + "'"
+			}
+			return v
+		}
+	}
+
+	formatKey := func(k urtypes.KeyDescriptor) string {
+		origin := ""
+		if len(k.DerivationPath) > 0 {
+			origin = fmt.Sprintf("[%08x/%s]", k.MasterFingerprint, strings.TrimPrefix(k.DerivationPath.String(), "m/"))
+		} else {
+			origin = fmt.Sprintf("[%08x]", k.MasterFingerprint)
+		}
+		key := k.String()
+		if len(k.Children) == 0 {
+			return origin + key
+		}
+		parts := make([]string, 0, len(k.Children))
+		for _, c := range k.Children {
+			parts = append(parts, formatChild(c))
+		}
+		return origin + key + "/" + strings.Join(parts, "/")
+	}
+
+	if desc.Type == urtypes.SortedMulti {
+		keys := make([]string, 0, len(desc.Keys))
+		for _, k := range desc.Keys {
+			keys = append(keys, formatKey(k))
+		}
+		return wrap(desc.Script, fmt.Sprintf("sortedmulti(%d,%s)", desc.Threshold, strings.Join(keys, ",")))
+	}
+	if len(desc.Keys) > 0 {
+		return wrap(desc.Script, formatKey(desc.Keys[0]))
+	}
+	return ""
+}
+
 func safeEncodeDescriptorUR(payload []byte) (string, error) {
 	var (
 		out string
 		err error
 	)
+	enc := payload
+	if len(payload) > 0 {
+		if v, pErr := urtypes.Parse("crypto-output", payload); pErr == nil {
+			if desc, ok := v.(urtypes.OutputDescriptor); ok {
+				norm := legacy.NormalizeDescriptorForLegacyUR(desc)
+				enc = norm.Encode()
+			}
+		}
+	}
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
 				err = fmt.Errorf("ur encode panic: %v", r)
 			}
 		}()
-		out = ur.Encode("crypto-output", payload, 1, 1)
+		out = ur.Encode("crypto-output", enc, 1, 1)
 	}()
 	if err != nil {
 		return "", err

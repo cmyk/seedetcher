@@ -25,7 +25,7 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.Output, "o", "/home/cmyk/PDF", "Output directory")
 	flag.StringVar(&f.PaperSize, "papersize", "A4", "Paper size (A4 or Letter)")
 	flag.BoolVar(&f.Verbose, "verbose", false, "Enable verbose logging")
-	flag.StringVar(&f.WalletType, "w", "multisig", "Wallet type (singlesig, multisig, multisig-3of5, or multisig-7of10)")
+	flag.StringVar(&f.WalletType, "w", "multisig", "Wallet type (singlesig, multisig, multisig-mainnet-2of3, multisig-3of5, or multisig-7of10)")
 	flag.StringVar(&f.BitmapDir, "png-out", "", "Optional output directory for 600dpi plate PNGs (mirrored/inverted if set)")
 	flag.IntVar(&f.DPI, "dpi", 600, "Raster output DPI when using -png-out")
 	flag.BoolVar(&f.Mirror, "mirror", false, "Mirror raster output horizontally (toner transfer)")
