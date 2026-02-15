@@ -127,8 +127,9 @@ func splitPayloadBytes(payload []byte, opts SplitOptions, network NetworkHint, s
 		setID = DeriveSetID(payload, opts.Threshold, opts.Total)
 	}
 	walletID := walletIDForPayload(payload)
+	splitSeed := deriveSplitSeed(payload, opts.Threshold, opts.Total)
 
-	parts, err := splitBytes(payload, int(opts.Total), int(opts.Threshold))
+	parts, err := splitBytes(payload, int(opts.Total), int(opts.Threshold), splitSeed)
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +163,20 @@ func DeriveSetID(payload []byte, threshold, total uint8) [setIDLen]byte {
 	sum := h.Sum(nil)
 	var out [setIDLen]byte
 	copy(out[:], sum[:setIDLen])
+	return out
+}
+
+func deriveSplitSeed(payload []byte, threshold, total uint8) [32]byte {
+	h := sha256.New()
+	_, _ = h.Write([]byte("SE1-SPLIT-v1"))
+	_, _ = h.Write([]byte{threshold, total})
+	var l [4]byte
+	binary.BigEndian.PutUint32(l[:], uint32(len(payload)))
+	_, _ = h.Write(l[:])
+	_, _ = h.Write(payload)
+	sum := h.Sum(nil)
+	var out [32]byte
+	copy(out[:], sum[:32])
 	return out
 }
 

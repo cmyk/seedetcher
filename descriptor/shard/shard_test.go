@@ -128,6 +128,23 @@ func TestSplitDefaultSetIDDeterministic(t *testing.T) {
 		if a[i].SetID != b[i].SetID {
 			t.Fatalf("share %d set id mismatch", i)
 		}
+		if a[i].Index != b[i].Index {
+			t.Fatalf("share %d index mismatch", i)
+		}
+		if string(a[i].Data) != string(b[i].Data) {
+			t.Fatalf("share %d payload bytes mismatch", i)
+		}
+		aEnc, err := MarshalBinary(a[i])
+		if err != nil {
+			t.Fatalf("marshal A[%d]: %v", i, err)
+		}
+		bEnc, err := MarshalBinary(b[i])
+		if err != nil {
+			t.Fatalf("marshal B[%d]: %v", i, err)
+		}
+		if string(aEnc) != string(bEnc) {
+			t.Fatalf("share %d encoded mismatch", i)
+		}
 	}
 }
 
