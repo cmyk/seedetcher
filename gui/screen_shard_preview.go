@@ -3,14 +3,12 @@ package gui
 import (
 	"encoding/hex"
 	"fmt"
-	"image"
 	"strings"
 
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
-	"seedetcher.com/gui/widget"
 )
 
 // buildShardPreview precomputes descriptor shares and encoded QR payloads for
@@ -99,24 +97,13 @@ func (s *ShardPreviewScreen) Update(ctx *Context, ops op.Ctx) Screen {
 
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
-		layoutTitle(ctx, ops, dims.X, th.Text, "Descriptor Share QR")
+		title := layoutTitle(ctx, ops, dims.X, th.Text, "Descriptor Share QR")
 
 		sh := s.Shares[s.Idx]
 		wid := strings.ToUpper(hex.EncodeToString(sh.WalletID[:]))
 		sid := strings.ToUpper(hex.EncodeToString(sh.SetID[:4]))
-		lead := fmt.Sprintf("Share %d/%d (need %d)\nWID:%s SET:%s", sh.Index, sh.Total, sh.Threshold, wid, sid)
-		lsz := widget.Labelwf(ops.Begin(), ctx.Styles.body, dims.X-88, th.Text, "%s", lead)
-		op.Position(ops, ops.End(), image.Pt((dims.X-lsz.X)/2, leadingSize+8))
-
-		qrImg := renderQRImage(s.QRs[s.Idx], 150)
-		qsz := qrImg.Bounds().Size()
-		qp := image.Pt((dims.X-qsz.X)/2, (dims.Y-qsz.Y)/2+10)
-		op.ImageOp(ops.Begin(), qrImg, false)
-		op.Position(ops, ops.End(), qp)
-
-		note := "Back = previous / return\nCheck = next / continue"
-		nsz := widget.Labelwf(ops.Begin(), ctx.Styles.debug, dims.X-88, th.Text, "%s", note)
-		op.Position(ops, ops.End(), image.Pt((dims.X-nsz.X)/2, dims.Y-nsz.Y-leadingSize-8))
+		body := fmt.Sprintf("Share %d/%d (need %d)\n\nWID: %s\nSET: %s\n\nReview then continue to print.", sh.Index, sh.Total, sh.Threshold, wid, sid)
+		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, title, body)
 
 		layoutNavigation(ctx, inp, ops, th, dims,
 			NavButton{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
