@@ -396,16 +396,7 @@ func (s *RecoverDescriptorFlowScreen) updateViewerQR(ctx *Context, dims image.Po
 			if strings.TrimSpace(content) == "" {
 				content = s.recoveredUR
 			}
-			maxSide := dims.X
-			if dims.Y < maxSide {
-				maxSide = dims.Y
-			}
-			// Use a large but not full-screen descriptor QR for camera reliability.
-			target := int(float64(maxSide) * 0.75)
-			if target < 160 {
-				target = 160
-			}
-			s.viewQR = renderQRImageRectMaxSide(content, dims.X, dims.Y, target)
+			s.viewQR = renderQRImageRect(content, dims.X, dims.Y)
 		}
 	}
 }
