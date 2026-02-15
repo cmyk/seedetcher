@@ -222,6 +222,26 @@ func TestDescriptorPayloadCanonicalizationIgnoresSortedMultiKeyOrder(t *testing.
 			t.Fatalf("share %d encoding mismatch", i)
 		}
 	}
+
+	withoutChildren := reordered
+	for i := range withoutChildren.Keys {
+		withoutChildren.Keys[i].Children = nil
+	}
+	withoutChildrenPayload := withoutChildren.Encode()
+	idC := DeriveSetID(withoutChildrenPayload, uint8(withoutChildren.Threshold), uint8(len(withoutChildren.Keys)))
+	if idA != idC {
+		t.Fatal("set id mismatch when children are omitted")
+	}
+
+	c, err := SplitPayloadBytes(withoutChildrenPayload, SplitOptions{Threshold: uint8(withoutChildren.Threshold), Total: uint8(len(withoutChildren.Keys))})
+	if err != nil {
+		t.Fatalf("split C: %v", err)
+	}
+	for i := range a {
+		if !bytes.Equal(a[i].Data, c[i].Data) {
+			t.Fatalf("share %d data mismatch with omitted children", i)
+		}
+	}
 }
 
 func TestCombineRejectsDuplicateIndex(t *testing.T) {

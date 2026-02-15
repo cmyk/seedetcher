@@ -441,11 +441,28 @@ func normalizeSplitPayload(payload []byte) []byte {
 		return payload
 	}
 	if desc.Type == urtypes.SortedMulti && len(desc.Keys) > 1 {
+		normalizeSortedMultiChildren(&desc)
 		sort.Slice(desc.Keys, func(i, j int) bool {
 			return bytes.Compare(keyDescriptorSortKey(desc.Keys[i]), keyDescriptorSortKey(desc.Keys[j])) < 0
 		})
 	}
 	return desc.Encode()
+}
+
+func normalizeSortedMultiChildren(desc *urtypes.OutputDescriptor) {
+	const (
+		changeStart = uint32(0)
+		changeEnd   = uint32(1)
+	)
+	for i := range desc.Keys {
+		if len(desc.Keys[i].Children) != 0 {
+			continue
+		}
+		desc.Keys[i].Children = []urtypes.Derivation{
+			{Type: urtypes.RangeDerivation, Index: changeStart, End: changeEnd},
+			{Type: urtypes.WildcardDerivation},
+		}
+	}
 }
 
 func keyDescriptorSortKey(k urtypes.KeyDescriptor) []byte {
