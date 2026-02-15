@@ -83,19 +83,20 @@ const (
 // RecoverDescriptorFlowScreen handles descriptor recovery from sharded shares
 // or plain descriptor QR input.
 type RecoverDescriptorFlowScreen struct {
-	Theme            *Colors
-	stage            recoverStage
-	recoveredUR      string
-	recoveredText    string
-	recoveredPayload []byte
-	recoveredQR      image.Image
-	decodedShares    map[uint8]shard.Share
-	modeChoice       int
-	displayMode      recoverDisplayMode
-	viewQR           image.Image
-	viewNextTick     time.Time
-	viewSeqNum       int
-	viewSeqLen       int
+	Theme               *Colors
+	stage               recoverStage
+	recoveredUR         string
+	recoveredText       string
+	recoveredPayloadRaw []byte
+	recoveredURPayload  []byte
+	recoveredQR         image.Image
+	decodedShares       map[uint8]shard.Share
+	modeChoice          int
+	displayMode         recoverDisplayMode
+	viewQR              image.Image
+	viewNextTick        time.Time
+	viewSeqNum          int
+	viewSeqLen          int
 }
 
 func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
@@ -106,7 +107,8 @@ func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			s.stage = recoverStageScan
 			s.recoveredUR = ""
 			s.recoveredText = ""
-			s.recoveredPayload = nil
+			s.recoveredPayloadRaw = nil
+			s.recoveredURPayload = nil
 			s.recoveredQR = nil
 			s.decodedShares = make(map[uint8]shard.Share)
 		}
@@ -187,16 +189,23 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 				showError(ctx, ops, th, fmt.Errorf("combine shares failed: %v", err))
 				return s
 			}
-			// Reconstruct canonical UR payload for coordinator import.
-			recoveredUR, err := safeEncodeDescriptorUR(payload)
+			rawPayload := append([]byte(nil), payload...)
+			urPayload, err := buildURPayload(rawPayload)
+			if err != nil {
+				showError(ctx, ops, th, fmt.Errorf("failed to build recovered descriptor"))
+				logutil.DebugLog("recover payload build failed: %v", err)
+				return s
+			}
+			recoveredUR, err := safeEncodeURPayload(urPayload)
 			if err != nil {
 				showError(ctx, ops, th, fmt.Errorf("failed to encode recovered descriptor"))
 				logutil.DebugLog("recover UR encode failed: %v", err)
 				return s
 			}
 			s.recoveredUR = recoveredUR
-			s.recoveredText = descriptorTextFromPayload(payload)
-			s.recoveredPayload = payload
+			s.recoveredText = buildDescriptorText(rawPayload)
+			s.recoveredPayloadRaw = rawPayload
+			s.recoveredURPayload = urPayload
 			dims := ctx.Platform.DisplaySize()
 			qrSize := dims.X
 			if dims.Y < qrSize {
@@ -243,7 +252,8 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 				// Trash wipes recovery state and restarts scanning.
 				s.recoveredUR = ""
 				s.recoveredText = ""
-				s.recoveredPayload = nil
+				s.recoveredPayloadRaw = nil
+				s.recoveredURPayload = nil
 				s.recoveredQR = nil
 				s.decodedShares = make(map[uint8]shard.Share)
 				s.stage = recoverStageScan
@@ -355,19 +365,19 @@ func (s *RecoverDescriptorFlowScreen) updateViewerQR(ctx *Context, dims image.Po
 	now := ctx.Platform.Now()
 	switch s.displayMode {
 	case recoverDisplayURMultipart:
-		if len(s.recoveredPayload) == 0 {
+		if len(s.recoveredURPayload) == 0 {
 			// Fallback if payload is unavailable for any reason.
 			s.viewQR = renderQRImageRect(s.recoveredUR, dims.X, dims.Y)
 			return
 		}
 		if s.viewSeqLen == 0 {
-			s.viewSeqLen = chooseMultipartSeqLen(len(s.recoveredPayload))
+			s.viewSeqLen = chooseMultipartSeqLen(len(s.recoveredURPayload))
 		}
 		if s.viewSeqNum <= 0 || s.viewSeqNum > s.viewSeqLen {
 			s.viewSeqNum = 1
 		}
 		if s.viewQR == nil || s.viewNextTick.IsZero() || !now.Before(s.viewNextTick) {
-			part := ur.Encode("crypto-output", s.recoveredPayload, s.viewSeqNum, s.viewSeqLen)
+			part := ur.Encode("crypto-output", s.recoveredURPayload, s.viewSeqNum, s.viewSeqLen)
 			s.viewQR = renderQRImageRect(part, dims.X, dims.Y)
 			s.viewSeqNum++
 			if s.viewSeqNum > s.viewSeqLen {
@@ -543,7 +553,7 @@ func chooseMultipartSeqLen(payloadLen int) int {
 	return n
 }
 
-func descriptorTextFromPayload(payload []byte) string {
+func buildDescriptorText(payload []byte) string {
 	if len(payload) == 0 {
 		return ""
 	}
@@ -555,7 +565,6 @@ func descriptorTextFromPayload(payload []byte) string {
 	if !ok {
 		return ""
 	}
-	desc = legacy.NormalizeDescriptorExportOrder(desc)
 	return formatDescriptorText(desc)
 }
 
@@ -636,27 +645,42 @@ func formatDescriptorText(desc urtypes.OutputDescriptor) string {
 	return ""
 }
 
+func buildURPayload(payload []byte) ([]byte, error) {
+	if len(payload) == 0 {
+		return nil, fmt.Errorf("empty descriptor payload")
+	}
+	v, err := urtypes.Parse("crypto-output", payload)
+	if err != nil {
+		return nil, err
+	}
+	desc, ok := v.(urtypes.OutputDescriptor)
+	if !ok {
+		return nil, fmt.Errorf("not a descriptor payload")
+	}
+	norm := legacy.NormalizeDescriptorForLegacyUR(desc)
+	return norm.Encode(), nil
+}
+
 func safeEncodeDescriptorUR(payload []byte) (string, error) {
+	urPayload, err := buildURPayload(payload)
+	if err != nil {
+		return "", err
+	}
+	return safeEncodeURPayload(urPayload)
+}
+
+func safeEncodeURPayload(payload []byte) (string, error) {
 	var (
 		out string
 		err error
 	)
-	enc := payload
-	if len(payload) > 0 {
-		if v, pErr := urtypes.Parse("crypto-output", payload); pErr == nil {
-			if desc, ok := v.(urtypes.OutputDescriptor); ok {
-				norm := legacy.NormalizeDescriptorForLegacyUR(desc)
-				enc = norm.Encode()
-			}
-		}
-	}
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
 				err = fmt.Errorf("ur encode panic: %v", r)
 			}
 		}()
-		out = ur.Encode("crypto-output", enc, 1, 1)
+		out = ur.Encode("crypto-output", payload, 1, 1)
 	}()
 	if err != nil {
 		return "", err
