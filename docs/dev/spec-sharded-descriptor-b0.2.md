@@ -44,7 +44,9 @@ Invariant:
 ## 3. Share set model
 
 For one wallet backup operation:
-- `set_id`: random 16-byte identifier (new per backup set).
+- `set_id`: deterministic 16-byte identifier derived from canonical payload and
+  split parameters (`t`,`n`) so the same descriptor can be reprinted with
+  identical shard payloads across sessions.
 - `wallet_id`: 4-byte identifier derived from canonical payload:
   - `wallet_id = first4(SHA256(canonical_payload))`
 - Parameters:
@@ -56,6 +58,11 @@ Constraints:
 - `2 <= t <= n`
 - For multisig backups, `t` and `n` are derived directly from the parsed descriptor (`threshold`, key count).
 - User does not choose `t/n` in b0.2 multisig flow.
+- User does not manually choose `set_id` in b0.2; reproducibility is automatic.
+
+Identifiers in UI:
+- `WID` := human-readable hex rendering of `wallet_id`.
+- `SET` := shortened hex rendering of `set_id` (display form only).
 
 ## 4. Shard container (logical fields)
 
@@ -111,8 +118,9 @@ On successful reconstruction:
 - On exit/done, wipe in-memory buffers best-effort.
 
 Recovery input compatibility:
-- Recovery accepts both sharded share QR input and plain descriptor QR input.
-- Plain descriptor QR bypasses threshold accumulation and proceeds directly to validate/export.
+- Recovery mode is sharded-descriptor recovery only.
+- Plain descriptor QR is explicitly rejected in this flow with a user-facing
+  warning and scanning continues.
 
 ## 8. Logging and persistence rules
 
@@ -133,6 +141,8 @@ Must not persist secret material to disk.
 - Split/reconstruct round-trip passes across random descriptors.
 - Reconstruction with `<t` shares fails.
 - Mixed-set and mixed-wallet shares are rejected.
+- Re-running backup for the same descriptor (`t`,`n` unchanged) yields
+  identical shard payloads (`WID`, `SET`, and share contents).
 - Corrupted share checksum is rejected.
 - Recovered descriptor imports in Sparrow and derives expected addresses.
 - Multisig backup flow does not offer legacy full-descriptor mode.
