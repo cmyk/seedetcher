@@ -13,6 +13,7 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
 - Multisig backup uses **sharded descriptor only** (no legacy full-descriptor plate mode).
 - Singlesig backup does not require descriptor sharding.
 - Recovery reconstructs descriptor in RAM only and exports QR; no secret persistence/logging.
+- **Release-blocking addendum:** descriptor shard `SETID` must be deterministic/reproducible for identical descriptor input (no random default), so users can regenerate identical plate layouts for reprint.
 
 ## 0) Security model (must be explicit)
 - [x] Define threat model: "plate compromised" => attacker must NOT learn wallet descriptor/xpub set
@@ -109,3 +110,6 @@ Reference spec: `docs/dev/spec-sharded-descriptor-b0.2.md`
 - [x] test-lite clean
 - [x] No secret material in logs (grep quick check; descriptor-content debug log removed from scan path)
 - [x] Tag + signed release notes mention descriptor hardening + migration notes (release notes prepared in changelog)
+- [ ] Reproducibility gate: re-running backup for the same descriptor yields identical descriptor shard QR payloads (`WID` + `SET` + share contents) across sessions.
+- [ ] Bump `version/version.go` release tag before creating the release tag.
+- [ ] Update `CHANGELOG.md` (move relevant notes out of `Unreleased`) before tagging the release.
