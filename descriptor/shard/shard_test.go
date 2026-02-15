@@ -1,10 +1,12 @@
 package shard
 
 import (
+	"bytes"
 	"math/rand"
 	"strings"
 	"testing"
 
+	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/testutils"
 )
 
@@ -84,6 +86,32 @@ func TestCombineFailsBelowThreshold(t *testing.T) {
 
 func TestCombineRejectsMismatchedSet(t *testing.T) {
 	desc := testDescriptor(t)
+	var setA [16]byte
+	var setB [16]byte
+	setA[0] = 0x01
+	setB[0] = 0x02
+
+	a, err := Split(desc, SplitOptions{Threshold: 2, Total: 3, SetID: setA})
+	if err != nil {
+		t.Fatalf("split A failed: %v", err)
+	}
+	b, err := Split(desc, SplitOptions{Threshold: 2, Total: 3, SetID: setB})
+	if err != nil {
+		t.Fatalf("split B failed: %v", err)
+	}
+	if _, err := Combine([]Share{a[0], b[1]}); err == nil {
+		t.Fatal("expected set mismatch error")
+	}
+}
+
+func TestSplitDefaultSetIDDeterministic(t *testing.T) {
+	desc := testDescriptor(t)
+	want, err := CanonicalizeDescriptor(desc)
+	if err != nil {
+		t.Fatalf("canonicalize: %v", err)
+	}
+	wantSet := DeriveSetID([]byte(want), 2, 3)
+
 	a, err := Split(desc, SplitOptions{Threshold: 2, Total: 3})
 	if err != nil {
 		t.Fatalf("split A failed: %v", err)
@@ -92,8 +120,127 @@ func TestCombineRejectsMismatchedSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("split B failed: %v", err)
 	}
-	if _, err := Combine([]Share{a[0], b[1]}); err == nil {
-		t.Fatal("expected set mismatch error")
+	for i := range a {
+		if a[i].SetID != wantSet {
+			t.Fatalf("share %d unexpected set id", i)
+		}
+		if b[i].SetID != wantSet {
+			t.Fatalf("share %d unexpected set id in second split", i)
+		}
+		if a[i].SetID != b[i].SetID {
+			t.Fatalf("share %d set id mismatch", i)
+		}
+		if a[i].Index != b[i].Index {
+			t.Fatalf("share %d index mismatch", i)
+		}
+		if string(a[i].Data) != string(b[i].Data) {
+			t.Fatalf("share %d payload bytes mismatch", i)
+		}
+		aEnc, err := MarshalBinary(a[i])
+		if err != nil {
+			t.Fatalf("marshal A[%d]: %v", i, err)
+		}
+		bEnc, err := MarshalBinary(b[i])
+		if err != nil {
+			t.Fatalf("marshal B[%d]: %v", i, err)
+		}
+		if string(aEnc) != string(bEnc) {
+			t.Fatalf("share %d encoded mismatch", i)
+		}
+	}
+}
+
+func TestDeriveSetIDVariesWithPayloadAndParams(t *testing.T) {
+	p1 := []byte("payload-one")
+	p2 := []byte("payload-two")
+
+	id11 := DeriveSetID(p1, 2, 3)
+	id12 := DeriveSetID(p1, 3, 3)
+	id13 := DeriveSetID(p1, 2, 4)
+	id21 := DeriveSetID(p2, 2, 3)
+
+	if id11 == id12 {
+		t.Fatal("set id should differ when threshold differs")
+	}
+	if id11 == id13 {
+		t.Fatal("set id should differ when total differs")
+	}
+	if id11 == id21 {
+		t.Fatal("set id should differ when payload differs")
+	}
+}
+
+func TestDescriptorPayloadCanonicalizationIgnoresSortedMultiKeyOrder(t *testing.T) {
+	cfg := testutils.WalletConfigs["multisig-mainnet-2of3"]
+	_, desc, err := testutils.ParseWallet(cfg, "", "")
+	if err != nil {
+		t.Fatalf("parse wallet: %v", err)
+	}
+	if desc == nil || desc.Type != urtypes.SortedMulti || len(desc.Keys) < 2 {
+		t.Fatal("missing sortedmulti test descriptor")
+	}
+
+	orig := desc.Encode()
+	reordered := *desc
+	reordered.Keys = append([]urtypes.KeyDescriptor(nil), desc.Keys...)
+	reordered.Keys[0], reordered.Keys[1] = reordered.Keys[1], reordered.Keys[0]
+	reorderedPayload := reordered.Encode()
+
+	idA := DeriveSetID(orig, uint8(desc.Threshold), uint8(len(desc.Keys)))
+	idB := DeriveSetID(reorderedPayload, uint8(reordered.Threshold), uint8(len(reordered.Keys)))
+	if idA != idB {
+		t.Fatal("set id mismatch for reordered sortedmulti keys")
+	}
+
+	a, err := SplitPayloadBytes(orig, SplitOptions{Threshold: uint8(desc.Threshold), Total: uint8(len(desc.Keys))})
+	if err != nil {
+		t.Fatalf("split A: %v", err)
+	}
+	b, err := SplitPayloadBytes(reorderedPayload, SplitOptions{Threshold: uint8(reordered.Threshold), Total: uint8(len(reordered.Keys))})
+	if err != nil {
+		t.Fatalf("split B: %v", err)
+	}
+	if len(a) != len(b) {
+		t.Fatalf("share count mismatch: %d vs %d", len(a), len(b))
+	}
+	for i := range a {
+		if a[i].SetID != b[i].SetID {
+			t.Fatalf("share %d set id mismatch", i)
+		}
+		if !bytes.Equal(a[i].Data, b[i].Data) {
+			t.Fatalf("share %d data mismatch", i)
+		}
+		ae, err := MarshalBinary(a[i])
+		if err != nil {
+			t.Fatalf("marshal A[%d]: %v", i, err)
+		}
+		be, err := MarshalBinary(b[i])
+		if err != nil {
+			t.Fatalf("marshal B[%d]: %v", i, err)
+		}
+		if !bytes.Equal(ae, be) {
+			t.Fatalf("share %d encoding mismatch", i)
+		}
+	}
+
+	withoutChildren := reordered
+	for i := range withoutChildren.Keys {
+		withoutChildren.Keys[i].Children = nil
+	}
+	withoutChildrenPayload := withoutChildren.Encode()
+	idC := DeriveSetID(withoutChildrenPayload, uint8(withoutChildren.Threshold), uint8(len(withoutChildren.Keys)))
+	if idA != idC {
+		t.Fatal("set id mismatch when children are omitted")
+	}
+
+	c, err := SplitPayloadBytes(withoutChildrenPayload, SplitOptions{Threshold: uint8(withoutChildren.Threshold), Total: uint8(len(withoutChildren.Keys))})
+	if err != nil {
+		t.Fatalf("split C: %v", err)
+	}
+	for i := range a {
+		if !bytes.Equal(a[i].Data, c[i].Data) {
+			t.Fatalf("share %d data mismatch with omitted children", i)
+		}
 	}
 }
 

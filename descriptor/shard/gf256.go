@@ -1,7 +1,8 @@
 package shard
 
 import (
-	"crypto/rand"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 )
@@ -43,7 +44,7 @@ func gfInv(a byte) byte {
 	return expTable[255-int(logTable[a])]
 }
 
-func splitBytes(secret []byte, n, t int) ([][]byte, error) {
+func splitBytes(secret []byte, n, t int, seed [32]byte) ([][]byte, error) {
 	if len(secret) == 0 {
 		return nil, errors.New("empty secret")
 	}
@@ -60,12 +61,11 @@ func splitBytes(secret []byte, n, t int) ([][]byte, error) {
 	}
 
 	coeff := make([]byte, t)
+	rng := newDeterministicByteStream(seed)
 	for bIdx, s := range secret {
 		coeff[0] = s
 		if t > 1 {
-			if _, err := rand.Read(coeff[1:t]); err != nil {
-				return nil, err
-			}
+			rng.fill(coeff[1:t])
 		}
 		for i := 1; i <= n; i++ {
 			x := byte(i)
@@ -132,4 +132,42 @@ func lagrangeAtZero(x []byte, i int) byte {
 		den = gfMul(den, xj^xi)
 	}
 	return gfMul(num, gfInv(den))
+}
+
+type deterministicByteStream struct {
+	seed    [32]byte
+	counter uint32
+	block   [32]byte
+	off     int
+}
+
+func newDeterministicByteStream(seed [32]byte) *deterministicByteStream {
+	s := &deterministicByteStream{
+		seed: seed,
+		off:  len([32]byte{}), // force first refill
+	}
+	return s
+}
+
+func (s *deterministicByteStream) refill() {
+	h := sha256.New()
+	_, _ = h.Write([]byte("SE1-SHAMIR-RNG-v1"))
+	_, _ = h.Write(s.seed[:])
+	var c [4]byte
+	binary.BigEndian.PutUint32(c[:], s.counter)
+	_, _ = h.Write(c[:])
+	sum := h.Sum(nil)
+	copy(s.block[:], sum[:32])
+	s.counter++
+	s.off = 0
+}
+
+func (s *deterministicByteStream) fill(dst []byte) {
+	for i := 0; i < len(dst); i++ {
+		if s.off >= len(s.block) {
+			s.refill()
+		}
+		dst[i] = s.block[s.off]
+		s.off++
+	}
 }
