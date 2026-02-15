@@ -1,7 +1,6 @@
 package shard
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
@@ -61,7 +60,7 @@ type Share struct {
 type SplitOptions struct {
 	Threshold uint8
 	Total     uint8
-	SetID     [setIDLen]byte // optional; zero means generate random
+	SetID     [setIDLen]byte // optional override; zero means deterministic from payload+t+n
 }
 
 var checksumRE = regexp.MustCompile(`(?i)^(.*)#([0-9a-z]{8})$`)
@@ -125,9 +124,7 @@ func splitPayloadBytes(payload []byte, opts SplitOptions, network NetworkHint, s
 	}
 	setID := opts.SetID
 	if setID == [setIDLen]byte{} {
-		if _, err := rand.Read(setID[:]); err != nil {
-			return nil, fmt.Errorf("set_id randomness: %w", err)
-		}
+		setID = DeriveSetID(payload, opts.Threshold, opts.Total)
 	}
 	walletID := walletIDForPayload(payload)
 
@@ -150,6 +147,22 @@ func splitPayloadBytes(payload []byte, opts SplitOptions, network NetworkHint, s
 		})
 	}
 	return shares, nil
+}
+
+// DeriveSetID deterministically derives the descriptor shard set identifier from
+// payload bytes and split parameters.
+func DeriveSetID(payload []byte, threshold, total uint8) [setIDLen]byte {
+	h := sha256.New()
+	_, _ = h.Write([]byte("SE1-SETID-v1"))
+	_, _ = h.Write([]byte{threshold, total})
+	var l [4]byte
+	binary.BigEndian.PutUint32(l[:], uint32(len(payload)))
+	_, _ = h.Write(l[:])
+	_, _ = h.Write(payload)
+	sum := h.Sum(nil)
+	var out [setIDLen]byte
+	copy(out[:], sum[:setIDLen])
+	return out
 }
 
 func Combine(shares []Share) (string, error) {

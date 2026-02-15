@@ -84,6 +84,32 @@ func TestCombineFailsBelowThreshold(t *testing.T) {
 
 func TestCombineRejectsMismatchedSet(t *testing.T) {
 	desc := testDescriptor(t)
+	var setA [16]byte
+	var setB [16]byte
+	setA[0] = 0x01
+	setB[0] = 0x02
+
+	a, err := Split(desc, SplitOptions{Threshold: 2, Total: 3, SetID: setA})
+	if err != nil {
+		t.Fatalf("split A failed: %v", err)
+	}
+	b, err := Split(desc, SplitOptions{Threshold: 2, Total: 3, SetID: setB})
+	if err != nil {
+		t.Fatalf("split B failed: %v", err)
+	}
+	if _, err := Combine([]Share{a[0], b[1]}); err == nil {
+		t.Fatal("expected set mismatch error")
+	}
+}
+
+func TestSplitDefaultSetIDDeterministic(t *testing.T) {
+	desc := testDescriptor(t)
+	want, err := CanonicalizeDescriptor(desc)
+	if err != nil {
+		t.Fatalf("canonicalize: %v", err)
+	}
+	wantSet := DeriveSetID([]byte(want), 2, 3)
+
 	a, err := Split(desc, SplitOptions{Threshold: 2, Total: 3})
 	if err != nil {
 		t.Fatalf("split A failed: %v", err)
@@ -92,8 +118,36 @@ func TestCombineRejectsMismatchedSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("split B failed: %v", err)
 	}
-	if _, err := Combine([]Share{a[0], b[1]}); err == nil {
-		t.Fatal("expected set mismatch error")
+	for i := range a {
+		if a[i].SetID != wantSet {
+			t.Fatalf("share %d unexpected set id", i)
+		}
+		if b[i].SetID != wantSet {
+			t.Fatalf("share %d unexpected set id in second split", i)
+		}
+		if a[i].SetID != b[i].SetID {
+			t.Fatalf("share %d set id mismatch", i)
+		}
+	}
+}
+
+func TestDeriveSetIDVariesWithPayloadAndParams(t *testing.T) {
+	p1 := []byte("payload-one")
+	p2 := []byte("payload-two")
+
+	id11 := DeriveSetID(p1, 2, 3)
+	id12 := DeriveSetID(p1, 3, 3)
+	id13 := DeriveSetID(p1, 2, 4)
+	id21 := DeriveSetID(p2, 2, 3)
+
+	if id11 == id12 {
+		t.Fatal("set id should differ when threshold differs")
+	}
+	if id11 == id13 {
+		t.Fatal("set id should differ when total differs")
+	}
+	if id11 == id21 {
+		t.Fatal("set id should differ when payload differs")
 	}
 }
 

@@ -1,7 +1,6 @@
 package gui
 
 import (
-	"crypto/rand"
 	"fmt"
 	"image"
 
@@ -110,8 +109,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 					s.stage = stageSeeds
 				} else {
 					s.totalSeeds = len(desc.Keys)
-					s.shardSetID = [16]byte{}
-					_, _ = rand.Read(s.shardSetID[:])
+					s.shardSetID = shard.DeriveSetID(desc.Encode(), uint8(desc.Threshold), uint8(len(desc.Keys)))
 					s.shardShares, s.shardQRCodes = buildShardPreview(desc, s.shardSetID)
 					s.stage = stageShardInfo
 				}
