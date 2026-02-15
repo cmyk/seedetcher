@@ -7,6 +7,7 @@ import (
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/layout"
 	"seedetcher.com/gui/op"
+	"seedetcher.com/gui/text"
 	"seedetcher.com/gui/widget"
 )
 
@@ -191,4 +192,26 @@ func layoutTitle(ctx *Context, ops op.Ctx, width int, col color.NRGBA, title str
 		Min: pos,
 		Max: pos.Add(sz),
 	}
+}
+
+// layoutBodyLeftUnderTitle places a left-aligned body block below a title while
+// reserving space for right-side navigation buttons.
+func layoutBodyLeftUnderTitle(ctx *Context, ops op.Ctx, dims image.Point, col color.NRGBA, titleRect image.Rectangle, body string) image.Rectangle {
+	const (
+		leftPad      = 10
+		rightPad     = 10
+		titleBodyGap = 10
+		navGap       = 6
+	)
+	rightReserved := assets.NavBtnPrimary.Bounds().Dx() + navGap
+	width := dims.X - leftPad - rightPad - rightReserved
+	if width < 80 {
+		width = 80
+	}
+	style := ctx.Styles.body
+	style.Alignment = text.AlignStart
+	sz := widget.Labelwf(ops.Begin(), style, width, col, "%s", body)
+	pos := image.Pt(leftPad, titleRect.Max.Y+titleBodyGap)
+	op.Position(ops, ops.End(), pos)
+	return image.Rectangle{Min: pos, Max: pos.Add(sz)}
 }

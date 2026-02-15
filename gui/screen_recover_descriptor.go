@@ -97,6 +97,7 @@ type RecoverDescriptorFlowScreen struct {
 	viewNextTick        time.Time
 	viewSeqNum          int
 	viewSeqLen          int
+	returnScreen        Screen
 }
 
 func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
@@ -151,7 +152,10 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 		Lead:  s.scanLead(),
 	}).Scan(ctx, ops)
 	if !ok {
-		return &MainMenuScreen{}
+		if s.returnScreen != nil {
+			return s.returnScreen
+		}
+		return &ActionChoiceScreen{Theme: th}
 	}
 
 	switch v := res.(type) {
@@ -213,6 +217,7 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 			}
 			qrSize -= 8
 			s.recoveredQR = renderQRImage(s.recoveredUR, qrSize)
+			s.returnScreen = &ActionChoiceScreen{Theme: th}
 			s.stage = recoverStageExport
 			ctx.addToast("Descriptor recovered", 1200)
 			return s
@@ -236,7 +241,7 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 	inp := new(InputTracker)
 	for {
 		for {
-			e, ok := inp.Next(ctx, Button1, Button2, Button3)
+			e, ok := inp.Next(ctx, Button2, Button3)
 			if !ok {
 				break
 			}
@@ -244,10 +249,6 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 				continue
 			}
 			switch e.Button {
-			case Button1:
-				s.stage = recoverStageScan
-				ctx.addToast("Scan again", 900)
-				return s
 			case Button2:
 				// Trash wipes recovery state and restarts scanning.
 				s.recoveredUR = ""
@@ -257,8 +258,11 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 				s.recoveredQR = nil
 				s.decodedShares = make(map[uint8]shard.Share)
 				s.stage = recoverStageScan
-				ctx.addToast("Done - recovery state deleted", 1200)
-				return &MainMenuScreen{}
+				ctx.addToast("Recovery state deleted", 1200)
+				if s.returnScreen != nil {
+					return s.returnScreen
+				}
+				return &ActionChoiceScreen{Theme: th}
 			case Button3:
 				s.stage = recoverStageMode
 				return s
@@ -267,37 +271,37 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
-		leftPad := 6
-		rightPad := 4
-		navW := assets.NavBtnPrimary.Bounds().Dx()
-		textW := dims.X - leftPad - navW - rightPad
+		leftPad := 10
+		rightPad := 10
+		textW := dims.X - leftPad - rightPad
 		if textW < 80 {
 			textW = 80
 		}
 
-		title := "Descriptor recovered"
+		title := "Descriptor Recovered"
 		titleStyle := ctx.Styles.title
-		titleStyle.Alignment = text.AlignStart
+		titleStyle.Alignment = text.AlignCenter
 		tsz := widget.Labelwf(ops.Begin(), titleStyle, textW, th.Text, "%s", title)
-		titleY := 8
-		op.Position(ops, ops.End(), image.Pt(leftPad, titleY))
+		titleY := 8 // fixed top offset
+		op.Position(ops, ops.End(), image.Pt((dims.X-tsz.X)/2, titleY))
 
+		wid, sid := "", ""
+		if base, ok := firstDecodedShare(s.decodedShares); ok {
+			wid = strings.ToUpper(fmt.Sprintf("%x", base.WalletID))
+			sid = strings.ToUpper(fmt.Sprintf("%x", base.SetID[:4]))
+		}
 		lead := "Shares reconstructed successfully."
+		if wid != "" && sid != "" {
+			lead = fmt.Sprintf("Shares reconstructed successfully.\nWID: %s\nSET: %s", wid, sid)
+		}
 		leadStyle := ctx.Styles.lead
 		leadStyle.Alignment = text.AlignStart
 		lsz := widget.Labelwf(ops.Begin(), leadStyle, textW, th.Text, "%s", lead)
-		leadY := titleY + tsz.Y + 12
+		leadY := titleY + tsz.Y + 10 // fixed title->body spacing
 		op.Position(ops, ops.End(), image.Pt(leftPad, leadY))
-
-		note := "Check: show QR fullscreen\nBack: scan again\nTrash: delete"
-		bodyStyle := ctx.Styles.body
-		bodyStyle.Alignment = text.AlignStart
-		widget.Labelwf(ops.Begin(), bodyStyle, textW, th.Text, "%s", note)
-		noteY := leadY + lsz.Y + 14
-		op.Position(ops, ops.End(), image.Pt(leftPad, noteY))
+		_ = lsz
 
 		layoutNavigation(ctx, inp, ops, th, dims,
-			NavButton{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
 			NavButton{Button: Button2, Style: StyleSecondary, Icon: assets.IconDiscard},
 			NavButton{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
 		)

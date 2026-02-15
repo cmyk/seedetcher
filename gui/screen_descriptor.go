@@ -113,7 +113,7 @@ func (s *DescriptorScreen) Draw(ctx *Context, ops op.Ctx, th *Colors, dims image
 	layoutTitle(ctx, ops, dims.X, th.Text, "Confirm Wallet")
 
 	btnw := assets.NavBtnPrimary.Bounds().Dx()
-	body := r.Shrink(leadingSize, btnw, 0, btnw)
+	body := r.Shrink(leadingSize, btnw+6, 0, 10)
 
 	{
 		ops := ops.Begin()
