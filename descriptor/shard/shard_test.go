@@ -1,10 +1,12 @@
 package shard
 
 import (
+	"bytes"
 	"math/rand"
 	"strings"
 	"testing"
 
+	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/testutils"
 )
 
@@ -165,6 +167,60 @@ func TestDeriveSetIDVariesWithPayloadAndParams(t *testing.T) {
 	}
 	if id11 == id21 {
 		t.Fatal("set id should differ when payload differs")
+	}
+}
+
+func TestDescriptorPayloadCanonicalizationIgnoresSortedMultiKeyOrder(t *testing.T) {
+	cfg := testutils.WalletConfigs["multisig-mainnet-2of3"]
+	_, desc, err := testutils.ParseWallet(cfg, "", "")
+	if err != nil {
+		t.Fatalf("parse wallet: %v", err)
+	}
+	if desc == nil || desc.Type != urtypes.SortedMulti || len(desc.Keys) < 2 {
+		t.Fatal("missing sortedmulti test descriptor")
+	}
+
+	orig := desc.Encode()
+	reordered := *desc
+	reordered.Keys = append([]urtypes.KeyDescriptor(nil), desc.Keys...)
+	reordered.Keys[0], reordered.Keys[1] = reordered.Keys[1], reordered.Keys[0]
+	reorderedPayload := reordered.Encode()
+
+	idA := DeriveSetID(orig, uint8(desc.Threshold), uint8(len(desc.Keys)))
+	idB := DeriveSetID(reorderedPayload, uint8(reordered.Threshold), uint8(len(reordered.Keys)))
+	if idA != idB {
+		t.Fatal("set id mismatch for reordered sortedmulti keys")
+	}
+
+	a, err := SplitPayloadBytes(orig, SplitOptions{Threshold: uint8(desc.Threshold), Total: uint8(len(desc.Keys))})
+	if err != nil {
+		t.Fatalf("split A: %v", err)
+	}
+	b, err := SplitPayloadBytes(reorderedPayload, SplitOptions{Threshold: uint8(reordered.Threshold), Total: uint8(len(reordered.Keys))})
+	if err != nil {
+		t.Fatalf("split B: %v", err)
+	}
+	if len(a) != len(b) {
+		t.Fatalf("share count mismatch: %d vs %d", len(a), len(b))
+	}
+	for i := range a {
+		if a[i].SetID != b[i].SetID {
+			t.Fatalf("share %d set id mismatch", i)
+		}
+		if !bytes.Equal(a[i].Data, b[i].Data) {
+			t.Fatalf("share %d data mismatch", i)
+		}
+		ae, err := MarshalBinary(a[i])
+		if err != nil {
+			t.Fatalf("marshal A[%d]: %v", i, err)
+		}
+		be, err := MarshalBinary(b[i])
+		if err != nil {
+			t.Fatalf("marshal B[%d]: %v", i, err)
+		}
+		if !bytes.Equal(ae, be) {
+			t.Fatalf("share %d encoding mismatch", i)
+		}
 	}
 }
 

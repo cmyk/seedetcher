@@ -1,6 +1,7 @@
 package shard
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/nonstandard"
 )
 
@@ -122,6 +124,7 @@ func splitPayloadBytes(payload []byte, opts SplitOptions, network NetworkHint, s
 	if opts.Threshold < minThreshold || opts.Threshold > opts.Total {
 		return nil, fmt.Errorf("invalid threshold: %d", opts.Threshold)
 	}
+	payload = normalizeSplitPayload(payload)
 	setID := opts.SetID
 	if setID == [setIDLen]byte{} {
 		setID = DeriveSetID(payload, opts.Threshold, opts.Total)
@@ -153,6 +156,7 @@ func splitPayloadBytes(payload []byte, opts SplitOptions, network NetworkHint, s
 // DeriveSetID deterministically derives the descriptor shard set identifier from
 // payload bytes and split parameters.
 func DeriveSetID(payload []byte, threshold, total uint8) [setIDLen]byte {
+	payload = normalizeSplitPayload(payload)
 	h := sha256.New()
 	_, _ = h.Write([]byte("SE1-SETID-v1"))
 	_, _ = h.Write([]byte{threshold, total})
@@ -425,4 +429,64 @@ func inferHints(canonical string) (NetworkHint, ScriptHint, error) {
 		script = ScriptSortedMulti
 	}
 	return network, script, nil
+}
+
+func normalizeSplitPayload(payload []byte) []byte {
+	v, err := urtypes.Parse("crypto-output", payload)
+	if err != nil {
+		return payload
+	}
+	desc, ok := v.(urtypes.OutputDescriptor)
+	if !ok {
+		return payload
+	}
+	if desc.Type == urtypes.SortedMulti && len(desc.Keys) > 1 {
+		sort.Slice(desc.Keys, func(i, j int) bool {
+			return bytes.Compare(keyDescriptorSortKey(desc.Keys[i]), keyDescriptorSortKey(desc.Keys[j])) < 0
+		})
+	}
+	return desc.Encode()
+}
+
+func keyDescriptorSortKey(k urtypes.KeyDescriptor) []byte {
+	out := make([]byte, 0, 128+len(k.KeyData)+len(k.ChainCode))
+	var b4 [4]byte
+	binary.BigEndian.PutUint32(b4[:], k.MasterFingerprint)
+	out = append(out, b4[:]...)
+	binary.BigEndian.PutUint32(b4[:], k.ParentFingerprint)
+	out = append(out, b4[:]...)
+	if k.Network != nil {
+		out = append(out, []byte(k.Network.Name)...)
+	}
+	out = append(out, 0x00)
+
+	binary.BigEndian.PutUint32(b4[:], uint32(len(k.DerivationPath)))
+	out = append(out, b4[:]...)
+	for _, p := range k.DerivationPath {
+		binary.BigEndian.PutUint32(b4[:], p)
+		out = append(out, b4[:]...)
+	}
+
+	binary.BigEndian.PutUint32(b4[:], uint32(len(k.Children)))
+	out = append(out, b4[:]...)
+	for _, c := range k.Children {
+		out = append(out, byte(c.Type))
+		if c.Hardened {
+			out = append(out, 1)
+		} else {
+			out = append(out, 0)
+		}
+		binary.BigEndian.PutUint32(b4[:], c.Index)
+		out = append(out, b4[:]...)
+		binary.BigEndian.PutUint32(b4[:], c.End)
+		out = append(out, b4[:]...)
+	}
+
+	binary.BigEndian.PutUint32(b4[:], uint32(len(k.KeyData)))
+	out = append(out, b4[:]...)
+	out = append(out, k.KeyData...)
+	binary.BigEndian.PutUint32(b4[:], uint32(len(k.ChainCode)))
+	out = append(out, b4[:]...)
+	out = append(out, k.ChainCode...)
+	return out
 }
