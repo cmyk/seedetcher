@@ -21,7 +21,6 @@ import (
 	"golang.org/x/image/math/fixed"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
-	"seedetcher.com/descriptor/legacy"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/seedqr"
 	"seedetcher.com/version"
@@ -297,8 +296,7 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 	if threshold < 2 || threshold > totalShares {
 		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
 	}
-	normalized := legacy.NormalizeDescriptorForLegacyUR(*desc)
-	payload := normalized.Encode()
+	payload := desc.Encode()
 	if len(payload) == 0 {
 		return nil, fmt.Errorf("empty descriptor payload")
 	}

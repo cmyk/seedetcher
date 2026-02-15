@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"seedetcher.com/bc/urtypes"
-	"seedetcher.com/descriptor/legacy"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
@@ -20,8 +19,7 @@ func buildShardPreview(desc *urtypes.OutputDescriptor, setID [16]byte) ([]shard.
 	if desc == nil || len(desc.Keys) == 0 || desc.Threshold < 2 || desc.Threshold > len(desc.Keys) {
 		return nil, nil
 	}
-	normalized := legacy.NormalizeDescriptorForLegacyUR(*desc)
-	shares, err := shard.SplitPayloadBytes(normalized.Encode(), shard.SplitOptions{
+	shares, err := shard.SplitPayloadBytes(desc.Encode(), shard.SplitOptions{
 		Threshold: uint8(desc.Threshold),
 		Total:     uint8(len(desc.Keys)),
 		SetID:     setID,

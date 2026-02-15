@@ -99,8 +99,30 @@ func TestBuildDescriptorTextKeepsChildrenPath(t *testing.T) {
 		t.Fatal("missing descriptor")
 	}
 	got := buildDescriptorText(desc.Encode())
+	if !strings.Contains(got, "/48'/0'/0'/2'") {
+		t.Fatalf("descriptor text missing apostrophe origin path: %q", got)
+	}
 	if !strings.Contains(got, "/<0;1>/*") {
 		t.Fatalf("descriptor text missing children path: %q", got)
+	}
+}
+
+func TestBuildDescriptorTextAddsImpliedChildrenForMultisig(t *testing.T) {
+	cfg := testutils.WalletConfigs["multisig-mainnet-2of3"]
+	_, desc, err := testutils.ParseWallet(cfg, "", "")
+	if err != nil {
+		t.Fatalf("parse wallet: %v", err)
+	}
+	if desc == nil {
+		t.Fatal("missing descriptor")
+	}
+	// Simulate reconstructed payloads that lost child derivations.
+	for i := range desc.Keys {
+		desc.Keys[i].Children = nil
+	}
+	got := buildDescriptorText(desc.Encode())
+	if !strings.Contains(got, "/<0;1>/*") {
+		t.Fatalf("descriptor text missing implied children path: %q", got)
 	}
 }
 

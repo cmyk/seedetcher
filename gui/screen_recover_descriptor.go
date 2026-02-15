@@ -396,7 +396,16 @@ func (s *RecoverDescriptorFlowScreen) updateViewerQR(ctx *Context, dims image.Po
 			if strings.TrimSpace(content) == "" {
 				content = s.recoveredUR
 			}
-			s.viewQR = renderQRImageRect(content, dims.X, dims.Y)
+			maxSide := dims.X
+			if dims.Y < maxSide {
+				maxSide = dims.Y
+			}
+			// Use a large but not full-screen descriptor QR for camera reliability.
+			target := int(float64(maxSide) * 0.75)
+			if target < 160 {
+				target = 160
+			}
+			s.viewQR = renderQRImageRectMaxSide(content, dims.X, dims.Y, target)
 		}
 	}
 }
@@ -469,6 +478,10 @@ func renderQRImage(content string, size int) image.Image {
 }
 
 func renderQRImageRect(content string, width, height int) image.Image {
+	return renderQRImageRectMaxSide(content, width, height, 0)
+}
+
+func renderQRImageRectMaxSide(content string, width, height, maxSideLimit int) image.Image {
 	if width < 80 {
 		width = 80
 	}
@@ -493,6 +506,9 @@ func renderQRImageRect(content string, width, height int) image.Image {
 	maxSide := width
 	if height < maxSide {
 		maxSide = height
+	}
+	if maxSideLimit > 0 && maxSideLimit < maxSide {
+		maxSide = maxSideLimit
 	}
 	if modules <= maxSide {
 		// Integer module blocks when it fits on screen.
@@ -617,7 +633,9 @@ func formatDescriptorText(desc urtypes.OutputDescriptor) string {
 	formatKey := func(k urtypes.KeyDescriptor) string {
 		origin := ""
 		if len(k.DerivationPath) > 0 {
-			origin = fmt.Sprintf("[%08x/%s]", k.MasterFingerprint, strings.TrimPrefix(k.DerivationPath.String(), "m/"))
+			path := strings.TrimPrefix(k.DerivationPath.String(), "m/")
+			path = strings.ReplaceAll(path, "h", "'")
+			origin = fmt.Sprintf("[%08x/%s]", k.MasterFingerprint, path)
 		} else {
 			origin = fmt.Sprintf("[%08x]", k.MasterFingerprint)
 		}
@@ -635,7 +653,13 @@ func formatDescriptorText(desc urtypes.OutputDescriptor) string {
 	if desc.Type == urtypes.SortedMulti {
 		keys := make([]string, 0, len(desc.Keys))
 		for _, k := range desc.Keys {
-			keys = append(keys, formatKey(k))
+			key := formatKey(k)
+			if len(k.Children) == 0 {
+				// Some importers reject multisig descriptors without explicit
+				// account/change/index children; default to common BIP48 form.
+				key += "/<0;1>/*"
+			}
+			keys = append(keys, key)
 		}
 		return wrap(desc.Script, fmt.Sprintf("sortedmulti(%d,%s)", desc.Threshold, strings.Join(keys, ",")))
 	}
