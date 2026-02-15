@@ -3,14 +3,12 @@ package gui
 import (
 	"encoding/hex"
 	"fmt"
-	"image"
 	"strings"
 
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
-	"seedetcher.com/gui/widget"
 )
 
 // ShardedPolicyScreen confirms that multisig sharding parameters are derived
@@ -63,16 +61,15 @@ func (s *ShardedPolicyScreen) Update(ctx *Context, ops op.Ctx) Screen {
 
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
-		layoutTitle(ctx, ops, dims.X, th.Text, "Sharding")
+		title := layoutTitle(ctx, ops, dims.X, th.Text, "Sharding")
 
 		walletID := "N/A"
 		setID := strings.ToUpper(hex.EncodeToString(s.SetID[:4]))
 		if len(s.Shares) > 0 {
 			walletID = strings.ToUpper(hex.EncodeToString(s.Shares[0].WalletID[:]))
 		}
-		body := fmt.Sprintf("Using descriptor values:\n\nt = %d\nn = %d\nwallet_id = %s\nset_id = %s", desc.Threshold, len(desc.Keys), walletID, setID)
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.body, dims.X-88, th.Text, "%s", body)
-		op.Position(ops, ops.End(), image.Pt((dims.X-sz.X)/2, leadingSize+34))
+		body := fmt.Sprintf("Using descriptor values:\n\nt = %d\nn = %d\nWID: %s\nSET: %s", desc.Threshold, len(desc.Keys), walletID, setID)
+		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, title, body)
 
 		layoutNavigation(ctx, inp, ops, th, dims,
 			NavButton{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
