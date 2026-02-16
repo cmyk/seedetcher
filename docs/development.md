@@ -7,7 +7,7 @@ When building and you added/removed pkgs, do
 nix flake lock --update-input nixpkgs
 nix flake update
 
-nix build .#image-debug
+nix build .#image-gadget-debug
 ```
 
 If build fails because of has error use `--impure`
@@ -160,7 +160,7 @@ go run cmd/cli/main.go -w multisig \
 ```
 
 ### Host-mode printer check (usblp)
-- Host/host-debug images load `usblp` automatically (CONFIG_USB_PRINTER). With a USB printer attached you should see dmesg like `usblp0: USB Bidirectional printer` and `/dev/usb/lp0` present.
+- `image`/`image-debug` load `usblp` automatically (CONFIG_USB_PRINTER). With a USB printer attached you should see dmesg like `usblp0: USB Bidirectional printer` and `/dev/usb/lp0` present.
 - Host mode uses UART for shell (no USB gadget console). Quick probe from UART:
   ```bash
   ls -l /dev/usb/lp0

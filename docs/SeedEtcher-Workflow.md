@@ -37,7 +37,7 @@ MacOS:
 
 ```bash 
 diskutil unmountDisk /dev/diskX
-sudo dd if=result/seedetcher-host.img of=/dev/rdiskX bs=1m
+sudo dd if=result/seedetcher.img of=/dev/rdiskX bs=1m
 diskutil eject /dev/diskX
 ```
 
@@ -201,7 +201,6 @@ Carefully sand the etched plate until the undesired etching errors are mostly go
 Do not keep failed prints or transfer sheets: destroy immediately!
 
 And lastly: Please do test your backup before calling it done.
-
 
 
 

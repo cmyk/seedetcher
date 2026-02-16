@@ -4,6 +4,7 @@
 - (no changes yet)
 
 ## Release v0.2.0-beta.1
+- Build target rename: image outputs are now host-first by default (`image`, `image-debug`), with gadget variants moved to explicit names (`image-gadget`, `image-gadget-debug`); docs and flashing examples updated to match new artifact names.
 - Backup GUI flow update (multisig): `Confirm wallet` -> `Fingerprints` (paged, 5/page) -> `Descriptor shares` summary (`t/n`, `WID`, `SET`) -> `Wallet label` -> `Paper size` -> `Print`.
 - Backup GUI consistency: fingerprints paging now uses the same back/check navigation pattern as other review screens, with directional arrows shown only when movement is possible.
 - Printer regression fix: singlesig descriptor side no longer routes through shard splitting (`t=1,n=1`), so `cmd/cli` singlesig generation works again and emits plain descriptor QR.
