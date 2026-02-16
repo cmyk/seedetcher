@@ -49,7 +49,7 @@ MacOS:
 
 ```bash 
 diskutil unmountDisk /dev/diskX
-sudo dd if=result/seedetcher-host.img of=/dev/rdiskX bs=1m
+sudo dd if=result/seedetcher.img of=/dev/rdiskX bs=1m
 diskutil eject /dev/diskX
 ```
  ---
@@ -58,12 +58,12 @@ diskutil eject /dev/diskX
 
 (see [build-matrix.md](docs/dev/build-matrix.md) for target builds)
 
-`nix build .#image-debug`
+`nix build .#image-gadget-debug`
 
 Flash to SD card:
 ``` bash
 diskutil unmountDisk /dev/diskX
-sudo dd if=result/seedetcher-debug.img of=/dev/rdiskX bs=1m
+sudo dd if=result/seedetcher-gadget-debug.img of=/dev/rdiskX bs=1m
 diskutil eject /dev/diskX
 ```
 

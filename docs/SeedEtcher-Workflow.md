@@ -31,13 +31,13 @@ Note: FeCl is for etching brass, copper and steel. It does not work for titanium
 
 ## Flash SeedEtcher to SD-card
 
-Use [balena etcher](https://www.sparrowwallet.com/) or via cmd line:
+Use [balena etcher](https://etcher.balena.io) or via cmd line:
 
 MacOS:
 
 ```bash 
 diskutil unmountDisk /dev/diskX
-sudo dd if=result/seedetcher-host.img of=/dev/rdiskX bs=1m
+sudo dd if=result/seedetcher.img of=/dev/rdiskX bs=1m
 diskutil eject /dev/diskX
 ```
 
@@ -45,9 +45,9 @@ diskutil eject /dev/diskX
 
 There is multiple ways of doing this and it is beyond the scope of this guide.\
 SeedEtcher just needs a QR of the descriptor. The seedphrase(s) can be input via QR or manually.
-You generally use a coordinator like [sparrow](https://www.sparrowwallet.com/) to create the descriptor.
+You generally use a coordinator like [sparrow](https://www.sparrowwallet.com) to create the descriptor.
 Note: Sparrow just needs the xpubs of the seedphrases for this and not the actual seedphrase(s).
-Example: Create the 3 seedphrases for a 2/3 multisig on SeedSigner. Use sparrow to create the descriptor.
+Example: Create the 3 seedphrases for a 2/3 multisig on [SeedSigner](https://seedsigner.com). Use sparrow to create the descriptor.
 Scan the descriptor from sparrow with SeedEtcher and then each seedphrase QR.
 
 ## Descriptor Sharding (b0.2)
@@ -201,7 +201,6 @@ Carefully sand the etched plate until the undesired etching errors are mostly go
 Do not keep failed prints or transfer sheets: destroy immediately!
 
 And lastly: Please do test your backup before calling it done.
-
 
 
 

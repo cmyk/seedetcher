@@ -403,7 +403,7 @@
               initramfs = self.lib.${system}.mkinitramfs debug;
               img-name =
                 let
-                  base = if usbMode == "host" then "seedetcher-host" else "seedetcher";
+                  base = if usbMode == "host" then "seedetcher" else "seedetcher-gadget";
                 in
                 if debug then "${base}-debug.img" else "${base}.img";
 
@@ -698,10 +698,10 @@
             };
             initramfs = self.lib.${system}.mkinitramfs false;
             initramfs-debug = self.lib.${system}.mkinitramfs true;
-            image = self.lib.${system}.mkimage { debug = false; usbMode = "gadget"; };
-            image-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; };
-            image-host = self.lib.${system}.mkimage { debug = false; usbMode = "host"; };
-            image-host-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; };
+            image = self.lib.${system}.mkimage { debug = false; usbMode = "host"; };
+            image-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; };
+            image-gadget = self.lib.${system}.mkimage { debug = false; usbMode = "gadget"; };
+            image-gadget-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; };
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "reload" ''
               #!/bin/sh
