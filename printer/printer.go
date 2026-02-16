@@ -19,6 +19,7 @@ import (
 	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
+	"seedetcher.com/descriptor/legacy"
 	"seedetcher.com/logutil"
 	"seedetcher.com/seedqr"
 	"seedetcher.com/version"
@@ -280,8 +281,9 @@ func createDescriptorQR(desc *urtypes.OutputDescriptor) string {
 	if desc == nil {
 		return ""
 	}
+	normalized := legacy.NormalizeDescriptorForLegacyUR(*desc)
 	// Encode as UR:crypto-output so scan path uses the standard descriptor parser.
-	return ur.Encode("crypto-output", desc.Encode(), 1, 1)
+	return ur.Encode("crypto-output", normalized.Encode(), 1, 1)
 }
 
 func derivationPathForKey(key urtypes.KeyDescriptor, script urtypes.Script) string {

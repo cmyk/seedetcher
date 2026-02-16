@@ -23,7 +23,8 @@ A documented, repeatable workflow for chemically etching printed layouts onto st
 ---
 
 ## Features
-- Scan SeedQR / CompactSeedQR with Pi camera (libcamera + zbar).
+- b0.2 uses Shamir descriptor shares. No single plate contains the full descriptor. An m-of-n wallet uses `t=m` descriptor shares for recovery (e.g., a 2/3 wallet needs 2 descriptor shares).
+- The SeedEtcher controller has a descriptor recovery mode. TODO: cross-platform binaries will make this inheritance-friendly.
 - Manual mnemonic input with validation (`bip39`).
 - GUI-driven, with physical button navigation.
 - Outputs plates layouts with words + QR codes directly via serial USB
@@ -48,7 +49,7 @@ MacOS:
 
 ```bash 
 diskutil unmountDisk /dev/diskX
-sudo dd if=result/seedetcher-host.img of=/dev/rdiskX bs=1m
+sudo dd if=result/seedetcher.img of=/dev/rdiskX bs=1m
 diskutil eject /dev/diskX
 ```
  ---
@@ -57,12 +58,12 @@ diskutil eject /dev/diskX
 
 (see [build-matrix.md](docs/dev/build-matrix.md) for target builds)
 
-`nix build .#image-debug`
+`nix build .#image-gadget-debug`
 
 Flash to SD card:
 ``` bash
 diskutil unmountDisk /dev/diskX
-sudo dd if=result/seedetcher-debug.img of=/dev/rdiskX bs=1m
+sudo dd if=result/seedetcher-gadget-debug.img of=/dev/rdiskX bs=1m
 diskutil eject /dev/diskX
 ```
 

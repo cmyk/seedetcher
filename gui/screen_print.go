@@ -27,7 +27,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	inp := &s.inp
 	paperChoice := &ChoiceScreen{
 		Title:   "Select Paper Size",
-		Lead:    "Choose your printer's paper size",
+		Lead:    "Choose your printer's\npaper size",
 		Choices: []string{"A4", "Letter"},
 	}
 	choice, ok := paperChoice.Choose(ctx, ops, th)
@@ -83,7 +83,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		if desc != nil {
 			title = "Print Wallet Share"
 		}
-		layoutTitle(ctx, ops, dims.X, th.Text, "%s", title)
+		titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "%s", title)
 		status := "Printer: Not connected"
 		if ctx.PrinterConnected {
 			if ctx.PrinterModel != "" {
@@ -94,10 +94,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		}
 		lead := fmt.Sprintf("%s\nPaper size: %s\n\nPress Print to continue.", status, selectedPaper)
 		if desc != nil {
-			lead = fmt.Sprintf("%s\nPaper size: %s\n\nPrinting share %d/%d.\nPress Print to continue.", status, selectedPaper, keyIdx+1, len(desc.Keys))
+			lead = fmt.Sprintf("%s\nPaper size: %s\n\nPrinting %d wallet shares.\nPress Print to continue.", status, selectedPaper, len(desc.Keys))
 		}
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", lead)
-		op.Position(ops, ops.End(), dims.Div(2).Sub(sz.Div(2)))
+		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, lead)
 		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
 			{Button: Button3, Style: StylePrimary, Icon: assets.IconPrint},

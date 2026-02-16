@@ -96,7 +96,8 @@ func (d *QRDecoder) parseQR(qr []byte) (any, bool) {
 		v, err := urtypes.Parse(typ, enc)
 		if err == nil {
 			if desc, ok := v.(urtypes.OutputDescriptor); ok {
-				logutil.DebugLog("Parsed descriptor (partial/full): %+v", desc)
+				// Avoid logging descriptor content (xpubs/paths are sensitive).
+				logutil.DebugLog("Parsed descriptor QR payload")
 				return desc, true
 			}
 			return v, true

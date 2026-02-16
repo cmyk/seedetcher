@@ -1,6 +1,6 @@
 package version
 
-const Tag = "v0.1.0" // Bump with release tags.
+const Tag = "v0.2.0-beta.1" // Bump with release tags.
 
 // Build can be overridden at link time with:
 //

@@ -6,6 +6,7 @@ import (
 
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
+	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/gui/widget"
@@ -32,8 +33,10 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			case Button1:
 				return s // No-op back on root
 			case Button3:
-				// Enter backup/print flow as its own screen.
-				return &BackupFlowScreen{Theme: &singleTheme}
+				return &SDCardGateScreen{
+					Theme: &singleTheme,
+					Next:  &ActionChoiceScreen{Theme: &singleTheme},
+				}
 			}
 		}
 		dims := ctx.Platform.DisplaySize()
@@ -67,7 +70,8 @@ type BackupFlowScreen struct {
 	confirmKeyIdx int
 	printDesc     *urtypes.OutputDescriptor
 	label         string
-	removeWarn    *ConfirmWarningScreen
+	shardSetID    [16]byte
+	shardShares   []shard.Share
 }
 
 type backupStage int
@@ -76,6 +80,8 @@ const (
 	stageDescriptor backupStage = iota
 	stageSeeds
 	stageConfirm
+	stageFingerprints
+	stageShardInfo
 	stageLabel
 	stagePrint
 )
@@ -85,36 +91,13 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	if th == nil {
 		th = &descriptorTheme
 	}
-	// Require SD card removal before proceeding, matching the legacy main flow.
-	if !ctx.EmptySDSlot {
-		if s.removeWarn == nil {
-			s.removeWarn = &ConfirmWarningScreen{
-				Title: "Remove SD card",
-				Body:  "Remove SD card to continue.\n\nHold button to ignore this warning.",
-				Icon:  assets.IconRight,
-			}
-		}
-		dims := ctx.Platform.DisplaySize()
-		switch s.removeWarn.Layout(ctx, ops, th, dims) {
-		case ConfirmYes:
-			ctx.EmptySDSlot = true
-			s.removeWarn = nil
-		case ConfirmNo:
-			s.removeWarn = nil
-			return &MainMenuScreen{}
-		case ConfirmNone:
-			// keep showing
-		}
-		ctx.Frame()
-		return s
-	}
 	switch s.stage {
 	case stageDescriptor:
 		return &DescriptorInputScreen{
 			Theme: th,
 			OnDone: func(desc *urtypes.OutputDescriptor, ok bool) Screen {
 				if !ok {
-					return &MainMenuScreen{}
+					return &ActionChoiceScreen{Theme: &singleTheme}
 				}
 				s.desc = desc
 				ctx.Keystores = make(map[uint32]bip39.Mnemonic)
@@ -122,12 +105,15 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 				s.printDesc = desc
 				if desc == nil {
 					s.totalSeeds = 1
+					s.stage = stageSeeds
 				} else {
 					s.totalSeeds = len(desc.Keys)
+					s.shardSetID = shard.DeriveSetID(desc.Encode(), uint8(desc.Threshold), uint8(len(desc.Keys)))
+					s.shardShares = buildShardShares(desc, s.shardSetID)
+					s.stage = stageSeeds
 				}
 				s.currentSeed = 1
 				s.printMnemonic = nil
-				s.stage = stageSeeds
 				return s
 			},
 		}
@@ -195,6 +181,40 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 					return s
 				}
 				s.confirmKeyIdx = keyIdx
+				s.stage = stageFingerprints
+				return s
+			},
+		}
+	case stageFingerprints:
+		if s.desc == nil {
+			s.stage = stageLabel
+			return s
+		}
+		return &FingerprintsScreen{
+			Theme:      th,
+			Descriptor: s.desc,
+			OnBack: func() Screen {
+				s.stage = stageConfirm
+				return s
+			},
+			OnContinue: func() Screen {
+				s.stage = stageShardInfo
+				return s
+			},
+		}
+	case stageShardInfo:
+		if s.desc == nil {
+			s.stage = stageLabel
+			return s
+		}
+		return &ShardPreviewScreen{
+			Theme:  th,
+			Shares: s.shardShares,
+			OnBack: func() Screen {
+				s.stage = stageFingerprints
+				return s
+			},
+			OnDone: func() Screen {
 				s.stage = stageLabel
 				return s
 			},
@@ -206,7 +226,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			Value:   s.label,
 			OnCancel: func() Screen {
 				if s.desc != nil {
-					s.stage = stageConfirm
+					s.stage = stageShardInfo
 				} else {
 					s.stage = stageSeeds
 				}
@@ -233,13 +253,18 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			}
 			job = FromDescriptor(desc, ctx.Keystores[desc.Keys[0].MasterFingerprint], s.confirmKeyIdx, label)
 		}
+		if s.desc != nil {
+			printer.SetDescriptorShardSetID(&s.shardSetID)
+		}
 		return &PrintFlowScreen{
 			Theme: th,
 			Job:   job,
 			OnSuccess: func() Screen {
+				printer.SetDescriptorShardSetID(nil)
 				return &MainMenuScreen{}
 			},
 			OnRetry: func() Screen {
+				printer.SetDescriptorShardSetID(nil)
 				s.stage = stageConfirm
 				return s
 			},
