@@ -131,7 +131,7 @@ error: hash mismatch in fixed-output derivation '/nix/store/a0wafn6k91jahp9wwaqs
             got:    sha256-K1aLQiZvP4p3ptJAIsD67u4C7m4WyLCzMw+kjrdcP5w=
 ```
 
-Change line 569 in `flake.nix` to the new hash!
+Change the according line in `flake.nix` to the new hash!
 
 ## Printing
 
@@ -159,6 +159,21 @@ go run cmd/cli/main.go -w multisig \
   -desc-qr-mm 25
 ```
 
+### CLI flags (`cmd/cli/main.go`)
+- `-mnemonic` (default: empty): 12- or 24-word mnemonic phrase (space-separated)
+- `-descriptor` (default: empty): raw descriptor string
+- `-o` (default: `/home/cmyk/PDF`): output directory (PDF)
+- `-papersize` (default: `A4`): paper size (`A4` or `Letter`)
+- `-verbose` (default: `false`): verbose logging
+- `-w` (default: `multisig`): wallet fixture (`singlesig`, `multisig`, `multisig-mainnet-2of3`, `multisig-3of5`, `multisig-7of10`)
+- `-png-out` (default: empty): optional output directory for plate PNGs
+- `-dpi` (default: `600`): raster output DPI
+- `-mirror` (default: `false`): mirror raster output horizontally (toner transfer)
+- `-invert` (default: `false`): invert raster output (white/black swap)
+- `-desc-qr-mm` (default: `75.0`): maximum descriptor QR size in millimeters
+- `-pcl-out` (default: empty): optional output path for raw PCL
+- `-wallet-name` (default: empty): optional wallet name printed on plates (defaults to `SEEDETCHER`)
+
 ### Host-mode printer check (usblp)
 - `image`/`image-debug` load `usblp` automatically (CONFIG_USB_PRINTER). With a USB printer attached you should see dmesg like `usblp0: USB Bidirectional printer` and `/dev/usb/lp0` present.
 - Host mode uses UART for shell (no USB gadget console). Quick probe from UART:
@@ -169,7 +184,7 @@ go run cmd/cli/main.go -w multisig \
   ```
 
 ### Raster/PCL notes
-- `-png-out`/`-dpi`/`-mirror`/`-invert`/`-desc-qr-mm` apply to PNG/PCL output; PDFs are always unmirrored/uninverted.
+- -png-out/-dpi/-mirror/-invert/-desc-qr-mm apply to raster plate generation; resulting PDF, PNG, and PCL outputs all reflect those settings.
 - `-pcl-out <path|dir>` writes raw PCL (mirrored/inverted if flags set). If a directory or trailing `/` is provided, the file is auto-named `<wallet>.pcl` inside it.
 - Send PCL over USB: `scripts/print_pcl.sh <file.pcl> [printer_dev]` (defaults `/dev/usb/lp0`, resets channel and streams with `dd bs=16k`).
 
@@ -185,13 +200,14 @@ go run cmd/cli/main.go -w multisig \
 
 ## Shell Commands on Zero
 
-`--test-createPageLayout` is needed to access the controller's flags!
+Use `-test-createPageLayout` to run controller in headless render-test mode (no GUI), so `-w/-mnemonic/-descriptor/...` flags are applied.
 
 ```bash
-./reload-a --test-createPageLayout -verbose -w singlesig
+./controller -test-createPageLayout -verbose -w singlesig
 ```
 
-(remember to use the running instance of the controller! If you reloaded the controller, it will be either reload-a or reload-b)
+This writes `/tmp/test_output.pdf` on the device (and optional PCL if `-pcl-out` is set).
+If you are running a debug hot-reload build, the active binary may be `reload-a` or `reload-b` instead of `controller`.
 
 Restarting the Controller:
 

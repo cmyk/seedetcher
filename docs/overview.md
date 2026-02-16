@@ -21,11 +21,17 @@ Seed generation is **not** included — only processing of existing seeds.
    - Confirm/preview screens.
 3. `seedqr.go`: encode/decode SeedQR & CompactSeedQR.  
 4. `bip39.go`: mnemonic validation, checksum, wordlist.  
-5. `printer/printer.go`: PDF generation (pdfcpu), outputs via serial.  
+5. `printer/raster.go`: canonical plate raster generation (single source of truth for layout).  
+6. Output serialization from the same raster pages:
+   - `printer/pcl.go`: PCL5e stream for direct USB printer output (`/dev/usb/lp0`, host mode).
+   - `printer/pdf_raster.go`: PDF serialization (CLI output and gadget/dev capture fallback).
 6. User prints on laser → transfers toner to steel → acid etches.
 
-## 4. File Map (PDF creation focus)
+## 4. File Map (print pipeline focus)
 - `cmd/controller/main.go` – entrypoint, GUI loop.  
 - `cmd/controller/platform_rpi.go` – Pi Zero hardware (camera, serial, display).  
 - `gui/gui.go` – GUI flows (scan, input, confirm).  
-- `printer/printer.go` – PDF generation and output.  
+- `printer/raster.go` – canonical plate bitmap rendering.
+- `printer/pcl.go` – PCL output writer.
+- `printer/pdf_raster.go` – PDF writer from raster pages.
+- `printer/printer.go` – legacy/deprecated helpers (kept for compatibility).
