@@ -293,6 +293,13 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 		return nil, fmt.Errorf("invalid share count: %d", totalShares)
 	}
 	threshold := desc.Threshold
+	if threshold == 1 && totalShares == 1 {
+		qr := createDescriptorQR(desc)
+		if qr == "" {
+			return nil, fmt.Errorf("empty descriptor QR content")
+		}
+		return []string{qr}, nil
+	}
 	if threshold < 2 || threshold > totalShares {
 		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
 	}

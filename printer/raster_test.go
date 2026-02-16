@@ -72,3 +72,28 @@ func TestDescriptorShardQRCodesRespectForcedSetID(t *testing.T) {
 		}
 	}
 }
+
+func TestDescriptorShardQRCodesSinglesigUsesDescriptorQR(t *testing.T) {
+	cfg := testutils.WalletConfigs["singlesig"]
+	_, desc, err := testutils.ParseWallet(cfg, "", "")
+	if err != nil {
+		t.Fatalf("parse wallet: %v", err)
+	}
+	if desc == nil {
+		t.Fatal("missing descriptor")
+	}
+	if desc.Threshold != 1 || len(desc.Keys) != 1 {
+		t.Fatalf("unexpected singlesig descriptor params: threshold=%d keys=%d", desc.Threshold, len(desc.Keys))
+	}
+
+	qrs, err := descriptorShardQRCodes(desc, len(desc.Keys))
+	if err != nil {
+		t.Fatalf("descriptorShardQRCodes singlesig: %v", err)
+	}
+	if len(qrs) != 1 {
+		t.Fatalf("got %d qrs, want 1", len(qrs))
+	}
+	if strings.HasPrefix(strings.ToUpper(qrs[0]), shard.Prefix) {
+		t.Fatalf("singlesig descriptor QR unexpectedly sharded: %q", qrs[0])
+	}
+}

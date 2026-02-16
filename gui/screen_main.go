@@ -72,18 +72,17 @@ type BackupFlowScreen struct {
 	label         string
 	shardSetID    [16]byte
 	shardShares   []shard.Share
-	shardQRCodes  []string
 }
 
 type backupStage int
 
 const (
 	stageDescriptor backupStage = iota
-	stageShardInfo
 	stageSeeds
 	stageConfirm
+	stageFingerprints
+	stageShardInfo
 	stageLabel
-	stageShardPreview
 	stagePrint
 )
 
@@ -110,30 +109,11 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 				} else {
 					s.totalSeeds = len(desc.Keys)
 					s.shardSetID = shard.DeriveSetID(desc.Encode(), uint8(desc.Threshold), uint8(len(desc.Keys)))
-					s.shardShares, s.shardQRCodes = buildShardPreview(desc, s.shardSetID)
-					s.stage = stageShardInfo
+					s.shardShares = buildShardShares(desc, s.shardSetID)
+					s.stage = stageSeeds
 				}
 				s.currentSeed = 1
 				s.printMnemonic = nil
-				return s
-			},
-		}
-	case stageShardInfo:
-		if s.desc == nil {
-			s.stage = stageSeeds
-			return s
-		}
-		return &ShardedPolicyScreen{
-			Theme:      th,
-			Descriptor: s.desc,
-			SetID:      s.shardSetID,
-			Shares:     s.shardShares,
-			OnBack: func() Screen {
-				s.stage = stageDescriptor
-				return s
-			},
-			OnContinue: func() Screen {
-				s.stage = stageSeeds
 				return s
 			},
 		}
@@ -201,6 +181,40 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 					return s
 				}
 				s.confirmKeyIdx = keyIdx
+				s.stage = stageFingerprints
+				return s
+			},
+		}
+	case stageFingerprints:
+		if s.desc == nil {
+			s.stage = stageLabel
+			return s
+		}
+		return &FingerprintsScreen{
+			Theme:      th,
+			Descriptor: s.desc,
+			OnBack: func() Screen {
+				s.stage = stageConfirm
+				return s
+			},
+			OnContinue: func() Screen {
+				s.stage = stageShardInfo
+				return s
+			},
+		}
+	case stageShardInfo:
+		if s.desc == nil {
+			s.stage = stageLabel
+			return s
+		}
+		return &ShardPreviewScreen{
+			Theme:  th,
+			Shares: s.shardShares,
+			OnBack: func() Screen {
+				s.stage = stageFingerprints
+				return s
+			},
+			OnDone: func() Screen {
 				s.stage = stageLabel
 				return s
 			},
@@ -212,7 +226,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			Value:   s.label,
 			OnCancel: func() Screen {
 				if s.desc != nil {
-					s.stage = stageConfirm
+					s.stage = stageShardInfo
 				} else {
 					s.stage = stageSeeds
 				}
@@ -220,24 +234,6 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			},
 			OnDone: func(label string) Screen {
 				s.label = label
-				if s.desc != nil {
-					s.stage = stageShardPreview
-				} else {
-					s.stage = stagePrint
-				}
-				return s
-			},
-		}
-	case stageShardPreview:
-		return &ShardPreviewScreen{
-			Theme:  th,
-			Shares: s.shardShares,
-			QRs:    s.shardQRCodes,
-			OnBack: func() Screen {
-				s.stage = stageLabel
-				return s
-			},
-			OnDone: func() Screen {
 				s.stage = stagePrint
 				return s
 			},

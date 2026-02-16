@@ -60,6 +60,17 @@ For multisig backups, SeedEtcher now prints descriptor shares (`SE1:`) instead o
 - Singlesig backup flow is unchanged (no descriptor sharding required).
 - Recovery QR is sensitive: once reconstructed, treat it like wallet metadata and keep cameras/devices away.
 
+### Backup flow (on device)
+
+For multisig backups, the on-device review/setup flow is:
+
+1. Confirm wallet
+2. Fingerprints review (all cosigner fingerprints, paged)
+3. Descriptor shares summary (`t/n`, `WID`, `SET`)
+4. Wallet label
+5. Paper size
+6. Print
+
 ### Recovery (cold-room flow)
 
 1. Open `Recover Descr.` on SeedEtcher.
@@ -190,7 +201,6 @@ Carefully sand the etched plate until the undesired etching errors are mostly go
 Do not keep failed prints or transfer sheets: destroy immediately!
 
 And lastly: Please do test your backup before calling it done.
-
 
 
 

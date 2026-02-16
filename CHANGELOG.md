@@ -4,6 +4,9 @@
 - (no changes yet)
 
 ## Release v0.2.0-beta.1
+- Backup GUI flow update (multisig): `Confirm wallet` -> `Fingerprints` (paged, 5/page) -> `Descriptor shares` summary (`t/n`, `WID`, `SET`) -> `Wallet label` -> `Paper size` -> `Print`.
+- Backup GUI consistency: fingerprints paging now uses the same back/check navigation pattern as other review screens, with directional arrows shown only when movement is possible.
+- Printer regression fix: singlesig descriptor side no longer routes through shard splitting (`t=1,n=1`), so `cmd/cli` singlesig generation works again and emits plain descriptor QR.
 - Sharded descriptor recovery/export: added fullscreen display-mode chooser (`Single QR` vs animated `Multipart UR`) with overlay-free viewer; recovery now hardens non-`SE1` inputs with explicit user-facing errors instead of crashes.
 - Logging hardening: removed descriptor-content debug logging in QR scan path to avoid leaking descriptor payload details in logs.
 - Interop validation: recovered animated multipart `UR:CRYPTO-OUTPUT` descriptor was verified importable in Sparrow with a `7/10` test wallet.

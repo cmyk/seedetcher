@@ -13,12 +13,13 @@ flowchart TD
     D[Descriptor input<br>Scan or Skip or Reuse<br>Validate descriptor and duplicates] --> M{Descriptor present}
     B --> D
     M -->|No singlesig| F1[Seed input confirm<br>1 of 1]
-    M -->|Yes multisig| S1[Shard params<br>Derive t and n from descriptor]
-    S1 --> S2[Shard review<br>wallet_id/set_id]
-    S2 --> F2
+    M -->|Yes multisig| F2
     F2[Seeds loop<br>Scan or manual per key<br>Confirm and no duplicates] --> G1[Confirm wallet<br>choose key index]
-    G1 --> H2[Add wallet label]
-    H2 --> P2[Print flow with shard QR per plate]
+    G1 --> FP[Fingerprints review<br>All cosigner fingerprints<br>5 per page]
+    FP --> S2[Descriptor shares review<br>t/n + wallet_id/set_id]
+    S2 --> H2[Add wallet label]
+    H2 --> PS[Select paper size]
+    PS --> P2[Print flow with descriptor shares per plate]
     P2 --> A
 
     F1 --> H3[Add wallet label]
@@ -45,6 +46,9 @@ Notes:
 - All helper logic lives alongside screens (`gui/screen_*.go` and `gui/screen_helpers.go`).
 - Multisig backup uses sharded descriptor mode only in b0.2.
 - Singlesig backup stays non-sharded.
+- Backup review sequence for multisig is:
+  - `Confirm wallet` -> `Fingerprints` -> `Descriptor shares` -> `Wallet label` -> `Paper size` -> `Print`.
+- `Fingerprints` uses page navigation (left/right arrows) and keeps back/check nav buttons.
 - Recovery mode accepts both sharded shares and plain descriptor QR input.
 - Plain descriptor QR input bypasses shard threshold accumulation and goes directly to export/confirm.
 - Recovery QR screen copy:
