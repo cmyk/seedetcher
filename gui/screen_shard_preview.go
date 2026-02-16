@@ -11,11 +11,11 @@ import (
 	"seedetcher.com/gui/op"
 )
 
-// buildShardPreview precomputes descriptor shares and encoded QR payloads for
-// one backup run using a fixed set_id.
-func buildShardPreview(desc *urtypes.OutputDescriptor, setID [16]byte) ([]shard.Share, []string) {
+// buildShardShares precomputes descriptor share metadata for one backup run
+// using a fixed set_id.
+func buildShardShares(desc *urtypes.OutputDescriptor, setID [16]byte) []shard.Share {
 	if desc == nil || len(desc.Keys) == 0 || desc.Threshold < 2 || desc.Threshold > len(desc.Keys) {
-		return nil, nil
+		return nil
 	}
 	shares, err := shard.SplitPayloadBytes(desc.Encode(), shard.SplitOptions{
 		Threshold: uint8(desc.Threshold),
@@ -23,26 +23,15 @@ func buildShardPreview(desc *urtypes.OutputDescriptor, setID [16]byte) ([]shard.
 		SetID:     setID,
 	})
 	if err != nil {
-		return nil, nil
+		return nil
 	}
-	qrs := make([]string, len(shares))
-	for i, sh := range shares {
-		enc, err := shard.Encode(sh)
-		if err != nil {
-			return nil, nil
-		}
-		qrs[i] = enc
-	}
-	return shares, qrs
+	return shares
 }
 
-// ShardPreviewScreen shows each shard QR one-at-a-time and requires explicit
-// next-share confirmation before printing.
+// ShardPreviewScreen shows descriptor shard policy summary before print setup.
 type ShardPreviewScreen struct {
 	Theme  *Colors
 	Shares []shard.Share
-	QRs    []string
-	Idx    int
 	OnBack func() Screen
 	OnDone func() Screen
 }
@@ -52,17 +41,11 @@ func (s *ShardPreviewScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	if th == nil {
 		th = &singleTheme
 	}
-	if len(s.Shares) == 0 || len(s.QRs) == 0 {
+	if len(s.Shares) == 0 {
 		if s.OnDone != nil {
 			return s.OnDone()
 		}
 		return &MainMenuScreen{}
-	}
-	if s.Idx < 0 {
-		s.Idx = 0
-	}
-	if s.Idx >= len(s.QRs) {
-		s.Idx = len(s.QRs) - 1
 	}
 
 	inp := new(InputTracker)
@@ -77,32 +60,32 @@ func (s *ShardPreviewScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			}
 			switch e.Button {
 			case Button1:
-				if s.Idx == 0 {
-					if s.OnBack != nil {
-						return s.OnBack()
-					}
-					return &MainMenuScreen{}
+				if s.OnBack != nil {
+					return s.OnBack()
 				}
-				s.Idx--
+				return &MainMenuScreen{}
 			case Button3:
-				if s.Idx >= len(s.QRs)-1 {
-					if s.OnDone != nil {
-						return s.OnDone()
-					}
-					return &MainMenuScreen{}
+				if s.OnDone != nil {
+					return s.OnDone()
 				}
-				s.Idx++
+				return &MainMenuScreen{}
 			}
 		}
 
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
-		title := layoutTitle(ctx, ops, dims.X, th.Text, "Descriptor Share QR")
+		title := layoutTitle(ctx, ops, dims.X, th.Text, "Descriptor Shares")
 
-		sh := s.Shares[s.Idx]
+		sh := s.Shares[0]
 		wid := strings.ToUpper(hex.EncodeToString(sh.WalletID[:]))
 		sid := strings.ToUpper(hex.EncodeToString(sh.SetID[:4]))
-		body := fmt.Sprintf("Share %d/%d (need %d)\n\nWID: %s\nSET: %s\n\nReview then continue to print.", sh.Index, sh.Total, sh.Threshold, wid, sid)
+		body := fmt.Sprintf(
+			"Need %d of %d descriptor shares to recover.\n\nWID: %s\nSET: %s\n\nContinue to wallet label and print setup.",
+			sh.Threshold,
+			sh.Total,
+			wid,
+			sid,
+		)
 		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, title, body)
 
 		layoutNavigation(ctx, inp, ops, th, dims,
