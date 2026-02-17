@@ -222,12 +222,12 @@ func parsePathElement(p string) (uint32, error) {
 		offset = hdkeychain.HardenedKeyStart
 		p = p[:len(p)-1]
 	}
-	idx, err := strconv.ParseInt(p, 10, 0)
+	idx, err := strconv.ParseUint(p, 10, 32)
 	if err != nil {
 		return 0, fmt.Errorf("invalid path element: %q", p)
 	}
 	iu32 := uint32(idx)
-	if int64(iu32) != idx || iu32+offset < iu32 {
+	if iu32+offset < iu32 {
 		return 0, fmt.Errorf("path element out of range: %q", p)
 	}
 	return iu32 + offset, nil

@@ -187,7 +187,7 @@ func (f *formatter) Next(format string, args ...any) (rune, bool) {
 				r = f.next(format)
 			}
 			if start < f.idx-1 {
-				v, err := strconv.ParseUint(format[start:f.idx-1], 10, 32)
+				v, err := strconv.ParseInt(format[start:f.idx-1], 10, strconv.IntSize)
 				if err != nil {
 					panic(err)
 				}
