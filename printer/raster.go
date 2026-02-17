@@ -166,7 +166,6 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 	numColWMM := trackedTextWidthMM(wordFace, dpi, "24", wordTrackPx)
 	spaceWMM := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx)
 	yLeft := wordStartBaseline
-	lastRightBaseline := wordStartBaseline
 	for i := 0; i < 16 && i < len(mnemonic); i++ {
 		if mnemonic[i] == -1 {
 			continue
@@ -188,7 +187,6 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		numW := trackedTextWidthMM(wordFace, dpi, num, wordTrackPx)
 		drawTrackedText(canvas, wordFace, dpi, rightColXMM+numColWMM-numW, yRight, num, wordTrackPx)
 		drawTrackedText(canvas, wordFace, dpi, rightColXMM+numColWMM+spaceWMM, yRight, word, wordTrackPx)
-		lastRightBaseline = yRight
 		yRight += leadingMM
 	}
 
@@ -199,9 +197,8 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 			if err == nil {
 				qrSize := 28.0
 				qrX := qrLeftMM + 0.5
-				wordDescentMM := float64(wordFace.Metrics().Descent.Ceil()) * 25.4 / dpi
-				// Start QR 5mm below the bottom of the last right-column word.
-				qrY := lastRightBaseline + wordDescentMM + 5.0
+				// Fixed vertical anchor for seed QR: keep bottom 12mm above plate edge.
+				qrY := plateSizeMM - 12.0 - qrSize
 				drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
 					QuietModules:      0,
 					Shape:             plateQRCircle,

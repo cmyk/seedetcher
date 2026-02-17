@@ -8,6 +8,26 @@ import (
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 )
 
+func TestSeed12FixtureParsesAs12WordSeedOnly(t *testing.T) {
+	cfg, ok := WalletConfigs["seed-12"]
+	if !ok {
+		t.Fatal("missing seed-12 fixture")
+	}
+	mnemonics, desc, err := ParseWallet(cfg, "", "")
+	if err != nil {
+		t.Fatalf("parse wallet: %v", err)
+	}
+	if desc != nil {
+		t.Fatal("expected no descriptor for seed-12 fixture")
+	}
+	if got, want := len(mnemonics), 1; got != want {
+		t.Fatalf("mnemonic count = %d, want %d", got, want)
+	}
+	if got, want := len(mnemonics[0]), 12; got != want {
+		t.Fatalf("mnemonic length = %d, want %d", got, want)
+	}
+}
+
 func TestMultisigMainnet2of3FixtureParsesAsMainnetXpub(t *testing.T) {
 	cfg, ok := WalletConfigs["multisig-mainnet-2of3"]
 	if !ok {
