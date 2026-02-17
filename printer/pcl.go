@@ -54,7 +54,18 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 
 	hasDesc := descPlates != nil && len(descPlates) == len(seedPlates)
 	totalShares := len(seedPlates)
-	sharesPerPage := 3 // matches PDF layout logic
+	maxSlotsPerPage := 6 // A4 default: 2x3
+	if paper == PaperLetter {
+		maxSlotsPerPage = 4 // Letter: 2x2 to preserve true 90mm plates without scaling
+	}
+	slotsPerShare := 1
+	if hasDesc {
+		slotsPerShare = 2
+	}
+	sharesPerPage := maxSlotsPerPage / slotsPerShare
+	if sharesPerPage < 1 {
+		sharesPerPage = 1
+	}
 
 	// Total slots we expect to place (for progress).
 	totalSlots := totalShares
@@ -104,13 +115,15 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 			return nil, fmt.Errorf("invalid plate dimensions")
 		}
 
-		// Compute scaling to fit within margins/gaps
-		availW := pageWpx - 2*targetMarginPx - targetGapPx*(cols-1)
-		availH := pageHpx - 2*targetMarginPx - targetGapPx*(rows-1)
-		scale := math.Min(1, math.Min(float64(availW)/(float64(baseW)*float64(cols)), float64(availH)/(float64(baseH)*float64(rows))))
-		plateW := int(math.Round(float64(baseW) * scale))
-		plateH := int(math.Round(float64(baseH) * scale))
+		// Preserve true plate dimensions; never scale.
+		plateW := baseW
+		plateH := baseH
 		gapPx := targetGapPx
+		reqW := cols*plateW + (cols-1)*gapPx + 2*targetMarginPx
+		reqH := rows*plateH + (rows-1)*gapPx + 2*targetMarginPx
+		if reqW > pageWpx || reqH > pageHpx {
+			return nil, fmt.Errorf("plates do not fit page at fixed size (paper=%s req=%dx%d page=%dx%d)", paper, reqW, reqH, pageWpx, pageHpx)
+		}
 		marginX := (pageWpx - (cols*plateW + (cols-1)*gapPx)) / 2
 		// Keep pages top-anchored so partial pages (e.g. 1/1 or 2/2) start at the top.
 		marginY := targetMarginPx
