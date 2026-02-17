@@ -6,8 +6,6 @@ import (
 	"image/draw"
 	"io"
 	"math"
-
-	xdraw "golang.org/x/image/draw"
 )
 
 type progressWriter struct {
@@ -16,6 +14,22 @@ type progressWriter struct {
 	total    int64
 	stage    PrintStage
 	progress ProgressFunc
+}
+
+type placedPlate struct {
+	plate *image.Paletted
+	x     int
+	y     int
+}
+
+type pagePlacement struct {
+	slots []placedPlate
+}
+
+type placementPlan struct {
+	pageWpx int
+	pageHpx int
+	pages   []pagePlacement
 }
 
 func newProgressWriter(stage PrintStage, w io.Writer, total int64, progress ProgressFunc) *progressWriter {
@@ -40,119 +54,127 @@ func (pw *progressWriter) Write(b []byte) (int, error) {
 // Mirrors/inversion should be handled at the plate level via RasterOptions.
 // progress, if set, receives StageCompose updates as slots are placed.
 func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, progress ProgressFunc) ([]*image.Paletted, error) {
-	if len(seedPlates) == 0 {
-		return nil, fmt.Errorf("no seed plates to compose")
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, progress)
+	if err != nil {
+		return nil, err
 	}
-	pageWmm, pageHmm, ok := paperDimsMM(paper)
-	if !ok {
-		return nil, fmt.Errorf("unsupported paper size: %v", paper)
-	}
-	pageWpx := mmToPx(pageWmm, dpi)
-	pageHpx := mmToPx(pageHmm, dpi)
-	targetGapPx := mmToPx(4, dpi)    // desired gap between plates
-	targetMarginPx := mmToPx(5, dpi) // desired margin to page edges
-
-	hasDesc := descPlates != nil && len(descPlates) == len(seedPlates)
-	totalShares := len(seedPlates)
-	maxSlotsPerPage := 6 // A4 default: 2x3
-	if paper == PaperLetter {
-		maxSlotsPerPage = 4 // Letter: 2x2 to preserve true 90mm plates without scaling
-	}
-	slotsPerShare := 1
-	if hasDesc {
-		slotsPerShare = 2
-	}
-	sharesPerPage := maxSlotsPerPage / slotsPerShare
-	if sharesPerPage < 1 {
-		sharesPerPage = 1
-	}
-
-	// Total slots we expect to place (for progress).
-	totalSlots := totalShares
-	if hasDesc {
-		totalSlots *= 2
-	}
-	if progress != nil && totalSlots > 0 {
-		progress(StageCompose, 0, int64(totalSlots))
-	}
-	placed := int64(0)
-
 	var pages []*image.Paletted
-	for page := 0; page*sharesPerPage < totalShares; page++ {
-		start := page * sharesPerPage
-		end := minInt(start+sharesPerPage, totalShares)
-		var slots []*image.Paletted
-
-		// Build the page slot list in the same order as PDF layout
-		if hasDesc {
-			for i := start; i < end; i++ {
-				slots = append(slots, seedPlates[i], descPlates[i])
-			}
-		} else {
-			for i := start; i < end; i++ {
-				slots = append(slots, seedPlates[i])
-			}
-		}
-
-		pageImg := image.NewPaletted(image.Rect(0, 0, pageWpx, pageHpx), bwPalette)
+	for _, page := range plan.pages {
+		pageImg := image.NewPaletted(image.Rect(0, 0, plan.pageWpx, plan.pageHpx), bwPalette)
 		draw.Draw(pageImg, pageImg.Bounds(), &image.Uniform{bwPalette[0]}, image.Point{}, draw.Src)
-
-		// Determine rows/cols for this page
-		slotsThisPage := len(slots)
-		cols := 2
-		rows := (slotsThisPage + cols - 1) / cols
-
-		// Baseline plate size (assume all plates same dims)
-		var baseW, baseH int
-		for _, pl := range slots {
-			if pl != nil {
-				b := pl.Bounds()
-				baseW, baseH = b.Dx(), b.Dy()
-				break
-			}
-		}
-		if baseW == 0 || baseH == 0 {
-			return nil, fmt.Errorf("invalid plate dimensions")
-		}
-
-		// Preserve true plate dimensions; never scale.
-		plateW := baseW
-		plateH := baseH
-		gapPx := targetGapPx
-		reqW := cols*plateW + (cols-1)*gapPx + 2*targetMarginPx
-		reqH := rows*plateH + (rows-1)*gapPx + 2*targetMarginPx
-		if reqW > pageWpx || reqH > pageHpx {
-			return nil, fmt.Errorf("plates do not fit page at fixed size (paper=%s req=%dx%d page=%dx%d)", paper, reqW, reqH, pageWpx, pageHpx)
-		}
-		marginX := (pageWpx - (cols*plateW + (cols-1)*gapPx)) / 2
-		// Keep pages top-anchored so partial pages (e.g. 1/1 or 2/2) start at the top.
-		marginY := targetMarginPx
-
-		// Place slots
-		for slotIdx, plate := range slots {
-			if plate == nil {
+		for _, slot := range page.slots {
+			if slot.plate == nil {
 				continue
 			}
-			row := slotIdx / 2
-			col := slotIdx % 2
-			dst := image.NewPaletted(image.Rect(0, 0, plateW, plateH), plate.Palette)
-			xdraw.NearestNeighbor.Scale(dst, dst.Bounds(), plate, plate.Bounds(), xdraw.Src, nil)
-
-			offset := image.Point{
-				X: marginX + col*(plateW+gapPx),
-				Y: marginY + row*(plateH+gapPx),
-			}
-			r := image.Rectangle{Min: offset, Max: offset.Add(dst.Bounds().Size())}
-			draw.Draw(pageImg, r, dst, image.Point{}, draw.Src)
-
-			placed++
-			if progress != nil && totalSlots > 0 {
-				progress(StageCompose, placed, int64(totalSlots))
-			}
+			b := slot.plate.Bounds()
+			r := image.Rect(slot.x, slot.y, slot.x+b.Dx(), slot.y+b.Dy())
+			draw.Draw(pageImg, r, slot.plate, b.Min, draw.Src)
 		}
 		pages = append(pages, pageImg)
 	}
 	return pages, nil
+}
+
+// WritePCLPlates composes seed/descriptor plates directly into a PCL raster job
+// without creating full-page intermediate images.
+func WritePCLPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, dpi float64, paper PaperSize, progress ProgressFunc) error {
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, progress)
+	if err != nil {
+		return err
+	}
+	paperCode, ok := paperCode(paper)
+	if !ok {
+		return fmt.Errorf("unsupported paper size: %v", paper)
+	}
+	totalBytes, err := estimatePCLBytesForPlan(plan, dpi, paper)
+	if err != nil {
+		return err
+	}
+	pw := newProgressWriter(StageSend, w, totalBytes, progress)
+	if progress != nil && totalBytes > 0 {
+		progress(StageSend, 0, totalBytes)
+	}
+
+	uel := []byte{0x1b, '%', '-', '1', '2', '3', '4', '5', 'X'}
+	if _, err := pw.Write(uel); err != nil {
+		return err
+	}
+	if _, err := pw.Write([]byte("@PJL ENTER LANGUAGE = PCL\r\n")); err != nil {
+		return err
+	}
+
+	width := plan.pageWpx
+	height := plan.pageHpx
+	rowBytes := (width + 7) / 8
+	rowPix := make([]uint8, width)
+	rowPacked := make([]byte, rowBytes)
+
+	for _, page := range plan.pages {
+		if _, err := fmt.Fprintf(pw, "\x1bE"); err != nil { // reset
+			return err
+		}
+		if _, err := fmt.Fprintf(pw, "\x1b&l%dA", paperCode); err != nil { // paper size
+			return err
+		}
+		if _, err := fmt.Fprintf(pw, "\x1b&l0E"); err != nil { // top margin = 0 lines
+			return err
+		}
+		if _, err := fmt.Fprintf(pw, "\x1b*t%dR", int(math.Round(dpi))); err != nil { // resolution
+			return err
+		}
+		if _, err := fmt.Fprintf(pw, "\x1b*r%dS", width); err != nil { // source width (pixels)
+			return err
+		}
+		if _, err := fmt.Fprintf(pw, "\x1b*r%dT", height); err != nil { // source height (rows)
+			return err
+		}
+		if _, err := fmt.Fprintf(pw, "\x1b*p0x0Y"); err != nil { // move to origin
+			return err
+		}
+		if _, err := fmt.Fprintf(pw, "\x1b*b0M"); err != nil { // compression: unencoded
+			return err
+		}
+		if _, err := fmt.Fprintf(pw, "\x1b*r0F"); err != nil { // start raster graphics
+			return err
+		}
+
+		for y := 0; y < height; y++ {
+			for i := range rowPix {
+				rowPix[i] = 0
+			}
+			for _, slot := range page.slots {
+				if slot.plate == nil {
+					continue
+				}
+				pb := slot.plate.Bounds()
+				ly := y - slot.y
+				if ly < 0 || ly >= pb.Dy() {
+					continue
+				}
+				srcRow := slot.plate.Pix[(pb.Min.Y+ly)*slot.plate.Stride+pb.Min.X : (pb.Min.Y+ly)*slot.plate.Stride+pb.Min.X+pb.Dx()]
+				copy(rowPix[slot.x:slot.x+pb.Dx()], srcRow)
+			}
+			packBits(rowPacked, rowPix)
+			if _, err := fmt.Fprintf(pw, "\x1b*b%dW", rowBytes); err != nil {
+				return err
+			}
+			if _, err := pw.Write(rowPacked); err != nil {
+				return err
+			}
+		}
+
+		if _, err := fmt.Fprintf(pw, "\x1b*rC"); err != nil { // end raster graphics
+			return err
+		}
+		if _, err := fmt.Fprintf(pw, "\x0c"); err != nil { // form feed
+			return err
+		}
+	}
+
+	if _, err := pw.Write(uel); err != nil {
+		return err
+	}
+	return nil
 }
 
 func estimatePCLBytes(pages []*image.Paletted, dpi float64, paper PaperSize) (int64, error) {
@@ -327,4 +349,155 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func buildPlacementPlan(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, progress ProgressFunc) (placementPlan, error) {
+	if len(seedPlates) == 0 {
+		return placementPlan{}, fmt.Errorf("no seed plates to compose")
+	}
+	pageWmm, pageHmm, ok := paperDimsMM(paper)
+	if !ok {
+		return placementPlan{}, fmt.Errorf("unsupported paper size: %v", paper)
+	}
+	pageWpx := mmToPx(pageWmm, dpi)
+	pageHpx := mmToPx(pageHmm, dpi)
+	targetGapPx := mmToPx(4, dpi)    // desired gap between plates
+	targetMarginPx := mmToPx(5, dpi) // desired margin to page edges
+
+	hasDesc := descPlates != nil && len(descPlates) == len(seedPlates)
+	totalShares := len(seedPlates)
+	maxSlotsPerPage := 6 // A4 default: 2x3
+	if paper == PaperLetter {
+		maxSlotsPerPage = 4 // Letter: 2x2 to preserve true 90mm plates without scaling
+	}
+	slotsPerShare := 1
+	if hasDesc {
+		slotsPerShare = 2
+	}
+	sharesPerPage := maxSlotsPerPage / slotsPerShare
+	if sharesPerPage < 1 {
+		sharesPerPage = 1
+	}
+
+	totalSlots := totalShares
+	if hasDesc {
+		totalSlots *= 2
+	}
+	if progress != nil && totalSlots > 0 {
+		progress(StageCompose, 0, int64(totalSlots))
+	}
+	placed := int64(0)
+
+	var pages []pagePlacement
+	for page := 0; page*sharesPerPage < totalShares; page++ {
+		start := page * sharesPerPage
+		end := minInt(start+sharesPerPage, totalShares)
+		var slots []*image.Paletted
+		if hasDesc {
+			for i := start; i < end; i++ {
+				slots = append(slots, seedPlates[i], descPlates[i])
+			}
+		} else {
+			for i := start; i < end; i++ {
+				slots = append(slots, seedPlates[i])
+			}
+		}
+		slotsThisPage := len(slots)
+		cols := 2
+		rows := (slotsThisPage + cols - 1) / cols
+		baseW, baseH, err := basePlateDims(slots)
+		if err != nil {
+			return placementPlan{}, err
+		}
+		plateW := baseW
+		plateH := baseH
+		gapPx := targetGapPx
+		reqW := cols*plateW + (cols-1)*gapPx + 2*targetMarginPx
+		reqH := rows*plateH + (rows-1)*gapPx + 2*targetMarginPx
+		if reqW > pageWpx || reqH > pageHpx {
+			return placementPlan{}, fmt.Errorf("plates do not fit page at fixed size (paper=%s req=%dx%d page=%dx%d)", paper, reqW, reqH, pageWpx, pageHpx)
+		}
+		marginX := (pageWpx - (cols*plateW + (cols-1)*gapPx)) / 2
+		marginY := targetMarginPx
+
+		pp := pagePlacement{slots: make([]placedPlate, 0, len(slots))}
+		for slotIdx, plate := range slots {
+			if plate == nil {
+				continue
+			}
+			b := plate.Bounds()
+			if b.Dx() != plateW || b.Dy() != plateH {
+				return placementPlan{}, fmt.Errorf("mismatched plate dimensions: got %dx%d want %dx%d", b.Dx(), b.Dy(), plateW, plateH)
+			}
+			row := slotIdx / 2
+			col := slotIdx % 2
+			pp.slots = append(pp.slots, placedPlate{
+				plate: plate,
+				x:     marginX + col*(plateW+gapPx),
+				y:     marginY + row*(plateH+gapPx),
+			})
+			placed++
+			if progress != nil && totalSlots > 0 {
+				progress(StageCompose, placed, int64(totalSlots))
+			}
+		}
+		pages = append(pages, pp)
+	}
+	return placementPlan{pageWpx: pageWpx, pageHpx: pageHpx, pages: pages}, nil
+}
+
+func basePlateDims(slots []*image.Paletted) (int, int, error) {
+	for _, pl := range slots {
+		if pl != nil {
+			b := pl.Bounds()
+			if b.Dx() <= 0 || b.Dy() <= 0 {
+				return 0, 0, fmt.Errorf("invalid plate dimensions")
+			}
+			return b.Dx(), b.Dy(), nil
+		}
+	}
+	return 0, 0, fmt.Errorf("invalid plate dimensions")
+}
+
+func estimatePCLBytesForPlan(plan placementPlan, dpi float64, paper PaperSize) (int64, error) {
+	if _, ok := paperCode(paper); !ok {
+		return 0, fmt.Errorf("unsupported paper size: %v", paper)
+	}
+	if plan.pageWpx <= 0 || plan.pageHpx <= 0 {
+		return 0, fmt.Errorf("invalid page dimensions")
+	}
+	total := int64(0)
+	uel := []byte{0x1b, '%', '-', '1', '2', '3', '4', '5', 'X'}
+	total += int64(len(uel))
+	total += int64(len([]byte("@PJL ENTER LANGUAGE = PCL\r\n")))
+	rowBytes := (plan.pageWpx + 7) / 8
+	perRowPrefix := fmt.Sprintf("\x1b*b%dW", rowBytes)
+	for range plan.pages {
+		resetSeq := []string{"\x1bE", fmt.Sprintf("\x1b&l%dA", mustPaperCode(paper)), "\x1b&l0E"}
+		for _, seq := range resetSeq {
+			total += int64(len(seq))
+		}
+		pageSeq := []string{
+			fmt.Sprintf("\x1b*t%dR", int(math.Round(dpi))),
+			fmt.Sprintf("\x1b*r%dS", plan.pageWpx),
+			fmt.Sprintf("\x1b*r%dT", plan.pageHpx),
+			"\x1b*p0x0Y",
+			"\x1b*b0M",
+			"\x1b*r0F",
+		}
+		for _, seq := range pageSeq {
+			total += int64(len(seq))
+		}
+		rowChunk := int64(len(perRowPrefix) + rowBytes)
+		total += int64(plan.pageHpx) * rowChunk
+		total += int64(len("\x1b*rC"))
+		total += int64(len("\x0c"))
+	}
+	total += int64(len(uel))
+	return total, nil
+}
+
+func mustPaperCode(p PaperSize) int {
+	code, _ := paperCode(p)
+	return code
 }

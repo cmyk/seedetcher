@@ -320,18 +320,18 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	if err != nil {
 		return fmt.Errorf("render: plate bitmaps: %w", err)
 	}
+	if p.supportsPCL {
+		// Default to PCL in host mode (usblp). Compose + stream directly without full-page buffering.
+		if err := printer.WritePCLPlates(printerDev, seedImgs, descImgs, opts.DPI, printer.PaperA4, progress); err != nil {
+			return fmt.Errorf("pcl: write plates: %w", err)
+		}
+		logutil.DebugLog("PCL write complete (shares=%d dpi=%.0f)", len(seedImgs), opts.DPI)
+		return nil
+	}
+
 	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperA4, opts.DPI, progress)
 	if err != nil {
 		return fmt.Errorf("render: compose pages: %w", err)
-	}
-
-	if p.supportsPCL {
-		// Default to PCL in host mode (usblp).
-		if err := printer.WritePCL(printerDev, pages, opts.DPI, printer.PaperA4, progress); err != nil {
-			return fmt.Errorf("pcl: write: %w", err)
-		}
-		logutil.DebugLog("PCL write complete (pages=%d dpi=%.0f)", len(pages), opts.DPI)
-		return nil
 	}
 
 	// Fallback: serialize canonical raster pages as PDF (gadget capture/dev).
