@@ -18,8 +18,8 @@ What you need:
 - [ ] Micro-USB male to USB-A female ([amazon](https://a.co/d/drLFF49))
 - [ ] Steel Plates, 10x10cm (make sure they are really flat). You can get them on ebay or amazon or cut your own.
 - [ ] Iron (for ironing clothes)
-- [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for better heat transfer from iron plate
-- [ ] Transfer Paper ([amazon](https://a.co/d/dmR4RUL))
+- [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for better heat and pressure transfer
+- [ ] Toner Transfer Paper ([amazon](https://a.co/d/dmR4RUL))
 - [ ] Anti-etching pens ([amazon](https://a.co/d/5DnOhRR)), stop out ground e.g. from [Lascaux](https://lascaux.ch/en/products/brushes-printmaking-sets-various/lascaux-etching?shp3_product=1704) or [Charbonnel](https://intaglioprintmaker.com/product/charbonnel-lamour-black-covering-varnish/) or nail polish
 - [ ] Packaging or electrical tape
 - [ ] Acetone
@@ -48,7 +48,7 @@ SeedEtcher just needs a QR of the descriptor. The seedphrase(s) can be input via
 You generally use a coordinator like [sparrow](https://www.sparrowwallet.com) to create the descriptor.
 Note: Sparrow just needs the xpubs of the seedphrases for this and not the actual seedphrase(s).
 Example: Create the 3 seedphrases for a 2/3 multisig on [SeedSigner](https://seedsigner.com). Use sparrow to create the descriptor.
-Scan the descriptor from sparrow with SeedEtcher and then each seedphrase QR.
+Scan the descriptor from sparrow with SeedEtcher and then each seedphrase QR from the SeedSigner. Tip: use a magnifiying glass in front of the SeedEtcher cam to scan the tiny dotted QR from the SeedSigner.
 
 ## Descriptor Sharding (b0.2)
 
@@ -130,7 +130,7 @@ TIP (highly recommended!): Get some 0.5-2mm thick silicone sheet ([amazon](https
 Put the plate on a wood block on the floor. Some household paper folded 4 times underneath the plate helps to keep it from sliding. Your contraption for this should be stable, no wiggling.
 
 Set a timer to 180 seconds. Start the timer. Press the iron onto the plate with increasing pressure, covering the whole plate with the iron for 60s. Do not slide the iron!
-Lift, press down on left 3rd of plate, 30s. Then right side 30s. Then top 30s. Then bottom.
+Lift, press down on left half of plate, 30s. Then right side 30s. Then top 30s. Then bottom.
 Pressure is important. Do it on the floor where you can really lean onto the iron. But be careful to not slide while pressing! And please, do not break your wife’s iron.
 
 Optional: Put a stack of steel plates on top of the hot plate (heat sink). It seems to help moving the heat off the transfer paper quickly, causing the toner to be released onto the steel fully.
@@ -167,7 +167,7 @@ Always first put the plate into the baking soda solution bowl before rinsing it 
 
 1. Prepare the plate. You have to mask off the other side that should not be etched. Make sure you mask it off properly or etchant will get to it. Normal packaging tape or electrical tape works. Avoid masking tape! (it’s not water proof)\
 Tip: make a holding flap from tape, so you can hold the plate easily.
-2. Make sure the etchant is around 20-25°C. Too warm will make the etchant too aggressive and it will attack the toner mask more quickly. Too cold (10-15°C) and it etches much slower.
+2. Make sure the etchant is around 20-25°C. Too warm will make the etchant too aggressive and it will attack the toner mask more quickly. Too cold (10-15°C) and it etches much slower. Tip: Put the etching container in a hot water bath to achieve the temperature.
 3. Set timer to 5 minutes and start. Submerge the plate fully into the FeCl, ideally keep it vertical. Get the FeCl moving slightly by either moving the container or the plate. Don’t go crazy, a slight movement of the fluid every 30s is enough.
 4. Take the plate out, let it drip off, submerge it into the baking soda bowl. This neutralises the acidic ferric-chloride residue.
 5. Rinse the plate under running water (no hot water!). \
