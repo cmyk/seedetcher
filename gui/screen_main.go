@@ -106,12 +106,16 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 				if desc == nil {
 					s.totalSeeds = 1
 					s.stage = stageSeeds
-				} else {
-					s.totalSeeds = len(desc.Keys)
-					s.shardSetID = shard.DeriveSetID(desc.Encode(), uint8(desc.Threshold), uint8(len(desc.Keys)))
-					s.shardShares = buildShardShares(desc, s.shardSetID)
-					s.stage = stageSeeds
-				}
+					} else {
+						s.totalSeeds = len(desc.Keys)
+						if setID, ok := deriveShardSetID(desc); ok {
+							s.shardSetID = setID
+						} else {
+							s.shardSetID = [16]byte{}
+						}
+						s.shardShares = buildShardShares(desc, s.shardSetID)
+						s.stage = stageSeeds
+					}
 				s.currentSeed = 1
 				s.printMnemonic = nil
 				return s

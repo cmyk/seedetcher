@@ -3,6 +3,7 @@ package gui
 import (
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 
 	"seedetcher.com/bc/urtypes"
@@ -14,18 +15,42 @@ import (
 // buildShardShares precomputes descriptor share metadata for one backup run
 // using a fixed set_id.
 func buildShardShares(desc *urtypes.OutputDescriptor, setID [16]byte) []shard.Share {
-	if desc == nil || len(desc.Keys) == 0 || desc.Threshold < 2 || desc.Threshold > len(desc.Keys) {
+	threshold8, total8, ok := descriptorSplitParams(desc)
+	if !ok {
 		return nil
 	}
 	shares, err := shard.SplitPayloadBytes(desc.Encode(), shard.SplitOptions{
-		Threshold: uint8(desc.Threshold),
-		Total:     uint8(len(desc.Keys)),
+		Threshold: threshold8,
+		Total:     total8,
 		SetID:     setID,
 	})
 	if err != nil {
 		return nil
 	}
 	return shares
+}
+
+func deriveShardSetID(desc *urtypes.OutputDescriptor) ([16]byte, bool) {
+	threshold8, total8, ok := descriptorSplitParams(desc)
+	if !ok {
+		return [16]byte{}, false
+	}
+	return shard.DeriveSetID(desc.Encode(), threshold8, total8), true
+}
+
+func descriptorSplitParams(desc *urtypes.OutputDescriptor) (uint8, uint8, bool) {
+	if desc == nil {
+		return 0, 0, false
+	}
+	total := len(desc.Keys)
+	threshold := desc.Threshold
+	if total == 0 || threshold < 2 || threshold > total {
+		return 0, 0, false
+	}
+	if total > math.MaxUint8 || threshold > math.MaxUint8 {
+		return 0, 0, false
+	}
+	return uint8(threshold), uint8(total), true
 }
 
 // ShardPreviewScreen shows descriptor shard policy summary before print setup.

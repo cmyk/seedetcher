@@ -303,13 +303,21 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 	if threshold < 2 || threshold > totalShares {
 		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
 	}
+	if threshold > math.MaxUint8 {
+		return nil, fmt.Errorf("descriptor threshold too large: %d", threshold)
+	}
+	if totalShares > math.MaxUint8 {
+		return nil, fmt.Errorf("descriptor share count too large: %d", totalShares)
+	}
 	payload := desc.Encode()
 	if len(payload) == 0 {
 		return nil, fmt.Errorf("empty descriptor payload")
 	}
+	threshold8 := uint8(threshold)
+	totalShares8 := uint8(totalShares)
 	opts := shard.SplitOptions{
-		Threshold: uint8(threshold),
-		Total:     uint8(totalShares),
+		Threshold: threshold8,
+		Total:     totalShares8,
 	}
 	if setID, ok := forcedDescriptorShardSetID(); ok {
 		opts.SetID = setID
