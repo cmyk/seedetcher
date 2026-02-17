@@ -49,7 +49,7 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 	}
 	pageWpx := mmToPx(pageWmm, dpi)
 	pageHpx := mmToPx(pageHmm, dpi)
-	targetGapPx := mmToPx(2, dpi)    // desired gap between plates
+	targetGapPx := mmToPx(4, dpi)    // desired gap between plates
 	targetMarginPx := mmToPx(5, dpi) // desired margin to page edges
 
 	hasDesc := descPlates != nil && len(descPlates) == len(seedPlates)
@@ -112,7 +112,8 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 		plateH := int(math.Round(float64(baseH) * scale))
 		gapPx := targetGapPx
 		marginX := (pageWpx - (cols*plateW + (cols-1)*gapPx)) / 2
-		marginY := (pageHpx - (rows*plateH + (rows-1)*gapPx)) / 2
+		// Keep pages top-anchored so partial pages (e.g. 1/1 or 2/2) start at the top.
+		marginY := targetMarginPx
 
 		// Place slots
 		for slotIdx, plate := range slots {
