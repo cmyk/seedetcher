@@ -3,6 +3,14 @@
 ## Unreleased
 - (no changes yet)
 
+## Release v0.2.0-beta.2
+- Security dependencies bumped to address Dependabot alerts: `github.com/btcsuite/btcd` -> `v0.25.0`, `github.com/btcsuite/btcd/btcec/v2` -> `v2.3.6`, `github.com/btcsuite/btcd/btcutil` -> `v1.1.6`, and `golang.org/x/crypto` -> `v0.45.0` (plus related `x/sys`/`x/text` updates).
+- Toolchain baseline updated to Go `1.24` (`go.mod`) and Nix Go toolchain pins switched to `go_1_24`; `go-deps` fixed-output hash refreshed in `flake.nix`.
+- CodeQL hardening (Go): fixed unsafe integer conversion paths in descriptor shard setup and parser/formatter numeric parsing (`printer/raster.go`, `nonstandard/parse.go`, `gui/text/text.go`).
+- CodeQL hardening (C): added explicit signed overflow boundary checks in `zbar/qrdec.c` where affine-step accumulation could overflow.
+- Compatibility maintenance: minor Go 1.24 vet-format compatibility fix in `gui/screen_label.go`.
+- Validation: `scripts/test-lite.sh`, targeted package tests, `nix build .#image`, and Pi smoke test passed.
+
 ## Release v0.2.0-beta.1
 - Build target rename: image outputs are now host-first by default (`image`, `image-debug`), with gadget variants moved to explicit names (`image-gadget`, `image-gadget-debug`); docs and flashing examples updated to match new artifact names.
 - Backup GUI flow update (multisig): `Confirm wallet` -> `Fingerprints` (paged, 5/page) -> `Descriptor shares` summary (`t/n`, `WID`, `SET`) -> `Wallet label` -> `Paper size` -> `Print`.
