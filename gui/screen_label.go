@@ -88,7 +88,7 @@ func (s *LabelInputScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		if boxWidth < 0 {
 			boxWidth = kbSize.X
 		}
-		boxHeight := ctx.Styles.lead.Measure(boxWidth, display).Y + 2
+		boxHeight := ctx.Styles.lead.Measure(boxWidth, "%s", display).Y + 2
 		if boxHeight < 8 {
 			boxHeight = 8
 		}

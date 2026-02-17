@@ -2294,10 +2294,11 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 		nrempty++;
 	    ru += dru;
 	    /*Our final defense: if we overflow, stop.*/
-	    if (rv + drv > rv)
-		rv += drv;
-	    else
+	    if ((drv > 0 && rv > INT_MAX - drv) ||
+		(drv < 0 && rv < INT_MIN - drv))
 		nrempty = INT_MAX;
+	    else
+		rv += drv;
 	    rx += drxi;
 	    ry += dryi;
 	} else if (!bdone) {
@@ -2343,10 +2344,11 @@ static int qr_hom_fit(qr_hom *_hom, qr_finder *_ul, qr_finder *_ur,
 	    } else
 		nbempty++;
 	    /*Our final defense: if we overflow, stop.*/
-	    if (bu + dbu > bu)
-		bu += dbu;
-	    else
+	    if ((dbu > 0 && bu > INT_MAX - dbu) ||
+		(dbu < 0 && bu < INT_MIN - dbu))
 		nbempty = INT_MAX;
+	    else
+		bu += dbu;
 	    bv += dbv;
 	    bx += dbxi;
 	    by += dbyi;
