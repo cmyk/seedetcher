@@ -800,6 +800,10 @@ func drawPlateQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float
 	quiet := opts.QuietModules
 	step := float64(sizePx) / float64(code.Size+2*quiet)
 	offset := int(math.Round(float64(quiet) * step))
+	var islandMask []bool
+	if opts.KeepIslandsSquare {
+		islandMask = buildQRIslandMask(code)
+	}
 
 	for y := 0; y < code.Size; y++ {
 		yStart := y0 + offset + int(math.Round(float64(y)*step))
@@ -812,7 +816,7 @@ func drawPlateQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float
 			xEnd := x0 + offset + int(math.Round(float64(x+1)*step))
 
 			useSquare := opts.Shape == plateQRSquare
-			if opts.KeepIslandsSquare && isQRIslandModule(x, y, code.Size) {
+			if opts.KeepIslandsSquare && islandMask[y*code.Size+x] {
 				useSquare = true
 			}
 			if useSquare {
@@ -862,25 +866,69 @@ func fillModuleCircle(img *image.Paletted, xStart, yStart, xEnd, yEnd int, idx u
 	}
 }
 
-func isQRIslandModule(x, y, size int) bool {
-	if inFinder(x, y, 0, 0) || inFinder(x, y, size-7, 0) || inFinder(x, y, 0, size-7) {
-		return true
-	}
-	for _, ay := range alignmentPatternCenters(size) {
-		for _, ax := range alignmentPatternCenters(size) {
-			if (ax == 6 && ay == 6) || (ax == size-7 && ay == 6) || (ax == 6 && ay == size-7) {
+func buildQRIslandMask(code *qr.Code) []bool {
+	size := code.Size
+	mask := make([]bool, size*size)
+	markRect := func(x0, y0, w, h int) {
+		for y := y0; y < y0+h; y++ {
+			if y < 0 || y >= size {
 				continue
 			}
-			if x >= ax-2 && x <= ax+2 && y >= ay-2 && y <= ay+2 {
-				return true
+			row := y * size
+			for x := x0; x < x0+w; x++ {
+				if x < 0 || x >= size {
+					continue
+				}
+				mask[row+x] = true
 			}
 		}
 	}
-	return false
+
+	// Finder patterns are always 7x7 in 3 corners.
+	markRect(0, 0, 7, 7)
+	markRect(size-7, 0, 7, 7)
+	markRect(0, size-7, 7, 7)
+
+	// Detect alignment patterns directly from the encoded module matrix.
+	// This avoids version-center math drift and keeps islands stable across sizes.
+	for cy := 2; cy <= size-3; cy++ {
+		for cx := 2; cx <= size-3; cx++ {
+			if !isAlignmentCenter(code, cx, cy) {
+				continue
+			}
+			markRect(cx-2, cy-2, 5, 5)
+		}
+	}
+	return mask
+}
+
+func isAlignmentCenter(code *qr.Code, cx, cy int) bool {
+	size := code.Size
+	if cx-2 < 0 || cy-2 < 0 || cx+2 >= size || cy+2 >= size {
+		return false
+	}
+	for dy := -2; dy <= 2; dy++ {
+		for dx := -2; dx <= 2; dx++ {
+			ax := absInt(dx)
+			ay := absInt(dy)
+			wantBlack := ax == 2 || ay == 2 || (ax == 0 && ay == 0)
+			if code.Black(cx+dx, cy+dy) != wantBlack {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func inFinder(x, y, fx, fy int) bool {
 	return x >= fx && x < fx+7 && y >= fy && y < fy+7
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 func alignmentPatternCenters(size int) []int {
