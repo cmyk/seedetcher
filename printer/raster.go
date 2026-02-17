@@ -33,6 +33,19 @@ type RasterOptions struct {
 	Invert bool    // swap black/white for negative output
 }
 
+type plateQRShape uint8
+
+const (
+	plateQRSquare plateQRShape = iota
+	plateQRCircle
+)
+
+type plateQROptions struct {
+	QuietModules      int
+	Shape             plateQRShape
+	KeepIslandsSquare bool
+}
+
 const (
 	plateSizeMM   = 90.0
 	borderWidthMM = 0.2
@@ -40,6 +53,8 @@ const (
 
 var (
 	bwPalette = color.Palette{color.White, color.Black}
+
+	plateFontPrimary = "font/seedetcher/SeedEtcher-Regular.ttf"
 
 	fontOnce     sync.Once
 	fontFaceData *opentype.Font
@@ -120,76 +135,112 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 	}
 	strokeRect(canvas, 0, 0, canvas.Bounds().Dx(), canvas.Bounds().Dy(), border, blackIdx)
 
-	shareFace := loadFaceMedium(6, dpi)
-	mainFace := loadFace(8, dpi)
-
-	drawText(canvas, shareFace, dpi, 5.0, 5.0, fmt.Sprintf("%d/%d", shareNum, totalShares))
+	wordFace := loadFace(14, dpi)
+	metaFace := loadFace(11, dpi)
+	const (
+		marginMM      = 3.0
+		leftColXMM    = 11.0
+		rightColXMM   = 49.0
+		qrLeftMM      = 49.0
+		trackingPerEm = 0.18 // 180 tracking (1/1000em style)
+	)
+	leadingMM := 15.2 * 25.4 / 72.0
+	wordTrackPx := trackingPerEm * 14.0 * dpi / 72.0
+	wordStartBaseline := marginMM + capBaselineOffsetMM(wordFace, dpi)
 
 	seed := bip39.MnemonicSeed(mnemonic, "")
+	var fingerprintHex string
 	if seed != nil {
 		masterKey, err := hdkeychain.NewMaster(seed, &chaincfg.MainNetParams)
 		if err == nil {
 			if masterPubKey, err := masterKey.Neuter(); err == nil {
 				if pubKey, err := masterPubKey.ECPubKey(); err == nil {
 					fp := btcutil.Hash160(pubKey.SerializeCompressed())[:4]
-					fingerprintHex := fmt.Sprintf("%X", fp)
-					fpWidth := textWidthMM(shareFace, dpi, fingerprintHex)
-					fpX := (plateSizeMM - fpWidth) / 2
-					verWidth := textWidthMM(shareFace, dpi, version.String())
-					verX := plateSizeMM - 5.0 - verWidth
-					drawText(canvas, shareFace, dpi, fpX, 5.0, fingerprintHex)
-					drawText(canvas, shareFace, dpi, verX, 5.0, version.String())
+					fingerprintHex = fmt.Sprintf("%X", fp)
 				}
 			}
 		}
 	}
 
-	// Word columns
-	yLeft := 15.0
+	// Word columns: right-aligned numbers + one space + left-aligned words.
+	numColWMM := trackedTextWidthMM(wordFace, dpi, "24", wordTrackPx)
+	spaceWMM := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx)
+	yLeft := wordStartBaseline
+	lastRightBaseline := wordStartBaseline
 	for i := 0; i < 16 && i < len(mnemonic); i++ {
 		if mnemonic[i] == -1 {
 			continue
 		}
+		num := fmt.Sprintf("%d", i+1)
 		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
-		drawText(canvas, mainFace, dpi, 12.0, yLeft, fmt.Sprintf("%2d %s", i+1, word))
-		yLeft += 4.0
+		numW := trackedTextWidthMM(wordFace, dpi, num, wordTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, leftColXMM+numColWMM-numW, yLeft, num, wordTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, leftColXMM+numColWMM+spaceWMM, yLeft, word, wordTrackPx)
+		yLeft += leadingMM
 	}
-	yRight := 15.0
+	yRight := wordStartBaseline
 	for i := 16; i < 24 && i < len(mnemonic); i++ {
 		if mnemonic[i] == -1 {
 			continue
 		}
+		num := fmt.Sprintf("%d", i+1)
 		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
-		drawText(canvas, mainFace, dpi, 45.0, yRight, fmt.Sprintf("%2d %s", i+1, word))
-		yRight += 4.0
+		numW := trackedTextWidthMM(wordFace, dpi, num, wordTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, rightColXMM+numColWMM-numW, yRight, num, wordTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, rightColXMM+numColWMM+spaceWMM, yRight, word, wordTrackPx)
+		lastRightBaseline = yRight
+		yRight += leadingMM
 	}
 
-	qrRegions := []image.Rectangle{}
 	if seed != nil {
 		qrContent := seedqr.QR(mnemonic)
 		if len(qrContent) > 0 {
 			qrCode, err := qr.Encode(string(qrContent), qr.M)
 			if err == nil {
 				qrSize := 28.0
-				const quiet = 4
-				step := qrSize / float64(qrCode.Size+2*quiet)
-				offset := float64(quiet) * step
-				qrX := 48.5 - offset
-				// Align QR bottom to the 16th word baseline (yLeft base + 15*4mm).
-				qrY := (15.0 + float64(15)*4.0) - qrSize
-				drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
-				qrRegions = append(qrRegions, image.Rect(mmToPx(qrX, dpi), mmToPx(qrY, dpi), mmToPx(qrX+qrSize, dpi), mmToPx(qrY+qrSize, dpi)))
+				qrX := qrLeftMM + 0.5
+				wordDescentMM := float64(wordFace.Metrics().Descent.Ceil()) * 25.4 / dpi
+				// Start QR 5mm below the bottom of the last right-column word.
+				qrY := lastRightBaseline + wordDescentMM + 5.0
+				drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
+					QuietModules:      0,
+					Shape:             plateQRCircle,
+					KeepIslandsSquare: true,
+				})
 			}
 		}
 
 		title := walletLabel()
-		titleFace := loadFaceMedium(6, dpi)
-		titleY := plateSizeMM - 3.0
-		drawCenteredText(canvas, titleFace, dpi, titleY, title)
+		titleW := textWidthMM(metaFace, dpi, title)
+		titleX := plateSizeMM - marginMM - titleW
+		titleY := plateSizeMM - marginMM
+		drawText(canvas, metaFace, dpi, titleX, titleY, title)
 	}
 
+	shareText := fmt.Sprintf("%d/%d", shareNum, totalShares)
+	_, shareRotH := rotatedTextSizeMM(metaFace, dpi, shareText)
+	shareX := marginMM
+	shareY := plateSizeMM - marginMM - shareRotH
+	drawTextRotatedCCW90(canvas, metaFace, dpi, shareX, shareY, shareText, blackIdx)
+
+	if fingerprintHex != "" {
+		_, fpRotH := rotatedTextSizeMM(metaFace, dpi, fingerprintHex)
+		fpX := marginMM
+		fpY := (plateSizeMM - fpRotH) / 2
+		drawTextRotatedCCW90(canvas, metaFace, dpi, fpX, fpY, fingerprintHex, blackIdx)
+	}
+
+	verText := version.String()
+	_, verRotH := rotatedTextSizeMM(metaFace, dpi, verText)
+	verX := marginMM
+	verY := marginMM
+	if verY+verRotH > plateSizeMM-marginMM {
+		verY = plateSizeMM - marginMM - verRotH
+	}
+	drawTextRotatedCCW90(canvas, metaFace, dpi, verX, verY, verText, blackIdx)
+
 	if opts.Invert {
-		invertExcept(canvas, qrRegions)
+		invertAll(canvas)
 	}
 	applyPostProcess(canvas, opts)
 	return canvas, nil
@@ -210,25 +261,21 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 	strokeRect(canvas, 0, 0, canvas.Bounds().Dx(), canvas.Bounds().Dy(), border, blackIdx)
 
-	smallFace := loadFaceMedium(6, dpi)
-	mainFace := loadFace(8, dpi)
-	drawText(canvas, smallFace, dpi, 5.0, 5.0, fmt.Sprintf("%d/%d", shareNum, totalShares))
+	descriptorFace := loadFace(11, dpi)
 	pathStr := derivationPathForKey(desc.Keys[keyIdx], desc.Script)
-	pathWidth := textWidthMM(smallFace, dpi, fmt.Sprintf("Path:%s", pathStr))
-	pathX := plateSizeMM - 5.0 - pathWidth
-	drawText(canvas, smallFace, dpi, pathX, 5.0, fmt.Sprintf("Path:%s", pathStr))
+	pathText := fmt.Sprintf("PATH:%s", pathStr)
 
 	key := desc.Keys[keyIdx]
 	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s",
 		desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
 
-	lines := wrapText(mainFace, dpi, allText, plateSizeMM-10.0)
-	lineHeightPx := float64(mainFace.Metrics().Height.Ceil())
-	lineHeightMM := lineHeightPx * 25.4 / dpi
-	lineSpacing := 3.5
-	y := 10.0
+	const margin = 3.0
+	ascentMM := capBaselineOffsetMM(descriptorFace, dpi)
+	lines := wrapText(descriptorFace, dpi, allText, plateSizeMM-2*margin)
+	lineSpacing := 4.2
+	y := margin + ascentMM
 	for i, line := range lines {
-		drawText(canvas, mainFace, dpi, 5.0, y, line)
+		drawText(canvas, descriptorFace, dpi, margin, y, line)
 		if i < len(lines)-1 {
 			y += lineSpacing
 		}
@@ -251,14 +298,13 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		return nil, err
 	}
 
-	textLines := float64(len(lines))
-	textBlockHeight := lineHeightMM
-	if textLines > 1 {
-		textBlockHeight += (textLines - 1) * lineSpacing
-	}
-	textBottom := 7.0 + textBlockHeight
+	// Anchor QR sizing to the actual rendered text bottom:
+	// last baseline + font descent.
+	descentMM := float64(descriptorFace.Metrics().Descent.Ceil()) * 25.4 / dpi
+	lastBaselineY := y
+	textBottom := lastBaselineY + descentMM
 	qrGap := 2.0    // gap between text and QR
-	qrBottom := 1.0 // bottom margin
+	qrBottom := 3.0 // bottom safe margin for etched plate layout
 	qrSize := plateSizeMM - textBottom - qrGap - qrBottom
 	if qrSize > descriptorQRSizeMM && descriptorQRSizeMM > 0 {
 		qrSize = descriptorQRSizeMM
@@ -268,18 +314,43 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 	qrX := (plateSizeMM - qrSize) / 2
 	qrY := textBottom + qrGap
-	drawQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx)
+	drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
+		QuietModules:      0,
+		Shape:             plateQRCircle,
+		KeepIslandsSquare: true,
+	})
+	// Left-side vertical derivation path: 3mm from left and bottom edges.
+	_, pathRotH := rotatedTextSizeMM(descriptorFace, dpi, pathText)
+	pathX := margin
+	pathY := plateSizeMM - margin - pathRotH
+	if pathY < margin {
+		pathY = margin
+	}
+	drawTextRotatedCCW90(canvas, descriptorFace, dpi, pathX, pathY, pathText, blackIdx)
 	if shMeta != nil {
 		wid := strings.ToUpper(hex.EncodeToString(shMeta.WalletID[:4]))
 		sid := strings.ToUpper(hex.EncodeToString(shMeta.SetID[:4]))
 		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, shMeta.Index, shMeta.Threshold)
-		drawRotatedSideMeta(canvas, smallFace, dpi, qrX, qrY, qrSize, meta, blackIdx)
-	}
-	qrRegions := []image.Rectangle{
-		image.Rect(mmToPx(qrX, dpi), mmToPx(qrY, dpi), mmToPx(qrX+qrSize, dpi), mmToPx(qrY+qrSize, dpi)),
+		// Vertical WID/SET line: 3mm right of the QR safe-zone edge.
+		metaRotW, metaRotH := rotatedTextSizeMM(descriptorFace, dpi, meta)
+		metaX := qrX + qrSize + margin
+		if metaX+metaRotW > plateSizeMM-margin {
+			metaX = plateSizeMM - margin - metaRotW
+		}
+		if metaX < margin {
+			metaX = margin
+		}
+		metaY := plateSizeMM - margin - metaRotH
+		if metaY < margin {
+			metaY = margin
+		}
+		if metaY+metaRotH > plateSizeMM-margin {
+			metaY = plateSizeMM - margin - metaRotH
+		}
+		drawTextRotatedCCW90(canvas, descriptorFace, dpi, metaX, metaY, meta, blackIdx)
 	}
 	if opts.Invert {
-		invertExcept(canvas, qrRegions)
+		invertAll(canvas)
 	}
 	applyPostProcess(canvas, opts)
 	return canvas, nil
@@ -444,6 +515,44 @@ func drawText(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text s
 	d.DrawString(text)
 }
 
+func drawTrackedText(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, trackingPx float64) {
+	d := font.Drawer{
+		Dst:  img,
+		Src:  image.NewUniform(color.Black),
+		Face: face,
+		Dot: fixed.Point26_6{
+			X: fixed.I(int(math.Round(mmToPxFloat(xMm, dpi)))),
+			Y: fixed.I(int(math.Round(mmToPxFloat(yMm, dpi)))),
+		},
+	}
+	rs := []rune(text)
+	trackFixed := fixed.I(int(math.Round(trackingPx)))
+	for i, r := range rs {
+		d.DrawString(string(r))
+		if i < len(rs)-1 && trackingPx > 0 {
+			d.Dot.X += trackFixed
+		}
+	}
+}
+
+func trackedTextWidthMM(face font.Face, dpi float64, text string, trackingPx float64) float64 {
+	rs := []rune(text)
+	if len(rs) == 0 {
+		return 0
+	}
+	var width fixed.Int26_6
+	trackFixed := fixed.I(int(math.Round(trackingPx)))
+	for i, r := range rs {
+		if adv, ok := face.GlyphAdvance(r); ok {
+			width += adv
+		}
+		if i < len(rs)-1 && trackingPx > 0 {
+			width += trackFixed
+		}
+	}
+	return float64(width.Ceil()) * 25.4 / dpi
+}
+
 func drawCenteredText(img *image.Paletted, face font.Face, dpi, yMm float64, text string) {
 	d := font.Drawer{
 		Dst:  img,
@@ -535,15 +644,24 @@ func drawTextRotatedCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm floa
 	}
 	d.DrawString(text)
 
+	minX, minY, maxX, maxY, ok := alphaInkBounds(src)
+	if !ok {
+		return
+	}
+	trimW := maxX - minX + 1
+	trimH := maxY - minY + 1
+
 	x0 := mmToPx(xMm, dpi)
 	y0 := mmToPx(yMm, dpi)
 	b := img.Bounds()
-	for sy := 0; sy < srcH; sy++ {
-		for sx := 0; sx < srcW; sx++ {
-			if src.AlphaAt(sx, sy).A == 0 {
+	for sy := 0; sy < trimH; sy++ {
+		for sx := 0; sx < trimW; sx++ {
+			tx := minX + sx
+			ty := minY + sy
+			if src.AlphaAt(tx, ty).A == 0 {
 				continue
 			}
-			dx := srcH - 1 - sy
+			dx := trimH - 1 - sy
 			dy := sx
 			x := x0 + dx
 			y := y0 + dy
@@ -553,6 +671,98 @@ func drawTextRotatedCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm floa
 			img.Pix[y*img.Stride+x] = idx
 		}
 	}
+}
+
+func drawTextRotatedCCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8) {
+	d := font.Drawer{Face: face}
+	srcW := d.MeasureString(text).Ceil()
+	if srcW <= 0 {
+		return
+	}
+	metrics := face.Metrics()
+	srcH := (metrics.Ascent + metrics.Descent).Ceil()
+	if srcH <= 0 {
+		return
+	}
+
+	src := image.NewAlpha(image.Rect(0, 0, srcW, srcH))
+	d = font.Drawer{
+		Dst:  src,
+		Src:  image.NewUniform(color.Alpha{A: 0xff}),
+		Face: face,
+		Dot: fixed.Point26_6{
+			X: 0,
+			Y: fixed.I(metrics.Ascent.Ceil()),
+		},
+	}
+	d.DrawString(text)
+
+	minX, minY, maxX, maxY, ok := alphaInkBounds(src)
+	if !ok {
+		return
+	}
+	trimW := maxX - minX + 1
+	trimH := maxY - minY + 1
+
+	x0 := mmToPx(xMm, dpi)
+	y0 := mmToPx(yMm, dpi)
+	b := img.Bounds()
+	for sy := 0; sy < trimH; sy++ {
+		for sx := 0; sx < trimW; sx++ {
+			tx := minX + sx
+			ty := minY + sy
+			if src.AlphaAt(tx, ty).A == 0 {
+				continue
+			}
+			dx := sy
+			dy := trimW - 1 - sx
+			x := x0 + dx
+			y := y0 + dy
+			if x < b.Min.X || x >= b.Max.X || y < b.Min.Y || y >= b.Max.Y {
+				continue
+			}
+			img.Pix[y*img.Stride+x] = idx
+		}
+	}
+}
+
+func alphaInkBounds(src *image.Alpha) (minX, minY, maxX, maxY int, ok bool) {
+	b := src.Bounds()
+	minX, minY = b.Max.X, b.Max.Y
+	maxX, maxY = b.Min.X, b.Min.Y
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		row := src.Pix[y*src.Stride:]
+		for x := b.Min.X; x < b.Max.X; x++ {
+			if row[x] == 0 {
+				continue
+			}
+			if x < minX {
+				minX = x
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if y > maxY {
+				maxY = y
+			}
+			ok = true
+		}
+	}
+	return
+}
+
+func capBaselineOffsetMM(face font.Face, dpi float64) float64 {
+	// Anchor by uppercase cap height so the visible top of uppercase letters
+	// sits on the requested margin.
+	b, _ := font.BoundString(face, "H")
+	minYpx := float64(b.Min.Y) / 64.0
+	if minYpx >= 0 {
+		return float64(face.Metrics().Ascent.Ceil()) * 25.4 / dpi
+	}
+	return (-minYpx) * 25.4 / dpi
 }
 
 func drawQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float64, idx uint8) {
@@ -578,6 +788,128 @@ func drawQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float64, i
 			fillRect(img, xStart, yStart, xEnd-xStart, yEnd-yStart, idx)
 		}
 	}
+}
+
+func drawPlateQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float64, idx uint8, opts plateQROptions) {
+	if code == nil {
+		return
+	}
+	if opts.QuietModules < 0 {
+		opts.QuietModules = 0
+	}
+	x0 := mmToPx(xMm, dpi)
+	y0 := mmToPx(yMm, dpi)
+	sizePx := mmToPx(sizeMm, dpi)
+	quiet := opts.QuietModules
+	step := float64(sizePx) / float64(code.Size+2*quiet)
+	offset := int(math.Round(float64(quiet) * step))
+
+	for y := 0; y < code.Size; y++ {
+		yStart := y0 + offset + int(math.Round(float64(y)*step))
+		yEnd := y0 + offset + int(math.Round(float64(y+1)*step))
+		for x := 0; x < code.Size; x++ {
+			if !code.Black(x, y) {
+				continue
+			}
+			xStart := x0 + offset + int(math.Round(float64(x)*step))
+			xEnd := x0 + offset + int(math.Round(float64(x+1)*step))
+
+			useSquare := opts.Shape == plateQRSquare
+			if opts.KeepIslandsSquare && isQRIslandModule(x, y, code.Size) {
+				useSquare = true
+			}
+			if useSquare {
+				fillRect(img, xStart, yStart, xEnd-xStart, yEnd-yStart, idx)
+			} else {
+				fillModuleCircle(img, xStart, yStart, xEnd, yEnd, idx)
+			}
+		}
+	}
+}
+
+func fillModuleCircle(img *image.Paletted, xStart, yStart, xEnd, yEnd int, idx uint8) {
+	w := xEnd - xStart
+	h := yEnd - yStart
+	if w <= 0 || h <= 0 {
+		return
+	}
+	b := img.Bounds()
+	if xEnd <= b.Min.X || xStart >= b.Max.X || yEnd <= b.Min.Y || yStart >= b.Max.Y {
+		return
+	}
+	d := w
+	if h < d {
+		d = h
+	}
+	if d <= 1 {
+		fillRect(img, xStart, yStart, w, h, idx)
+		return
+	}
+	cx2 := 2*xStart + w
+	cy2 := 2*yStart + h
+	r := d - 1
+	r2 := r * r
+	y0 := clamp(yStart, b.Min.Y, b.Max.Y)
+	y1 := clamp(yEnd, b.Min.Y, b.Max.Y)
+	x0 := clamp(xStart, b.Min.X, b.Max.X)
+	x1 := clamp(xEnd, b.Min.X, b.Max.X)
+	for y := y0; y < y1; y++ {
+		dy2 := 2*y + 1 - cy2
+		row := img.Pix[y*img.Stride:]
+		for x := x0; x < x1; x++ {
+			dx2 := 2*x + 1 - cx2
+			if dx2*dx2+dy2*dy2 <= r2 {
+				row[x] = idx
+			}
+		}
+	}
+}
+
+func isQRIslandModule(x, y, size int) bool {
+	if inFinder(x, y, 0, 0) || inFinder(x, y, size-7, 0) || inFinder(x, y, 0, size-7) {
+		return true
+	}
+	for _, ay := range alignmentPatternCenters(size) {
+		for _, ax := range alignmentPatternCenters(size) {
+			if (ax == 6 && ay == 6) || (ax == size-7 && ay == 6) || (ax == 6 && ay == size-7) {
+				continue
+			}
+			if x >= ax-2 && x <= ax+2 && y >= ay-2 && y <= ay+2 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func inFinder(x, y, fx, fy int) bool {
+	return x >= fx && x < fx+7 && y >= fy && y < fy+7
+}
+
+func alignmentPatternCenters(size int) []int {
+	version := (size - 17) / 4
+	if version < 2 {
+		return nil
+	}
+	num := version/7 + 2
+	if num <= 0 {
+		return nil
+	}
+	step := 0
+	if version == 32 {
+		step = 26
+	} else {
+		step = ((size - 13) / (num - 1))
+		if step%2 == 1 {
+			step++
+		}
+	}
+	centers := make([]int, num)
+	centers[0] = 6
+	for i := num - 1; i > 0; i-- {
+		centers[i] = size - 7 - (num-1-i)*step
+	}
+	return centers
 }
 
 // wrapText performs character-level wrapping to ensure long descriptors fit even without spaces.
@@ -623,9 +955,9 @@ func loadFace(sizePt, dpi float64) font.Face {
 	faceMu.Unlock()
 
 	fontOnce.Do(func() {
-		data := loadFontData(martianMono)
+		data := loadFirstFontData(plateFontPrimary, martianMono)
 		if data == nil {
-			fontErr = fmt.Errorf("font data %s not found", martianMono)
+			fontErr = fmt.Errorf("font data not found (tried %s, %s)", plateFontPrimary, martianMono)
 			return
 		}
 		fontFaceData, fontErr = opentype.Parse(data)
@@ -652,25 +984,10 @@ func applyPostProcess(img *image.Paletted, opts RasterOptions) {
 	}
 }
 
-func invertExcept(img *image.Paletted, keep []image.Rectangle) {
-	keepMask := make([]bool, img.Bounds().Dx()*img.Bounds().Dy())
-	for _, r := range keep {
-		for y := r.Min.Y; y < r.Max.Y; y++ {
-			for x := r.Min.X; x < r.Max.X; x++ {
-				idx := y*img.Stride + x
-				if idx >= 0 && idx < len(keepMask) {
-					keepMask[idx] = true
-				}
-			}
-		}
-	}
+func invertAll(img *image.Paletted) {
 	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
 		row := img.Pix[y*img.Stride:]
 		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
-			idx := y*img.Stride + x
-			if keepMask[idx] {
-				continue
-			}
 			if row[x] == 0 {
 				row[x] = 1
 			} else if row[x] == 1 {
@@ -700,9 +1017,9 @@ func loadFaceMedium(sizePt, dpi float64) font.Face {
 	faceMuMedium.Unlock()
 
 	fontOnceMedium.Do(func() {
-		data := loadFontData(martianMonoMedium)
+		data := loadFirstFontData(plateFontPrimary, martianMonoMedium, martianMono)
 		if data == nil {
-			fontErrMedium = fmt.Errorf("font data %s not found", martianMonoMedium)
+			fontErrMedium = fmt.Errorf("font data not found (tried %s, %s, %s)", plateFontPrimary, martianMonoMedium, martianMono)
 			return
 		}
 		fontFaceDataMedium, fontErrMedium = opentype.Parse(data)
@@ -722,4 +1039,16 @@ func loadFaceMedium(sizePt, dpi float64) font.Face {
 	}
 
 	return loadFace(sizePt, dpi)
+}
+
+func loadFirstFontData(paths ...string) []byte {
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		if data := loadFontData(p); data != nil {
+			return data
+		}
+	}
+	return nil
 }
