@@ -237,7 +237,7 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 	drawTextRotatedCCW90(canvas, metaFace, dpi, verX, verY, verText, blackIdx)
 
 	if opts.Invert {
-		invertAll(canvas)
+		invertInterior(canvas, border)
 	}
 	applyPostProcess(canvas, opts)
 	return canvas, nil
@@ -347,7 +347,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		drawTextRotatedCCW90(canvas, descriptorFace, dpi, metaX, metaY, meta, blackIdx)
 	}
 	if opts.Invert {
-		invertAll(canvas)
+		invertInterior(canvas, border)
 	}
 	applyPostProcess(canvas, opts)
 	return canvas, nil
@@ -1033,6 +1033,32 @@ func invertAll(img *image.Paletted) {
 	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
 		row := img.Pix[y*img.Stride:]
 		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			if row[x] == 0 {
+				row[x] = 1
+			} else if row[x] == 1 {
+				row[x] = 0
+			}
+		}
+	}
+}
+
+// invertInterior flips black/white inside the plate while preserving the outer border.
+func invertInterior(img *image.Paletted, borderPx int) {
+	if borderPx <= 0 {
+		invertAll(img)
+		return
+	}
+	b := img.Bounds()
+	x0 := b.Min.X + borderPx
+	y0 := b.Min.Y + borderPx
+	x1 := b.Max.X - borderPx
+	y1 := b.Max.Y - borderPx
+	if x0 >= x1 || y0 >= y1 {
+		return
+	}
+	for y := y0; y < y1; y++ {
+		row := img.Pix[y*img.Stride:]
+		for x := x0; x < x1; x++ {
 			if row[x] == 0 {
 				row[x] = 1
 			} else if row[x] == 1 {
