@@ -29,6 +29,27 @@ var WalletConfigs = map[string]WalletConfig{
 		},
 		Descriptor: "",
 	},
+	"seed-15": {
+		Name: "seed-15",
+		Mnemonics: []string{
+			"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon address",
+		},
+		Descriptor: "",
+	},
+	"seed-18": {
+		Name: "seed-18",
+		Mnemonics: []string{
+			"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon agent",
+		},
+		Descriptor: "",
+	},
+	"seed-21": {
+		Name: "seed-21",
+		Mnemonics: []string{
+			"abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon admit",
+		},
+		Descriptor: "",
+	},
 	"multisig": {
 		Name: "multisig",
 		Mnemonics: []string{
