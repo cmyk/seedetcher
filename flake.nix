@@ -281,6 +281,7 @@
               mupdfHeadlessStatic = self.packages.${system}.mupdf_headless;
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
+              seedEtcherFontFile = ./font/seedetcher/SeedEtcher-Regular.ttf;
 
               controller =
                 if debug then
@@ -317,6 +318,10 @@
                 cp ${fontFile} initramfs/font/martianmono/MartianMono_Condensed-Regular.ttf
                 chmod 0644 initramfs/font/martianmono/MartianMono_Condensed-Regular.ttf
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/font/martianmono/MartianMono_Condensed-Regular.ttf
+                mkdir -p initramfs/font/seedetcher
+                cp ${seedEtcherFontFile} initramfs/font/seedetcher/SeedEtcher-Regular.ttf
+                chmod 0644 initramfs/font/seedetcher/SeedEtcher-Regular.ttf
+                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/font/seedetcher/SeedEtcher-Regular.ttf
     
                 # Create essential initramfs directories
                 mkdir -p initramfs/{bin,lib,share,dev,proc,sys,run,tmp} # Added tmp here
