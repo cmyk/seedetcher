@@ -1,6 +1,6 @@
 module seedetcher.com
 
-go 1.23.2
+go 1.24.0
 
 require (
 	github.com/btcsuite/btcd v0.25.0
@@ -11,9 +11,9 @@ require (
 	github.com/jung-kurt/gofpdf/v2 v2.17.3
 	github.com/kortschak/qr v0.3.0
 	github.com/pdfcpu/pdfcpu v0.9.1
-	golang.org/x/crypto v0.35.0
+	golang.org/x/crypto v0.45.0
 	golang.org/x/image v0.24.0
-	golang.org/x/sys v0.30.0
+	golang.org/x/sys v0.38.0
 	periph.io/x/conn/v3 v3.7.0
 	periph.io/x/host/v3 v3.8.2
 )
@@ -29,7 +29,7 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/text v0.31.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 

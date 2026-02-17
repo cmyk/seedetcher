@@ -509,7 +509,7 @@
               src = ./.;
 
               nativeBuildInputs = with pkgs.buildPackages; [
-                pkgs-unstable.buildPackages.go_1_23
+                pkgs-unstable.buildPackages.go_1_24
                 nukeReferences
               ];
 
@@ -560,7 +560,7 @@
 
               nativeBuildInputs = with pkgs.buildPackages; [
                 cacert
-                pkgs-unstable.buildPackages.go_1_23
+                pkgs-unstable.buildPackages.go_1_24
               ];
 
               installPhase = ''
@@ -571,7 +571,7 @@
 
               outputHashMode = "recursive";
               outputHashAlgo = "sha256";
-              outputHash = "/DHolwtJPs/E7QlNfIpwt+c3CsbKaGqYWOs6K92vKSw=";
+              outputHash = "sha256-Ixy4/6AGUNJknBYVMYf5LJB1AscPKlD1CtVHYeHcqbI=";
             };
             controller = self.lib.${system}.mkcontroller false;
             controller-debug = self.lib.${system}.mkcontroller true;
