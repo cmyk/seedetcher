@@ -1,7 +1,24 @@
 # Changelog
 
 ## Unreleased
-- (no changes yet)
+- b0.3 plate layout overhaul (seed + descriptor sides) with etched-first styling:
+  - custom `SeedEtcher-Regular` plate font integration,
+  - circular QR modules with square islands,
+  - updated seed/descriptor text anchors, margins, and metadata placement.
+- Invert behavior fix: plate border remains black while interior content is inverted.
+- Page layout updates:
+  - 4 mm inter-plate spacing,
+  - top-anchored placement for partial pages,
+  - no automatic plate scaling (plates remain true 90x90mm),
+  - Letter layout switched to 2x2 (4 plates/page) to preserve fixed plate size.
+- Pi image packaging fix: include `font/seedetcher/SeedEtcher-Regular.ttf` in initramfs.
+- Host-mode print pipeline performance/memory refactor:
+  - direct 1bpp plate-to-PCL streaming path (`/dev/usb/lp0`) without full-page raster buffers,
+  - batched host rendering/sending to reduce peak RAM on larger jobs,
+  - host default DPI set to 1200, gadget fallback path kept at 600.
+- Host print-progress behavior stabilized for batched sending (continuous/monotonic progress, compose marked once).
+- Test fixtures expanded with additional seed-only wallets: 12/15/18/21 words.
+- Docs updated to clarify host (direct 1bpp PCL) vs gadget (raster-to-PDF fallback) print paths.
 
 ## Release v0.2.0-beta.2
 - Security dependencies bumped to address Dependabot alerts: `github.com/btcsuite/btcd` -> `v0.25.0`, `github.com/btcsuite/btcd/btcec/v2` -> `v2.3.6`, `github.com/btcsuite/btcd/btcutil` -> `v1.1.6`, and `golang.org/x/crypto` -> `v0.45.0` (plus related `x/sys`/`x/text` updates).
