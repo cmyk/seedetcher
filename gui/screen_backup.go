@@ -42,7 +42,7 @@ outer:
 		case 0: // Camera.
 			res, ok := (&ScanScreen{
 				Title: fmt.Sprintf("Scan Seed %d/%d", current, total), // Update ScanScreen title
-				Lead:  "SeedQR or Mnemonic",
+				Lead:  "SeedQR or Mnemonic QR",
 			}).Scan(ctx, ops)
 			if !ok {
 				continue
