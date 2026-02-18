@@ -61,6 +61,5 @@ Notes:
   - `Trash = delete and restart`
 
 Implementation note:
-- Active flow already uses explicit `Screen` structs (`MainMenuScreen` -> `BackupFlowScreen` stages).
-- `backupWalletFlow` in `gui/screen_backup.go` is legacy/helper code and should not be expanded for new work.
+- Active flow uses explicit `Screen` structs (`MainMenuScreen` -> `BackupFlowScreen` stages).
 - Keep testing on device via `nix run .#reload $USBDEV1` after each step.
