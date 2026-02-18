@@ -33,6 +33,9 @@
   - selectable `DPI` (`1200`/`600`), `Invert` (`On`/`Off`), and `Mirror` (`On`/`Off`),
   - defaults set to `1200`, `On`, `On`,
   - options are now passed through controller print flow; non-PCL fallback remains capped at `600 DPI`.
+- Descriptor-side metadata/QR update:
+  - top descriptor line now uses explicit concise fields (`TYPE/SCRIPT/NET/THRESHOLD/KEYS/KEY`) without full xpub text,
+  - descriptor QR is bottom-anchored, centered on X, rendered with quiet zone, and enlarged (up to 80mm including quiet zone).
 
 ## Release v0.2.0-beta.2
 - Security dependencies bumped to address Dependabot alerts: `github.com/btcsuite/btcd` -> `v0.25.0`, `github.com/btcsuite/btcd/btcec/v2` -> `v2.3.6`, `github.com/btcsuite/btcd/btcutil` -> `v1.1.6`, and `golang.org/x/crypto` -> `v0.45.0` (plus related `x/sys`/`x/text` updates).
