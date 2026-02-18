@@ -49,6 +49,9 @@ type plateQROptions struct {
 const (
 	plateSizeMM   = 90.0
 	borderWidthMM = 0.2
+	// Relative circle diameter for non-island QR modules on plate render.
+	// 1.0 fills the whole module cell, smaller values leave more white margin.
+	plateQRDotScale = 0.7
 )
 
 var (
@@ -996,6 +999,11 @@ func fillModuleCircle(img *image.Paletted, xStart, yStart, xEnd, yEnd int, idx u
 	if h < d {
 		d = h
 	}
+	scaled := int(math.Round(float64(d) * plateQRDotScale))
+	if scaled < 1 {
+		scaled = 1
+	}
+	d = scaled
 	if d <= 1 {
 		fillRect(img, xStart, yStart, w, h, idx)
 		return
