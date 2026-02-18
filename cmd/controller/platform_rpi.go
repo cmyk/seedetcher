@@ -312,9 +312,13 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	}
 
 	opts := printer.RasterOptions{
-		DPI:    1200, // Safe default for Zero; adjust if needed
-		Mirror: false,
-		Invert: false,
+		DPI:    1200, // Host PCL default.
+		Mirror: true,
+		Invert: true,
+	}
+	if !p.supportsPCL {
+		// Gadget fallback path is heavier (raster->PDF); keep it conservative.
+		opts.DPI = 600
 	}
 	if p.supportsPCL {
 		// Host-mode PCL path: render and send in page-sized batches to reduce peak RAM.
