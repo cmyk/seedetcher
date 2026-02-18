@@ -14,7 +14,7 @@ import (
 	"seedetcher.com/printer"
 )
 
-const labelMaxLen = 20
+const labelMaxLen = 15
 
 // LabelInputScreen collects an optional wallet label to print on plates.
 type LabelInputScreen struct {
