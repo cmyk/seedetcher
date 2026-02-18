@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- (no changes yet)
+
+## Release v0.3.0-beta.1
 - b0.3 plate layout overhaul (seed + descriptor sides) with etched-first styling:
   - custom `SeedEtcher-Regular` plate font integration,
   - circular QR modules with square islands,
