@@ -18,7 +18,14 @@
   - host default DPI set to 1200, gadget fallback path kept at 600.
 - Host print-progress behavior stabilized for batched sending (continuous/monotonic progress, compose marked once).
 - Test fixtures expanded with additional seed-only wallets: 12/15/18/21 words.
+- Added `singlesig-longwords` seed-only fixture for plate layout stress testing.
 - Docs updated to clarify host (direct 1bpp PCL) vs gadget (raster-to-PDF fallback) print paths.
+- Paper-size selection is now honored end-to-end in both host and gadget print pipelines (Letter stays 2x2, A4 stays 2x3).
+- Wallet label input limit reduced from 20 to 15 characters.
+- Additional plate typography tuning:
+  - 11pt metadata/descriptor tracking support,
+  - tighter number-column tracking on seed plates,
+  - wider gutter between seed index numbers and words.
 
 ## Release v0.2.0-beta.2
 - Security dependencies bumped to address Dependabot alerts: `github.com/btcsuite/btcd` -> `v0.25.0`, `github.com/btcsuite/btcd/btcec/v2` -> `v2.3.6`, `github.com/btcsuite/btcd/btcutil` -> `v1.1.6`, and `golang.org/x/crypto` -> `v0.45.0` (plus related `x/sys`/`x/text` updates).
