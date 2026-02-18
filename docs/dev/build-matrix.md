@@ -41,3 +41,5 @@ Flash via `./scripts/flash-sdcard.sh -i seedetcher-debug.img` from macOS, pointi
 ## Host-mode notes
 - Host images set `dr_mode=host` (no `g_serial` in `cmdline.txt`) and auto-load `usblp`.
 - Host mode shell/debug path is UART (no gadget shell).
+- Host printing path uses direct 1bpp PCL streaming to `/dev/usb/lp0`.
+- Gadget images use raster-to-PDF fallback path for capture/dev (`/dev/ttyGS1`), not direct PCL.

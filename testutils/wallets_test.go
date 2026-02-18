@@ -18,6 +18,7 @@ func TestSeedOnlyFixturesParseExpectedWordCounts(t *testing.T) {
 		{name: "seed-15", words: 15, fixture: "seed-15"},
 		{name: "seed-18", words: 18, fixture: "seed-18"},
 		{name: "seed-21", words: 21, fixture: "seed-21"},
+		{name: "singlesig-longwords", words: 24, fixture: "singlesig-longwords"},
 	}
 	for _, tc := range tests {
 		tc := tc

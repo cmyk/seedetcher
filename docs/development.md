@@ -187,6 +187,8 @@ go run cmd/cli/main.go -w multisig \
 - -png-out/-dpi/-mirror/-invert/-desc-qr-mm apply to raster plate generation; resulting PDF, PNG, and PCL outputs all reflect those settings.
 - `-pcl-out <path|dir>` writes raw PCL (mirrored/inverted if flags set). If a directory or trailing `/` is provided, the file is auto-named `<wallet>.pcl` inside it.
 - Send PCL over USB: `scripts/print_pcl.sh <file.pcl> [printer_dev]` (defaults `/dev/usb/lp0`, resets channel and streams with `dd bs=16k`).
+- On Pi host mode (`/dev/usb/lp0`), controller printing uses direct 1bpp plate-to-PCL streaming (lower memory, faster).
+- Gadget mode fallback (`/dev/ttyGS1`) still uses raster page composition + PDF serialization for capture/dev flows.
 
 ## Versioning
 

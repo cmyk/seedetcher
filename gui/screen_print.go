@@ -191,7 +191,7 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		defer func() { ctx.PrintProgress = nil }()
 	}
 	go func() {
-		printErr = ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx)
+		printErr = ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx, paperFormat)
 		close(done)
 	}()
 

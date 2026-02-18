@@ -138,14 +138,18 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 	wordFace := loadFace(14, dpi)
 	metaFace := loadFace(11, dpi)
 	const (
-		marginMM      = 3.0
-		leftColXMM    = 11.0
-		rightColXMM   = 49.0
-		qrLeftMM      = 49.0
-		trackingPerEm = 0.18 // 180 tracking (1/1000em style)
+		marginMM    = 3.0
+		leftColXMM  = 10.0
+		rightColXMM = 49.0
+		qrLeftMM    = 49.0
+		wordTrackEm = 0.12 // word-list tracking
+		numTrackEm  = 0.05 // tighter tracking for index numbers
+		numWordGap  = 0.5  // extra gutter (mm) between number and word columns
 	)
 	leadingMM := 15.2 * 25.4 / 72.0
-	wordTrackPx := trackingPerEm * 14.0 * dpi / 72.0
+	wordTrackPx := wordTrackEm * 14.0 * dpi / 72.0
+	numTrackPx := numTrackEm * 14.0 * dpi / 72.0
+	metaTrackPx := 0.04 * 11.0 * dpi / 72.0 // Affinity tracking as percent of em
 	wordStartBaseline := marginMM + capBaselineOffsetMM(wordFace, dpi)
 
 	seed := bip39.MnemonicSeed(mnemonic, "")
@@ -163,8 +167,8 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 	}
 
 	// Word columns: right-aligned numbers + one space + left-aligned words.
-	numColWMM := trackedTextWidthMM(wordFace, dpi, "24", wordTrackPx)
-	spaceWMM := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx)
+	numColWMM := trackedTextWidthMM(wordFace, dpi, "24", numTrackPx)
+	spaceWMM := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx) + numWordGap
 	yLeft := wordStartBaseline
 	for i := 0; i < 16 && i < len(mnemonic); i++ {
 		if mnemonic[i] == -1 {
@@ -172,8 +176,8 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		}
 		num := fmt.Sprintf("%d", i+1)
 		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
-		numW := trackedTextWidthMM(wordFace, dpi, num, wordTrackPx)
-		drawTrackedText(canvas, wordFace, dpi, leftColXMM+numColWMM-numW, yLeft, num, wordTrackPx)
+		numW := trackedTextWidthMM(wordFace, dpi, num, numTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, leftColXMM+numColWMM-numW, yLeft, num, numTrackPx)
 		drawTrackedText(canvas, wordFace, dpi, leftColXMM+numColWMM+spaceWMM, yLeft, word, wordTrackPx)
 		yLeft += leadingMM
 	}
@@ -184,8 +188,8 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		}
 		num := fmt.Sprintf("%d", i+1)
 		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
-		numW := trackedTextWidthMM(wordFace, dpi, num, wordTrackPx)
-		drawTrackedText(canvas, wordFace, dpi, rightColXMM+numColWMM-numW, yRight, num, wordTrackPx)
+		numW := trackedTextWidthMM(wordFace, dpi, num, numTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, rightColXMM+numColWMM-numW, yRight, num, numTrackPx)
 		drawTrackedText(canvas, wordFace, dpi, rightColXMM+numColWMM+spaceWMM, yRight, word, wordTrackPx)
 		yRight += leadingMM
 	}
@@ -208,33 +212,33 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		}
 
 		title := walletLabel()
-		titleW := textWidthMM(metaFace, dpi, title)
+		titleW := trackedTextWidthMM(metaFace, dpi, title, metaTrackPx)
 		titleX := plateSizeMM - marginMM - titleW
 		titleY := plateSizeMM - marginMM
-		drawText(canvas, metaFace, dpi, titleX, titleY, title)
+		drawTrackedText(canvas, metaFace, dpi, titleX, titleY, title, metaTrackPx)
 	}
 
 	shareText := fmt.Sprintf("%d/%d", shareNum, totalShares)
-	_, shareRotH := rotatedTextSizeMM(metaFace, dpi, shareText)
+	_, shareRotH := rotatedTextSizeMMTracked(metaFace, dpi, shareText, metaTrackPx)
 	shareX := marginMM
 	shareY := plateSizeMM - marginMM - shareRotH
-	drawTextRotatedCCW90(canvas, metaFace, dpi, shareX, shareY, shareText, blackIdx)
+	drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, shareX, shareY, shareText, blackIdx, metaTrackPx)
 
 	if fingerprintHex != "" {
-		_, fpRotH := rotatedTextSizeMM(metaFace, dpi, fingerprintHex)
+		_, fpRotH := rotatedTextSizeMMTracked(metaFace, dpi, fingerprintHex, metaTrackPx)
 		fpX := marginMM
 		fpY := (plateSizeMM - fpRotH) / 2
-		drawTextRotatedCCW90(canvas, metaFace, dpi, fpX, fpY, fingerprintHex, blackIdx)
+		drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, fpX, fpY, fingerprintHex, blackIdx, metaTrackPx)
 	}
 
 	verText := version.String()
-	_, verRotH := rotatedTextSizeMM(metaFace, dpi, verText)
+	_, verRotH := rotatedTextSizeMMTracked(metaFace, dpi, verText, metaTrackPx)
 	verX := marginMM
 	verY := marginMM
 	if verY+verRotH > plateSizeMM-marginMM {
 		verY = plateSizeMM - marginMM - verRotH
 	}
-	drawTextRotatedCCW90(canvas, metaFace, dpi, verX, verY, verText, blackIdx)
+	drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, verX, verY, verText, blackIdx, metaTrackPx)
 
 	if opts.Invert {
 		invertInterior(canvas, border)
@@ -261,6 +265,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	descriptorFace := loadFace(11, dpi)
 	pathStr := derivationPathForKey(desc.Keys[keyIdx], desc.Script)
 	pathText := fmt.Sprintf("PATH:%s", pathStr)
+	descTrackPx := 0.04 * 11.0 * dpi / 72.0 // Affinity tracking as percent of em
 
 	key := desc.Keys[keyIdx]
 	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s",
@@ -268,11 +273,11 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 
 	const margin = 3.0
 	ascentMM := capBaselineOffsetMM(descriptorFace, dpi)
-	lines := wrapText(descriptorFace, dpi, allText, plateSizeMM-2*margin)
+	lines := wrapTextTracked(descriptorFace, dpi, allText, plateSizeMM-2*margin, descTrackPx)
 	lineSpacing := 4.2
 	y := margin + ascentMM
 	for i, line := range lines {
-		drawText(canvas, descriptorFace, dpi, margin, y, line)
+		drawTrackedText(canvas, descriptorFace, dpi, margin, y, line, descTrackPx)
 		if i < len(lines)-1 {
 			y += lineSpacing
 		}
@@ -317,19 +322,19 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		KeepIslandsSquare: true,
 	})
 	// Left-side vertical derivation path: 3mm from left and bottom edges.
-	_, pathRotH := rotatedTextSizeMM(descriptorFace, dpi, pathText)
+	_, pathRotH := rotatedTextSizeMMTracked(descriptorFace, dpi, pathText, descTrackPx)
 	pathX := margin
 	pathY := plateSizeMM - margin - pathRotH
 	if pathY < margin {
 		pathY = margin
 	}
-	drawTextRotatedCCW90(canvas, descriptorFace, dpi, pathX, pathY, pathText, blackIdx)
+	drawTextRotatedCCW90Tracked(canvas, descriptorFace, dpi, pathX, pathY, pathText, blackIdx, descTrackPx)
 	if shMeta != nil {
 		wid := strings.ToUpper(hex.EncodeToString(shMeta.WalletID[:4]))
 		sid := strings.ToUpper(hex.EncodeToString(shMeta.SetID[:4]))
 		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, shMeta.Index, shMeta.Threshold)
 		// Vertical WID/SET line: 3mm right of the QR safe-zone edge.
-		metaRotW, metaRotH := rotatedTextSizeMM(descriptorFace, dpi, meta)
+		metaRotW, metaRotH := rotatedTextSizeMMTracked(descriptorFace, dpi, meta, descTrackPx)
 		metaX := qrX + qrSize + margin
 		if metaX+metaRotW > plateSizeMM-margin {
 			metaX = plateSizeMM - margin - metaRotW
@@ -344,7 +349,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		if metaY+metaRotH > plateSizeMM-margin {
 			metaY = plateSizeMM - margin - metaRotH
 		}
-		drawTextRotatedCCW90(canvas, descriptorFace, dpi, metaX, metaY, meta, blackIdx)
+		drawTextRotatedCCW90Tracked(canvas, descriptorFace, dpi, metaX, metaY, meta, blackIdx, descTrackPx)
 	}
 	if opts.Invert {
 		invertInterior(canvas, border)
@@ -403,6 +408,12 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 		out[i] = enc
 	}
 	return out, nil
+}
+
+// DescriptorShardQRCodes returns descriptor QR payloads (or shard payloads) for each share.
+// This is exported for batched host-mode printing paths that need deterministic per-share payloads.
+func DescriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]string, error) {
+	return descriptorShardQRCodes(desc, totalShares)
 }
 
 // SetDescriptorShardSetID forces the descriptor shard set_id used during plate
@@ -600,11 +611,14 @@ func drawRotatedSideMeta(img *image.Paletted, face font.Face, dpi, qrX, qrY, qrS
 }
 
 func rotatedTextSizeMM(face font.Face, dpi float64, text string) (wMm, hMm float64) {
+	return rotatedTextSizeMMTracked(face, dpi, text, 0)
+}
+
+func rotatedTextSizeMMTracked(face font.Face, dpi float64, text string, trackingPx float64) (wMm, hMm float64) {
 	if text == "" {
 		return 0, 0
 	}
-	d := font.Drawer{Face: face}
-	wPx := d.MeasureString(text).Ceil()
+	wPx := trackedTextWidthPx(face, text, trackingPx)
 	if wPx <= 0 {
 		return 0, 0
 	}
@@ -618,29 +632,14 @@ func rotatedTextSizeMM(face font.Face, dpi float64, text string) (wMm, hMm float
 }
 
 func drawTextRotatedCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8) {
-	d := font.Drawer{Face: face}
-	srcW := d.MeasureString(text).Ceil()
-	if srcW <= 0 {
+	drawTextRotatedCW90Tracked(img, face, dpi, xMm, yMm, text, idx, 0)
+}
+
+func drawTextRotatedCW90Tracked(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8, trackingPx float64) {
+	src := rasterizeTextAlpha(face, text, trackingPx)
+	if src == nil {
 		return
 	}
-	metrics := face.Metrics()
-	srcH := (metrics.Ascent + metrics.Descent).Ceil()
-	if srcH <= 0 {
-		return
-	}
-
-	src := image.NewAlpha(image.Rect(0, 0, srcW, srcH))
-	d = font.Drawer{
-		Dst:  src,
-		Src:  image.NewUniform(color.Alpha{A: 0xff}),
-		Face: face,
-		Dot: fixed.Point26_6{
-			X: 0,
-			Y: fixed.I(metrics.Ascent.Ceil()),
-		},
-	}
-	d.DrawString(text)
-
 	minX, minY, maxX, maxY, ok := alphaInkBounds(src)
 	if !ok {
 		return
@@ -671,29 +670,14 @@ func drawTextRotatedCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm floa
 }
 
 func drawTextRotatedCCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8) {
-	d := font.Drawer{Face: face}
-	srcW := d.MeasureString(text).Ceil()
-	if srcW <= 0 {
+	drawTextRotatedCCW90Tracked(img, face, dpi, xMm, yMm, text, idx, 0)
+}
+
+func drawTextRotatedCCW90Tracked(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8, trackingPx float64) {
+	src := rasterizeTextAlpha(face, text, trackingPx)
+	if src == nil {
 		return
 	}
-	metrics := face.Metrics()
-	srcH := (metrics.Ascent + metrics.Descent).Ceil()
-	if srcH <= 0 {
-		return
-	}
-
-	src := image.NewAlpha(image.Rect(0, 0, srcW, srcH))
-	d = font.Drawer{
-		Dst:  src,
-		Src:  image.NewUniform(color.Alpha{A: 0xff}),
-		Face: face,
-		Dot: fixed.Point26_6{
-			X: 0,
-			Y: fixed.I(metrics.Ascent.Ceil()),
-		},
-	}
-	d.DrawString(text)
-
 	minX, minY, maxX, maxY, ok := alphaInkBounds(src)
 	if !ok {
 		return
@@ -749,6 +733,58 @@ func alphaInkBounds(src *image.Alpha) (minX, minY, maxX, maxY int, ok bool) {
 		}
 	}
 	return
+}
+
+func trackedTextWidthPx(face font.Face, text string, trackingPx float64) int {
+	rs := []rune(text)
+	if len(rs) == 0 {
+		return 0
+	}
+	var width fixed.Int26_6
+	trackFixed := fixed.I(int(math.Round(trackingPx)))
+	for i, r := range rs {
+		if adv, ok := face.GlyphAdvance(r); ok {
+			width += adv
+		}
+		if i < len(rs)-1 && trackingPx > 0 {
+			width += trackFixed
+		}
+	}
+	return width.Ceil()
+}
+
+func rasterizeTextAlpha(face font.Face, text string, trackingPx float64) *image.Alpha {
+	if text == "" {
+		return nil
+	}
+	srcW := trackedTextWidthPx(face, text, trackingPx)
+	if srcW <= 0 {
+		return nil
+	}
+	metrics := face.Metrics()
+	srcH := (metrics.Ascent + metrics.Descent).Ceil()
+	if srcH <= 0 {
+		return nil
+	}
+	src := image.NewAlpha(image.Rect(0, 0, srcW, srcH))
+	d := font.Drawer{
+		Dst:  src,
+		Src:  image.NewUniform(color.Alpha{A: 0xff}),
+		Face: face,
+		Dot: fixed.Point26_6{
+			X: 0,
+			Y: fixed.I(metrics.Ascent.Ceil()),
+		},
+	}
+	rs := []rune(text)
+	trackFixed := fixed.I(int(math.Round(trackingPx)))
+	for i, r := range rs {
+		d.DrawString(string(r))
+		if i < len(rs)-1 && trackingPx > 0 {
+			d.Dot.X += trackFixed
+		}
+	}
+	return src
 }
 
 func capBaselineOffsetMM(face font.Face, dpi float64) float64 {
@@ -959,6 +995,10 @@ func alignmentPatternCenters(size int) []int {
 
 // wrapText performs character-level wrapping to ensure long descriptors fit even without spaces.
 func wrapText(face font.Face, dpi float64, text string, maxWidthMm float64) []string {
+	return wrapTextTracked(face, dpi, text, maxWidthMm, 0)
+}
+
+func wrapTextTracked(face font.Face, dpi float64, text string, maxWidthMm float64, trackingPx float64) []string {
 	var lines []string
 	if maxWidthMm <= 0 {
 		return []string{text}
@@ -968,11 +1008,10 @@ func wrapText(face font.Face, dpi float64, text string, maxWidthMm float64) []st
 		return []string{text}
 	}
 
-	d := font.Drawer{Face: face}
 	var buf []rune
 	for _, r := range text {
 		buf = append(buf, r)
-		if d.MeasureString(string(buf)).Ceil() > maxPx {
+		if trackedTextWidthPx(face, string(buf), trackingPx) > maxPx {
 			// Overflow: push previous run and start new line with current rune.
 			if len(buf) > 1 {
 				lines = append(lines, string(buf[:len(buf)-1]))

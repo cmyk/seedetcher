@@ -22,6 +22,13 @@ var WalletConfigs = map[string]WalletConfig{
 		},
 		Descriptor: "wpkh([7d10e19c/84h/1h/0h]tpubDDc8Aqia8wM4wePyxmwGsHaeVy3o5a1eazxyii8B2YceajqRtuVDvDUL3BCQXqM5pXbFkUozTX3SXFc8Sc3RdGEjfPcJRe6NgVREYvVztuX/<0;1>/*)#crv0xrff",
 	},
+	"singlesig-longwords": {
+		Name: "singlesig-longwords",
+		Mnemonics: []string{
+			"abstract accident acoustic announce artefact attitude bachelor broccoli business category champion cinnamon congress consider convince cupboard daughter december decorate decrease describe dinosaur disagree begin",
+		},
+		Descriptor: "",
+	},
 	"seed-12": {
 		Name: "seed-12",
 		Mnemonics: []string{

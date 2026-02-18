@@ -13,6 +13,7 @@ import (
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/gui"
+	"seedetcher.com/printer"
 )
 
 type Platform struct{}
@@ -57,6 +58,6 @@ func (p *Platform) ScanQR(img *image.Gray) ([][]byte, error) {
 	return nil, errors.New("ScanQR not implemented")
 }
 
-func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
+func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize) error {
 	return errors.New("CreatePlates not implemented")
 }
