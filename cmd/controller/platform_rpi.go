@@ -233,7 +233,6 @@ func (p *Platform) CameraFrame(dims image.Point) {
 	c.active = true
 }
 
-// In platform_rpi.go, replace Printer function
 func (p *Platform) Printer() io.Writer {
 	// If we previously failed and cached a non-PCL writer, but lp0 exists now,
 	// clear the cache and try again.
@@ -273,7 +272,7 @@ func (p *Platform) Printer() io.Writer {
 	p.printerCached = os.Stderr
 	return p.printerCached
 }
-func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize) error {
+func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 	printerDev := p.Printer()
 	if printerDev == nil {
@@ -311,12 +310,10 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		}
 	}
 
-	opts := printer.RasterOptions{
-		DPI:    1200, // Host PCL default.
-		Mirror: true,
-		Invert: true,
+	if opts.DPI <= 0 {
+		opts.DPI = 1200
 	}
-	if !p.supportsPCL {
+	if !p.supportsPCL && opts.DPI > 600 {
 		// Gadget fallback path is heavier (raster->PDF); keep it conservative.
 		opts.DPI = 600
 	}

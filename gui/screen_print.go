@@ -19,6 +19,12 @@ type PrintSeedScreen struct {
 	inp InputTracker
 }
 
+type printOptions struct {
+	DPI    int
+	Invert bool
+	Mirror bool
+}
+
 func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, label string) bool {
 	if label == "" {
 		label = printer.DefaultWalletLabel
@@ -47,6 +53,10 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	if choice == 1 {
 		selectedPaper = printer.PaperLetter
 	}
+	opts, ok := choosePrintOptions(ctx, ops, th)
+	if !ok {
+		return false
+	}
 	for {
 		updatePrinterStatus()
 		for {
@@ -62,7 +72,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			case Button3:
 				if inp.Clicked(e.Button) {
 					progress := &PrintProgressScreen{}
-					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper)
+					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper, opts)
 					if err != nil && err.Error() != "print canceled" {
 						s.showError(ctx, ops, th, err)
 					}
@@ -92,9 +102,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				status = "Printer: Connected"
 			}
 		}
-		lead := fmt.Sprintf("%s\nPaper size: %s\n\nPress Print to continue.", status, selectedPaper)
+		lead := fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\n\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror)
 		if desc != nil {
-			lead = fmt.Sprintf("%s\nPaper size: %s\n\nPrinting %d wallet shares.\nPress Print to continue.", status, selectedPaper, len(desc.Keys))
+			lead = fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\n\nPrinting %d wallet shares.\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, len(desc.Keys))
 		}
 		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, lead)
 		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
@@ -103,6 +113,47 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		}...)
 		ctx.Frame()
 	}
+}
+
+func choosePrintOptions(ctx *Context, ops op.Ctx, th *Colors) (printOptions, bool) {
+	out := printOptions{
+		DPI:    1200,
+		Invert: true,
+		Mirror: true,
+	}
+	dpiChoice := &ChoiceScreen{
+		Title:   "Print DPI",
+		Lead:    "Choose print resolution",
+		Choices: []string{"1200", "600"},
+	}
+	choice, ok := dpiChoice.Choose(ctx, ops, th)
+	if !ok {
+		return out, false
+	}
+	if choice == 1 {
+		out.DPI = 600
+	}
+	invertChoice := &ChoiceScreen{
+		Title:   "Invert",
+		Lead:    "Invert plate output?",
+		Choices: []string{"On", "Off"},
+	}
+	choice, ok = invertChoice.Choose(ctx, ops, th)
+	if !ok {
+		return out, false
+	}
+	out.Invert = choice == 0
+	mirrorChoice := &ChoiceScreen{
+		Title:   "Mirror",
+		Lead:    "Mirror plate output?",
+		Choices: []string{"On", "Off"},
+	}
+	choice, ok = mirrorChoice.Choose(ctx, ops, th)
+	if !ok {
+		return out, false
+	}
+	out.Mirror = choice == 0
+	return out, true
 }
 
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
@@ -162,7 +213,7 @@ type PrintProgressScreen struct {
 	inp InputTracker
 }
 
-func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize) (bool, error) {
+func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, printOpts printOptions) (bool, error) {
 	var (
 		printErr error
 		done     = make(chan struct{})
@@ -191,7 +242,12 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		defer func() { ctx.PrintProgress = nil }()
 	}
 	go func() {
-		printErr = ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx, paperFormat)
+		opts := printer.RasterOptions{
+			DPI:    float64(printOpts.DPI),
+			Mirror: printOpts.Mirror,
+			Invert: printOpts.Invert,
+		}
+		printErr = ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx, paperFormat, opts)
 		close(done)
 	}()
 
