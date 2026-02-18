@@ -19,11 +19,13 @@ flowchart TD
     FP --> S2[Descriptor shares review<br>t/n + wallet_id/set_id]
     S2 --> H2[Add wallet label]
     H2 --> PS[Select paper size]
-    PS --> P2[Print flow with descriptor shares per plate]
+    PS --> PO[Select print options<br>DPI, Invert, Mirror]
+    PO --> P2[Print flow with descriptor shares per plate]
     P2 --> A
 
     F1 --> H3[Add wallet label]
-    H3 --> P3[Print flow singlesig]
+    H3 --> PO1[Select print options<br>DPI, Invert, Mirror]
+    PO1 --> P3[Print flow singlesig]
     P3 --> A
 
     R0 --> R1[Scan input]
@@ -44,11 +46,12 @@ Notes:
 - `Run` enters the Screen state machine at `MainMenuScreen`.
 - Colors: `singleTheme` on menu; `descriptorTheme` for backup flow and warnings.
 - All helper logic lives alongside screens (`gui/screen_*.go` and `gui/screen_helpers.go`).
-- Multisig backup uses sharded descriptor mode only in b0.2.
+- Multisig backup uses sharded descriptor mode only since since v0.2.0-beta.1.
 - Singlesig backup stays non-sharded.
 - Backup review sequence for multisig is:
-  - `Confirm wallet` -> `Fingerprints` -> `Descriptor shares` -> `Wallet label` -> `Paper size` -> `Print`.
+  - `Confirm wallet` -> `Fingerprints` -> `Descriptor shares` -> `Wallet label` -> `Paper size` -> `Print options` -> `Print`.
 - `Fingerprints` uses page navigation (left/right arrows) and keeps back/check nav buttons.
+- Print options screen exposes `DPI`, `Invert`, and `Mirror` prior to print submission.
 - Recovery mode accepts both sharded shares and plain descriptor QR input.
 - Plain descriptor QR input bypasses shard threshold accumulation and goes directly to export/confirm.
 - Recovery QR screen copy:

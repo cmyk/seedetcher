@@ -29,6 +29,10 @@
   - 11pt metadata/descriptor tracking support,
   - tighter number-column tracking on seed plates,
   - wider gutter between seed index numbers and words.
+- Print options UI added before printing:
+  - selectable `DPI` (`1200`/`600`), `Invert` (`On`/`Off`), and `Mirror` (`On`/`Off`),
+  - defaults set to `1200`, `On`, `On`,
+  - options are now passed through controller print flow; non-PCL fallback remains capped at `600 DPI`.
 
 ## Release v0.2.0-beta.2
 - Security dependencies bumped to address Dependabot alerts: `github.com/btcsuite/btcd` -> `v0.25.0`, `github.com/btcsuite/btcd/btcec/v2` -> `v2.3.6`, `github.com/btcsuite/btcd/btcutil` -> `v1.1.6`, and `golang.org/x/crypto` -> `v0.45.0` (plus related `x/sys`/`x/text` updates).
