@@ -28,6 +28,7 @@
   - [ ] structural modules remain square (finder/alignment/timing and other required islands)
 - [ ] Preserve scanner reliability while using circular data modules.
 - [ ] Keep quiet zone and module spacing standards-compliant.
+- [ ] Calibrate circular data-module dot scale for etch growth headroom (current target: `0.7`) while keeping finder/alignment islands square.
 - [ ] Verify mirrored/inverted print flags still behave correctly.
 
 ### 3) Output parity and regression checks
