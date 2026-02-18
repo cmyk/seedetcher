@@ -77,15 +77,17 @@ type seedPlateLayout struct {
 	RightColXMM   float64
 	QRLeftMM      float64
 	RightMetaText string
+	ShareNum      int
+	ShareTotal    int
 }
 
-func defaultSeedPlateLayout(totalShares int) seedPlateLayout {
+func defaultSeedPlateLayout(totalShares int, singlesigVariant bool) seedPlateLayout {
 	layout := seedPlateLayout{
 		LeftColXMM:  10.0,
 		RightColXMM: 49.0,
 		QRLeftMM:    49.0,
 	}
-	if totalShares == 1 {
+	if totalShares == 1 || singlesigVariant {
 		layout.LeftColXMM = 8.0
 		layout.RightColXMM = 47.0
 		layout.QRLeftMM = 47.0
@@ -96,12 +98,18 @@ func defaultSeedPlateLayout(totalShares int) seedPlateLayout {
 // CreatePlateBitmaps renders seed/descriptor plates to 1-bit bitmaps using the existing layout.
 func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions, progress ProgressFunc) ([]*image.Paletted, []*image.Paletted, error) {
 	totalShares := len(mnemonics)
-	if desc != nil && len(desc.Keys) > 0 {
+	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
+	isSinglesigJob := desc == nil || isSinglesigDesc
+	if desc != nil && len(desc.Keys) > 0 && !isSinglesigDesc {
 		totalShares = len(desc.Keys)
 	}
-	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
 	// Singlesig seed-side variant: give space for optional right-edge metadata.
-	seedLayout := defaultSeedPlateLayout(totalShares)
+	seedLayout := defaultSeedPlateLayout(totalShares, isSinglesigDesc)
+	if isSinglesigJob {
+		// Plate marker is wallet-key pagination, not physical copy count.
+		seedLayout.ShareNum = 1
+		seedLayout.ShareTotal = 1
+	}
 	if isSinglesigDesc {
 		path := strings.ToUpper(derivationPathForKey(desc.Keys[0], desc.Script))
 		path = strings.ReplaceAll(path, "'", "H")
@@ -154,7 +162,7 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 
 // RenderSeedPlateBitmap mirrors the PDF layout at 600dpi as a 1-bit paletted image.
 func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions) (*image.Paletted, error) {
-	return renderSeedPlateBitmapWithLayout(mnemonic, shareNum, totalShares, opts, defaultSeedPlateLayout(totalShares))
+	return renderSeedPlateBitmapWithLayout(mnemonic, shareNum, totalShares, opts, defaultSeedPlateLayout(totalShares, false))
 }
 
 func renderSeedPlateBitmapWithLayout(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions, layout seedPlateLayout) (*image.Paletted, error) {
@@ -248,7 +256,13 @@ func renderSeedPlateBitmapWithLayout(mnemonic bip39.Mnemonic, shareNum, totalSha
 		drawTrackedText(canvas, metaFace, dpi, titleX, titleY, title, metaTrackPx)
 	}
 
-	shareText := fmt.Sprintf("%d/%d", shareNum, totalShares)
+	showShareNum := shareNum
+	showShareTotal := totalShares
+	if layout.ShareNum > 0 && layout.ShareTotal > 0 {
+		showShareNum = layout.ShareNum
+		showShareTotal = layout.ShareTotal
+	}
+	shareText := fmt.Sprintf("%d/%d", showShareNum, showShareTotal)
 	_, shareRotH := rotatedTextSizeMMTracked(metaFace, dpi, shareText, metaTrackPx)
 	shareX := marginMM
 	shareY := plateSizeMM - marginMM - shareRotH
