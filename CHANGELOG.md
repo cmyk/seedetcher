@@ -41,6 +41,7 @@
   - singlesig seed side uses a shifted word/QR layout variant with optional right-edge metadata (`path/script/net`) when a descriptor is present,
   - when descriptor is skipped in singlesig flow, no right-edge metadata line is printed.
 - Seed scan prompt copy clarified to `SeedQR or Mnemonic QR` to avoid implying OCR/manual-word camera entry.
+- Singlesig print default updated to produce two physical seed plates per job while preserving key-pagination semantics (`1/1` marker on both copies, not `1/2`/`2/2`).
 
 ## Release v0.2.0-beta.2
 - Security dependencies bumped to address Dependabot alerts: `github.com/btcsuite/btcd` -> `v0.25.0`, `github.com/btcsuite/btcd/btcec/v2` -> `v2.3.6`, `github.com/btcsuite/btcd/btcutil` -> `v1.1.6`, and `golang.org/x/crypto` -> `v0.45.0` (plus related `x/sys`/`x/text` updates).
