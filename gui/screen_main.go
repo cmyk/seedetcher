@@ -59,7 +59,7 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	}
 }
 
-// BackupFlowScreen wraps the legacy backup flow inside the Screen loop.
+// BackupFlowScreen drives backup and print stages in the Screen loop.
 type BackupFlowScreen struct {
 	Theme         *Colors
 	stage         backupStage
