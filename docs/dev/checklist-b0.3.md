@@ -16,33 +16,33 @@
 ## Milestones
 
 ### 1) Font integration and layout update
-- [ ] Add/integrate custom etching font asset(s).
-- [ ] Wire font into plate renderer(s) used for print output.
-- [ ] Increase type size and rebalance spacing for available plate area.
-- [ ] Ensure no clipping at plate edges across A4/Letter page layouts.
-- [ ] Keep bitmap output canonical and match host-mode print path.
+- [x] Add/integrate custom etching font asset(s).
+- [x] Wire font into plate renderer(s) used for print output.
+- [x] Increase type size and rebalance spacing for available plate area.
+- [x] Ensure no clipping at plate edges across A4/Letter page layouts.
+- [x] Keep bitmap output canonical and match host-mode print path.
 
 ### 2) Circular QR rendering on plates
-- [ ] Implement hybrid QR rendering for plate output:
-  - [ ] data modules rendered as circular dots
-  - [ ] structural modules remain square (finder/alignment/timing and other required islands)
-- [ ] Preserve scanner reliability while using circular data modules.
-- [ ] Keep quiet zone and module spacing standards-compliant.
-- [ ] Calibrate circular data-module dot scale for etch growth headroom (current target: `0.7`) while keeping finder/alignment islands square.
-- [ ] Verify mirrored/inverted print flags still behave correctly.
+- [x] Implement hybrid QR rendering for plate output:
+  - [x] data modules rendered as circular dots
+  - [x] structural modules remain square (finder/alignment/timing and other required islands)
+- [x] Preserve scanner reliability while using circular data modules.
+- [x] Keep quiet zone and module spacing standards-compliant.
+- [x] Calibrate circular data-module dot scale for etch growth headroom (current target: `0.7`) while keeping finder/alignment islands square.
+- [x] Verify mirrored/inverted print flags still behave correctly.
 
 ### 3) Output parity and regression checks
-- [ ] Ensure captured print output matches intended plate geometry.
-- [ ] Verify singlesig and multisig plate outputs against current fixtures.
-- [ ] Confirm descriptor-share QR decode/recover still works end-to-end.
-- [ ] Confirm no controller crashes/regressions in print/recover flows.
+- [x] Ensure captured print output matches intended plate geometry.
+- [x] Verify singlesig and multisig plate outputs against current fixtures.
+- [x] Confirm descriptor-share QR decode/recover still works end-to-end.
+- [x] Confirm no controller crashes/regressions in print/recover flows.
 
 ### 4) Test artifacts and docs
-- [ ] Add visual reference fixtures for new layout (seed + descriptor plates).
+- [x] Add visual reference fixtures for new layout (seed + descriptor plates).
 - [ ] Add manual QA checklist for scan/readability on real laser prints.
-- [ ] Update docs (`docs/dev/gui.md` or dedicated layout doc) with new design constraints.
-- [ ] Update CHANGELOG.md
-- [ ] Document known scanner limits/tradeoffs for hybrid QR rendering (square islands + circular data dots).
+- [x] Update docs (`docs/dev/gui.md` or dedicated layout doc) with new design constraints.
+- [x] Update CHANGELOG.md
+- [x] Document known scanner limits/tradeoffs for hybrid QR rendering (square islands + circular data dots).
 
 ### 5) Release prep
 - [ ] Validate at least one full physical run: print -> transfer mask -> recovery scan.
