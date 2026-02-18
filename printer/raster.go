@@ -72,16 +72,45 @@ var (
 	forcedShardSet *[16]byte
 )
 
+type seedPlateLayout struct {
+	LeftColXMM    float64
+	RightColXMM   float64
+	QRLeftMM      float64
+	RightMetaText string
+}
+
+func defaultSeedPlateLayout(totalShares int) seedPlateLayout {
+	layout := seedPlateLayout{
+		LeftColXMM:  10.0,
+		RightColXMM: 49.0,
+		QRLeftMM:    49.0,
+	}
+	if totalShares == 1 {
+		layout.LeftColXMM = 8.0
+		layout.RightColXMM = 47.0
+		layout.QRLeftMM = 47.0
+	}
+	return layout
+}
+
 // CreatePlateBitmaps renders seed/descriptor plates to 1-bit bitmaps using the existing layout.
 func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions, progress ProgressFunc) ([]*image.Paletted, []*image.Paletted, error) {
 	totalShares := len(mnemonics)
 	if desc != nil && len(desc.Keys) > 0 {
 		totalShares = len(desc.Keys)
 	}
+	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
+	// Singlesig seed-side variant: give space for optional right-edge metadata.
+	seedLayout := defaultSeedPlateLayout(totalShares)
+	if isSinglesigDesc {
+		path := strings.ToUpper(derivationPathForKey(desc.Keys[0], desc.Script))
+		path = strings.ReplaceAll(path, "'", "H")
+		seedLayout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[0].Network))
+	}
 
 	seedImgs := make([]*image.Paletted, totalShares)
 	var descImgs []*image.Paletted
-	hasDesc := desc != nil && len(desc.Keys) > 0
+	hasDesc := desc != nil && len(desc.Keys) > 0 && !isSinglesigDesc
 	if hasDesc {
 		descImgs = make([]*image.Paletted, totalShares)
 	}
@@ -96,7 +125,7 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 
 	for i := 0; i < totalShares; i++ {
 		mnemonic := mnemonics[i%len(mnemonics)]
-		seedImg, err := RenderSeedPlateBitmap(mnemonic, i+1, totalShares, opts)
+		seedImg, err := renderSeedPlateBitmapWithLayout(mnemonic, i+1, totalShares, opts, seedLayout)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -125,6 +154,10 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 
 // RenderSeedPlateBitmap mirrors the PDF layout at 600dpi as a 1-bit paletted image.
 func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions) (*image.Paletted, error) {
+	return renderSeedPlateBitmapWithLayout(mnemonic, shareNum, totalShares, opts, defaultSeedPlateLayout(totalShares))
+}
+
+func renderSeedPlateBitmapWithLayout(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions, layout seedPlateLayout) (*image.Paletted, error) {
 	dpi := opts.dpi()
 	canvas := newPlateCanvas(dpi)
 	blackIdx := uint8(1)
@@ -139,9 +172,6 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 	metaFace := loadFace(11, dpi)
 	const (
 		marginMM    = 3.0
-		leftColXMM  = 10.0
-		rightColXMM = 49.0
-		qrLeftMM    = 49.0
 		wordTrackEm = 0.12 // word-list tracking
 		numTrackEm  = 0.05 // tighter tracking for index numbers
 		numWordGap  = 0.5  // extra gutter (mm) between number and word columns
@@ -177,8 +207,8 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		num := fmt.Sprintf("%d", i+1)
 		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
 		numW := trackedTextWidthMM(wordFace, dpi, num, numTrackPx)
-		drawTrackedText(canvas, wordFace, dpi, leftColXMM+numColWMM-numW, yLeft, num, numTrackPx)
-		drawTrackedText(canvas, wordFace, dpi, leftColXMM+numColWMM+spaceWMM, yLeft, word, wordTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, layout.LeftColXMM+numColWMM-numW, yLeft, num, numTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, layout.LeftColXMM+numColWMM+spaceWMM, yLeft, word, wordTrackPx)
 		yLeft += leadingMM
 	}
 	yRight := wordStartBaseline
@@ -189,8 +219,8 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		num := fmt.Sprintf("%d", i+1)
 		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
 		numW := trackedTextWidthMM(wordFace, dpi, num, numTrackPx)
-		drawTrackedText(canvas, wordFace, dpi, rightColXMM+numColWMM-numW, yRight, num, numTrackPx)
-		drawTrackedText(canvas, wordFace, dpi, rightColXMM+numColWMM+spaceWMM, yRight, word, wordTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, layout.RightColXMM+numColWMM-numW, yRight, num, numTrackPx)
+		drawTrackedText(canvas, wordFace, dpi, layout.RightColXMM+numColWMM+spaceWMM, yRight, word, wordTrackPx)
 		yRight += leadingMM
 	}
 
@@ -200,7 +230,7 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 			qrCode, err := qr.Encode(string(qrContent), qr.M)
 			if err == nil {
 				qrSize := 28.0
-				qrX := qrLeftMM + 0.5
+				qrX := layout.QRLeftMM + 0.5
 				// Fixed vertical anchor for seed QR: keep bottom 12mm above plate edge.
 				qrY := plateSizeMM - 12.0 - qrSize
 				drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
@@ -239,6 +269,19 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 		verY = plateSizeMM - marginMM - verRotH
 	}
 	drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, verX, verY, verText, blackIdx, metaTrackPx)
+	if layout.RightMetaText != "" {
+		meta := strings.ToUpper(layout.RightMetaText)
+		metaRotW, metaRotH := rotatedInkSizeMMTracked(metaFace, dpi, meta, metaTrackPx)
+		metaX := plateSizeMM - marginMM - metaRotW
+		if metaX < marginMM {
+			metaX = marginMM
+		}
+		metaY := marginMM
+		if metaY+metaRotH > plateSizeMM-marginMM {
+			metaY = plateSizeMM - marginMM - metaRotH
+		}
+		drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, metaX, metaY, meta, blackIdx, metaTrackPx)
+	}
 
 	if opts.Invert {
 		invertInterior(canvas, border)
