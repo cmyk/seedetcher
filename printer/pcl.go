@@ -177,6 +177,16 @@ func WritePCLPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, dpi f
 	return nil
 }
 
+// EstimatePCLPlatesBytes estimates the raw PCL byte size for a plate-set job.
+// Useful for aggregating multi-batch send progress.
+func EstimatePCLPlatesBytes(seedPlates, descPlates []*image.Paletted, dpi float64, paper PaperSize) (int64, error) {
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, nil)
+	if err != nil {
+		return 0, err
+	}
+	return estimatePCLBytesForPlan(plan, dpi, paper)
+}
+
 func estimatePCLBytes(pages []*image.Paletted, dpi float64, paper PaperSize) (int64, error) {
 	paperCode, ok := paperCode(paper)
 	if !ok {

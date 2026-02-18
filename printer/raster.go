@@ -405,6 +405,12 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 	return out, nil
 }
 
+// DescriptorShardQRCodes returns descriptor QR payloads (or shard payloads) for each share.
+// This is exported for batched host-mode printing paths that need deterministic per-share payloads.
+func DescriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]string, error) {
+	return descriptorShardQRCodes(desc, totalShares)
+}
+
 // SetDescriptorShardSetID forces the descriptor shard set_id used during plate
 // generation. Pass nil to clear and return to random per-job set IDs.
 func SetDescriptorShardSetID(id *[16]byte) {
