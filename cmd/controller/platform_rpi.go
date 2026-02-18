@@ -312,21 +312,134 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	}
 
 	opts := printer.RasterOptions{
-		DPI:    600, // Safe default for Zero; adjust if needed
-		Mirror: true,
-		Invert: true,
+		DPI:    1200, // Safe default for Zero; adjust if needed
+		Mirror: false,
+		Invert: false,
 	}
+	if p.supportsPCL {
+		// Host-mode PCL path: render and send in page-sized batches to reduce peak RAM.
+		totalShares := len(mnemonics)
+		if desc != nil && len(desc.Keys) > 0 {
+			totalShares = len(desc.Keys)
+		}
+		if totalShares <= 0 {
+			return fmt.Errorf("no shares to print")
+		}
+		var shardQRCodes []string
+		var err error
+		if desc != nil && len(desc.Keys) > 0 {
+			shardQRCodes, err = printer.DescriptorShardQRCodes(desc, totalShares)
+			if err != nil {
+				return fmt.Errorf("render: descriptor shard qrs: %w", err)
+			}
+		}
+		sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
+		if desc == nil {
+			sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
+		}
+		if sharesPerBatch < 1 {
+			sharesPerBatch = 1
+		}
+		numBatches := (totalShares + sharesPerBatch - 1) / sharesPerBatch
+		if numBatches < 1 {
+			numBatches = 1
+		}
+		prepareDone := int64(0)
+		prepareTotal := int64(totalShares)
+		if desc != nil {
+			prepareTotal *= 2
+		}
+		composeMarked := false
+		sendDone := int64(0)
+		sendTotal := int64(0)
+		sendBatchBytes := int64(-1)
+		for start := 0; start < totalShares; start += sharesPerBatch {
+			end := start + sharesPerBatch
+			if end > totalShares {
+				end = totalShares
+			}
+			batchSize := end - start
+			seedBatch := make([]*image.Paletted, 0, batchSize)
+			var descBatch []*image.Paletted
+			if desc != nil {
+				descBatch = make([]*image.Paletted, 0, batchSize)
+			}
+			for i := start; i < end; i++ {
+				m := mnemonics[i%len(mnemonics)]
+				seedImg, err := printer.RenderSeedPlateBitmap(m, i+1, totalShares, opts)
+				if err != nil {
+					return fmt.Errorf("render: seed plate %d: %w", i+1, err)
+				}
+				seedBatch = append(seedBatch, seedImg)
+				prepareDone++
+				if progress != nil && prepareTotal > 0 {
+					progress(printer.StagePrepare, prepareDone, prepareTotal)
+				}
+				if desc != nil {
+					descKeyIdx := i % len(desc.Keys)
+					descQR := ""
+					if i < len(shardQRCodes) {
+						descQR = shardQRCodes[i]
+					}
+					descImg, err := printer.RenderDescriptorPlateBitmap(desc, descKeyIdx, i+1, totalShares, opts, descQR)
+					if err != nil {
+						return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
+					}
+					descBatch = append(descBatch, descImg)
+					prepareDone++
+					if progress != nil && prepareTotal > 0 {
+						progress(printer.StagePrepare, prepareDone, prepareTotal)
+					}
+				}
+			}
+			if !composeMarked && progress != nil {
+				progress(printer.StageCompose, 1, 1)
+				composeMarked = true
+			}
+			if sendBatchBytes < 0 {
+				var err error
+				sendBatchBytes, err = printer.EstimatePCLPlatesBytes(seedBatch, descBatch, opts.DPI, printer.PaperA4)
+				if err != nil {
+					return fmt.Errorf("pcl: estimate batch %d-%d: %w", start+1, end, err)
+				}
+				sendTotal = sendBatchBytes * int64(numBatches)
+			}
+			baseDone := sendDone
+			batchProgress := func(stage printer.PrintStage, current, total int64) {
+				if stage != printer.StageSend || progress == nil || sendTotal <= 0 || total <= 0 {
+					return
+				}
+				globalCurrent := baseDone + current
+				if globalCurrent > sendTotal {
+					globalCurrent = sendTotal
+				}
+				progress(printer.StageSend, globalCurrent, sendTotal)
+			}
+			if progress != nil && sendTotal > 0 {
+				progress(printer.StageSend, sendDone, sendTotal)
+			}
+			if err := printer.WritePCLPlates(printerDev, seedBatch, descBatch, opts.DPI, printer.PaperA4, batchProgress); err != nil {
+				return fmt.Errorf("pcl: write batch %d-%d: %w", start+1, end, err)
+			}
+			sendDone += sendBatchBytes
+			if sendDone > sendTotal {
+				sendDone = sendTotal
+			}
+			if progress != nil && sendTotal > 0 {
+				progress(printer.StageSend, sendDone, sendTotal)
+			}
+		}
+		if progress != nil && !composeMarked {
+			progress(printer.StageCompose, 1, 1)
+			composeMarked = true
+		}
+		logutil.DebugLog("PCL write complete (shares=%d dpi=%.0f, batched)", totalShares, opts.DPI)
+		return nil
+	}
+
 	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
 	if err != nil {
 		return fmt.Errorf("render: plate bitmaps: %w", err)
-	}
-	if p.supportsPCL {
-		// Default to PCL in host mode (usblp). Compose + stream directly without full-page buffering.
-		if err := printer.WritePCLPlates(printerDev, seedImgs, descImgs, opts.DPI, printer.PaperA4, progress); err != nil {
-			return fmt.Errorf("pcl: write plates: %w", err)
-		}
-		logutil.DebugLog("PCL write complete (shares=%d dpi=%.0f)", len(seedImgs), opts.DPI)
-		return nil
 	}
 
 	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperA4, opts.DPI, progress)
