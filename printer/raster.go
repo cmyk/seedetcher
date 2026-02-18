@@ -268,8 +268,8 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	descTrackPx := 0.04 * 11.0 * dpi / 72.0 // Affinity tracking as percent of em
 
 	key := desc.Keys[keyIdx]
-	allText := fmt.Sprintf("Type:%v/Script:%s/Threshold:%d/Keys:%d/Key%d:%s",
-		desc.Type, strings.Replace(desc.Script.String(), " ", "", -1), desc.Threshold, len(desc.Keys), keyIdx+1, key.String())
+	allText := fmt.Sprintf("TYPE:%s/SCRIPT:%s/NET:%s/THRESHOLD:%d/KEYS:%d/KEY:%d",
+		descriptorTypeTag(desc.Type), descriptorScriptTag(desc.Script), descriptorNetworkTag(key.Network), desc.Threshold, len(desc.Keys), keyIdx+1)
 
 	const margin = 3.0
 	ascentMM := capBaselineOffsetMM(descriptorFace, dpi)
@@ -307,17 +307,25 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	textBottom := lastBaselineY + descentMM
 	qrGap := 2.0    // gap between text and QR
 	qrBottom := 3.0 // bottom safe margin for etched plate layout
-	qrSize := plateSizeMM - textBottom - qrGap - qrBottom
-	if qrSize > descriptorQRSizeMM && descriptorQRSizeMM > 0 {
-		qrSize = descriptorQRSizeMM
+	// Keep descriptor QR at or below the b0.3 layout target. If an explicit
+	// override is set smaller, honor that.
+	qrMaxMM := 80.0
+	if descriptorQRSizeMM > 0 && descriptorQRSizeMM < qrMaxMM {
+		qrMaxMM = descriptorQRSizeMM
+	}
+	// sizeMm is the full QR footprint (data modules + quiet zone).
+	maxByTop := plateSizeMM - qrBottom - (textBottom + qrGap)
+	qrSize := qrMaxMM
+	if qrSize > maxByTop {
+		qrSize = maxByTop
 	}
 	if qrSize < 5.0 {
 		qrSize = 5.0 // Prevent degenerate QR
 	}
 	qrX := (plateSizeMM - qrSize) / 2
-	qrY := textBottom + qrGap
+	qrY := plateSizeMM - qrBottom - qrSize
 	drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
-		QuietModules:      0,
+		QuietModules:      4,
 		Shape:             plateQRCircle,
 		KeepIslandsSquare: true,
 	})
@@ -334,7 +342,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		sid := strings.ToUpper(hex.EncodeToString(shMeta.SetID[:4]))
 		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, shMeta.Index, shMeta.Threshold)
 		// Vertical WID/SET line: 3mm right of the QR safe-zone edge.
-		metaRotW, metaRotH := rotatedTextSizeMMTracked(descriptorFace, dpi, meta, descTrackPx)
+		metaRotW, metaRotH := rotatedInkSizeMMTracked(descriptorFace, dpi, meta, descTrackPx)
 		metaX := qrX + qrSize + margin
 		if metaX+metaRotW > plateSizeMM-margin {
 			metaX = plateSizeMM - margin - metaRotW
@@ -356,6 +364,45 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 	applyPostProcess(canvas, opts)
 	return canvas, nil
+}
+
+func descriptorTypeTag(t urtypes.MultisigType) string {
+	switch t {
+	case urtypes.Singlesig:
+		return "SINGLESIG"
+	case urtypes.SortedMulti:
+		return "SORTEDMULTI"
+	default:
+		return fmt.Sprintf("TYPE%d", int(t))
+	}
+}
+
+func descriptorScriptTag(s urtypes.Script) string {
+	switch s {
+	case urtypes.P2SH:
+		return "P2SH"
+	case urtypes.P2SH_P2WSH:
+		return "P2SH-P2WSH"
+	case urtypes.P2SH_P2WPKH:
+		return "P2SH-P2WPKH"
+	case urtypes.P2PKH:
+		return "P2PKH"
+	case urtypes.P2WSH:
+		return "P2WSH"
+	case urtypes.P2WPKH:
+		return "P2WPKH"
+	case urtypes.P2TR:
+		return "P2TR"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+func descriptorNetworkTag(net *chaincfg.Params) string {
+	if net != nil && net.Net == chaincfg.MainNetParams.Net {
+		return "MAIN"
+	}
+	return "TEST"
 }
 
 func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]string, error) {
@@ -629,6 +676,20 @@ func rotatedTextSizeMMTracked(face font.Face, dpi float64, text string, tracking
 	}
 	// Rotated CW 90: width/height swap.
 	return float64(hPx) * 25.4 / dpi, float64(wPx) * 25.4 / dpi
+}
+
+func rotatedInkSizeMMTracked(face font.Face, dpi float64, text string, trackingPx float64) (wMm, hMm float64) {
+	src := rasterizeTextAlpha(face, text, trackingPx)
+	if src == nil {
+		return 0, 0
+	}
+	minX, minY, maxX, maxY, ok := alphaInkBounds(src)
+	if !ok {
+		return 0, 0
+	}
+	trimW := maxX - minX + 1
+	trimH := maxY - minY + 1
+	return float64(trimH) * 25.4 / dpi, float64(trimW) * 25.4 / dpi
 }
 
 func drawTextRotatedCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8) {
