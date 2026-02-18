@@ -273,7 +273,7 @@ func (p *Platform) Printer() io.Writer {
 	p.printerCached = os.Stderr
 	return p.printerCached
 }
-func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
+func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 	printerDev := p.Printer()
 	if printerDev == nil {
@@ -402,7 +402,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			}
 			if sendBatchBytes < 0 {
 				var err error
-				sendBatchBytes, err = printer.EstimatePCLPlatesBytes(seedBatch, descBatch, opts.DPI, printer.PaperA4)
+				sendBatchBytes, err = printer.EstimatePCLPlatesBytes(seedBatch, descBatch, opts.DPI, paper)
 				if err != nil {
 					return fmt.Errorf("pcl: estimate batch %d-%d: %w", start+1, end, err)
 				}
@@ -422,7 +422,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			if progress != nil && sendTotal > 0 {
 				progress(printer.StageSend, sendDone, sendTotal)
 			}
-			if err := printer.WritePCLPlates(printerDev, seedBatch, descBatch, opts.DPI, printer.PaperA4, batchProgress); err != nil {
+			if err := printer.WritePCLPlates(printerDev, seedBatch, descBatch, opts.DPI, paper, batchProgress); err != nil {
 				return fmt.Errorf("pcl: write batch %d-%d: %w", start+1, end, err)
 			}
 			sendDone += sendBatchBytes
@@ -446,14 +446,14 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		return fmt.Errorf("render: plate bitmaps: %w", err)
 	}
 
-	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperA4, opts.DPI, progress)
+	pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, progress)
 	if err != nil {
 		return fmt.Errorf("render: compose pages: %w", err)
 	}
 
 	// Fallback: serialize canonical raster pages as PDF (gadget capture/dev).
 	var pdf bytes.Buffer
-	if err := printer.WritePDFRaster(&pdf, pages, printer.PaperA4); err != nil {
+	if err := printer.WritePDFRaster(&pdf, pages, paper); err != nil {
 		return fmt.Errorf("pdf: write: %w", err)
 	}
 	data := pdf.Bytes()

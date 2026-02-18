@@ -186,7 +186,7 @@ type Platform interface {
 	ScanQR(qr *image.Gray) ([][]byte, error)
 	Debug() bool
 	Printer() io.Writer
-	CreatePlates(ctx *Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error // Updated
+	CreatePlates(ctx *Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize) error // Updated
 }
 
 type FrameEvent struct {
