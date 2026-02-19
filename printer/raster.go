@@ -110,6 +110,11 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 	if desc != nil && len(desc.Keys) > 0 && !isSinglesigDesc {
 		totalShares = len(desc.Keys)
 	}
+	compactSingleSided := desc != nil &&
+		compact2of3Enabled() &&
+		desc.Type == urtypes.SortedMulti &&
+		desc.Threshold == 2 &&
+		len(desc.Keys) == 3
 	// Singlesig seed-side variant: give space for optional right-edge metadata.
 	seedLayout := defaultSeedPlateLayout(totalShares, isSinglesigDesc)
 	if isSinglesigJob {
@@ -136,6 +141,25 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		if err != nil {
 			return nil, nil, err
 		}
+	}
+	if compactSingleSided {
+		for i := 0; i < totalShares; i++ {
+			mnemonic := mnemonics[i%len(mnemonics)]
+			descKeyIdx := i % len(desc.Keys)
+			descQR := ""
+			if i < len(shardQRCodes) {
+				descQR = shardQRCodes[i]
+			}
+			img, err := renderCompact2of3PlateBitmap(mnemonic, desc, descKeyIdx, i+1, totalShares, opts, descQR)
+			if err != nil {
+				return nil, nil, err
+			}
+			seedImgs[i] = img
+			if progress != nil {
+				progress(StagePrepare, int64(i+1), int64(totalShares))
+			}
+		}
+		return seedImgs, nil, nil
 	}
 
 	for i := 0; i < totalShares; i++ {
