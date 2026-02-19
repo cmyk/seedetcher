@@ -42,7 +42,7 @@ const (
 
 	// Bench defaults for the operator section on the stats page.
 	etchGapMM          = 15.0
-	etchTempC          = 40.0
+	etchTempC          = 34.0
 	etchSulfateGPerL   = 100.0
 	etchVoltageLimitV  = 12.0
 	etchCurrentDensity = 0.04 // A/cm^2 default for "set current"
