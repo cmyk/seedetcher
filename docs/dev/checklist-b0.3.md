@@ -40,6 +40,7 @@
 ### 4) Test artifacts and docs
 - [x] Add visual reference fixtures for new layout (seed + descriptor plates).
 - [ ] Add manual QA checklist for scan/readability on real laser prints.
+- [ ] Add optional host-mode etch stats page (additional print page) with clear per-plate coverage metrics (`mm²` and `%`) mapped to each printed plate side.
 - [x] Update docs (`docs/dev/gui.md` or dedicated layout doc) with new design constraints.
 - [x] Update CHANGELOG.md
 - [x] Document known scanner limits/tradeoffs for hybrid QR rendering (square islands + circular data dots).
