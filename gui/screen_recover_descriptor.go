@@ -172,7 +172,7 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 		raw := strings.TrimSpace(string(v))
 		up := strings.ToUpper(raw)
 		if strings.HasPrefix(up, shard.Prefix) {
-			if len(s.decodedSE2Shares) > 0 {
+			if mixedShareFormat(len(s.decodedShares), len(s.decodedSE2Shares), up) {
 				showError(ctx, ops, th, fmt.Errorf("share set mismatch: mixed SE1 and SE2 shares"))
 				return s
 			}
@@ -206,7 +206,7 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 			return s.finishRecoveredPayload(ctx, ops, th, payload)
 		}
 		if strings.HasPrefix(up, compact2of3.Prefix) {
-			if len(s.decodedShares) > 0 {
+			if mixedShareFormat(len(s.decodedShares), len(s.decodedSE2Shares), up) {
 				showError(ctx, ops, th, fmt.Errorf("share set mismatch: mixed SE1 and SE2 shares"))
 				return s
 			}
@@ -519,6 +519,17 @@ func se2SharesCompatible(a, b compact2of3.Share) bool {
 		a.Network == b.Network &&
 		a.Threshold == b.Threshold &&
 		a.Total == b.Total
+}
+
+func mixedShareFormat(se1Count, se2Count int, scanned string) bool {
+	up := strings.ToUpper(scanned)
+	if strings.HasPrefix(up, shard.Prefix) {
+		return se2Count > 0
+	}
+	if strings.HasPrefix(up, compact2of3.Prefix) {
+		return se1Count > 0
+	}
+	return false
 }
 
 func renderQRImage(content string, size int) image.Image {

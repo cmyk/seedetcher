@@ -10,6 +10,12 @@
   - unmasked margin (`90x90` exposure + outer margin exposure).
 - Etch defaults block added to stats page for bench setup:
   - `Na2SO4 100 g/L`, `34C`, `15 mm` electrode gap, `12 V` limit, `J=0.04 A/cm2`.
+- Added compact descriptor-share mode for multisig `sortedmulti 2-of-3` (`SE2`) as an opt-in path:
+  - CLI flag `-compact-2of3`,
+  - conditional GUI print option shown only for eligible `2/3` descriptors.
+- Recovery flow now accepts both `SE1` and `SE2` share formats and explicitly rejects mixed-format share sets in one session.
+- Descriptor-side metadata rendering now includes right-edge `WID/SET` line for `SE2` shares.
+- `SE2` wallet-id (`WID`) is now aligned to the same normalized descriptor-based derivation used by `SE1`.
 
 ## Release v0.3.0-beta.1
 - b0.3 plate layout overhaul (seed + descriptor sides) with etched-first styling:

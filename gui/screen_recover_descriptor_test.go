@@ -7,6 +7,7 @@ import (
 
 	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/descriptor/compact2of3"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/testutils"
 )
@@ -207,5 +208,42 @@ func TestURSingleAndMultipartShareSameURPayload(t *testing.T) {
 	}
 	if !bytes.Equal(multiEnc, urPayload) {
 		t.Fatalf("multipart payload mismatch")
+	}
+}
+
+func TestRecoverFlowCompactSE2CombineToDescriptor(t *testing.T) {
+	cfg := testutils.WalletConfigs["multisig-mainnet-2of3"]
+	_, desc, err := testutils.ParseWallet(cfg, "", "")
+	if err != nil {
+		t.Fatalf("parse wallet: %v", err)
+	}
+	if desc == nil {
+		t.Fatal("missing descriptor")
+	}
+	shares, err := compact2of3.SplitDescriptor(desc, compact2of3.SplitOptions{})
+	if err != nil {
+		t.Fatalf("split compact: %v", err)
+	}
+	got, err := compact2of3.CombineToDescriptorPayload([]compact2of3.Share{shares[0], shares[2]})
+	if err != nil {
+		t.Fatalf("combine compact: %v", err)
+	}
+	if !bytes.Equal(got, desc.Encode()) {
+		t.Fatal("compact recovered payload mismatch")
+	}
+}
+
+func TestMixedShareFormatRejectionHelper(t *testing.T) {
+	if !mixedShareFormat(1, 0, compact2of3.Prefix+"ABC") {
+		t.Fatal("expected mixed format rejection for SE2 after SE1")
+	}
+	if !mixedShareFormat(0, 1, shard.Prefix+"ABC") {
+		t.Fatal("expected mixed format rejection for SE1 after SE2")
+	}
+	if mixedShareFormat(1, 0, shard.Prefix+"ABC") {
+		t.Fatal("unexpected mixed rejection for SE1 after SE1")
+	}
+	if mixedShareFormat(0, 1, compact2of3.Prefix+"ABC") {
+		t.Fatal("unexpected mixed rejection for SE2 after SE2")
 	}
 }

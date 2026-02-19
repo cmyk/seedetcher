@@ -19,7 +19,7 @@ flowchart TD
     FP --> S2[Descriptor shares review<br>t/n + wallet_id/set_id]
     S2 --> H2[Add wallet label]
     H2 --> PS[Select paper size]
-    PS --> PO[Select print options<br>DPI, Invert, Mirror, Etch stats page]
+    PS --> PO[Select print options<br>DPI, Invert, Mirror, Etch stats page<br>Compact 2/3 (conditional)]
     PO --> P2[Print flow with descriptor shares per plate]
     P2 --> A
 
@@ -52,10 +52,14 @@ Notes:
   - `Confirm wallet` -> `Fingerprints` -> `Descriptor shares` -> `Wallet label` -> `Paper size` -> `Print options` -> `Print`.
 - `Fingerprints` uses page navigation (left/right arrows) and keeps back/check nav buttons.
 - Print options screen exposes `DPI`, `Invert`, `Mirror`, and `Etch stats page` prior to print submission.
+- For multisig `sortedmulti 2-of-3` descriptors only, print options also expose `Compact 2/3`:
+  - `Off` = current `SE1` share format,
+  - `On` = compact `SE2` share format.
 - When `Etch stats page` is enabled, one additional stats page is appended after plate pages:
   - area/coverage table per printed plate side (`mm²` and `%`),
   - per-plate PSU current guide (`Set A masked` / `Set A unmasked`) using bench defaults.
-- Recovery mode accepts both sharded shares and plain descriptor QR input.
+- Recovery mode accepts both `SE1` and compact `SE2` sharded shares, plus plain descriptor QR input.
+- Mixed share formats in one recovery session are rejected (`SE1` + `SE2` cannot be combined).
 - Plain descriptor QR input bypasses shard threshold accumulation and goes directly to export/confirm.
 - Recovery QR screen copy:
   - Title: `Recovered Descriptor QR`

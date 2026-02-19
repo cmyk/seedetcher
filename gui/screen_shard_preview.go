@@ -105,7 +105,7 @@ func (s *ShardPreviewScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		wid := strings.ToUpper(hex.EncodeToString(sh.WalletID[:]))
 		sid := strings.ToUpper(hex.EncodeToString(sh.SetID[:4]))
 		body := fmt.Sprintf(
-			"Need %d of %d descriptor shares to recover.\n\nWID: %s\nSET: %s\n\nContinue to wallet label and print setup.",
+			"Need %d of %d descriptor shares to recover.\nMode: selected in Print options (SE1 or compact SE2 for 2/3).\n\nWID: %s\nSET: %s\n\nContinue to wallet label and print setup.",
 			sh.Threshold,
 			sh.Total,
 			wid,

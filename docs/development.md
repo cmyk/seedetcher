@@ -174,6 +174,7 @@ go run cmd/cli/main.go -w multisig \
 - `-pcl-out` (default: empty): optional output path for raw PCL
 - `-wallet-name` (default: empty): optional wallet name printed on plates (defaults to `SEEDETCHER`)
 - `-etch-stats-page` (default: `false`): append an additional etch stats page with per-plate coverage and PSU guidance
+- `-compact-2of3` (default: `false`): use compact `SE2` descriptor shares for `sortedmulti 2-of-3` wallets
 
 ### Host-mode printer check (usblp)
 - `image`/`image-debug` load `usblp` automatically (CONFIG_USB_PRINTER). With a USB printer attached you should see dmesg like `usblp0: USB Bidirectional printer` and `/dev/usb/lp0` present.
