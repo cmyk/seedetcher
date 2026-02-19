@@ -409,7 +409,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	if shMeta != nil {
 		wid := strings.ToUpper(hex.EncodeToString(shMeta.WalletID[:4]))
 		sid := strings.ToUpper(hex.EncodeToString(shMeta.SetID[:4]))
-		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, shMeta.Index, shMeta.Threshold)
+		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, shMeta.Index, shMeta.Total)
 		// Vertical WID/SET line: 3mm right of the QR safe-zone edge.
 		metaRotW, metaRotH := rotatedInkSizeMMTracked(descriptorFace, dpi, meta, descTrackPx)
 		metaX := qrX + qrSize + margin
@@ -430,7 +430,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	} else if se2Meta != nil {
 		wid := strings.ToUpper(hex.EncodeToString(se2Meta.WalletID[:4]))
 		sid := strings.ToUpper(hex.EncodeToString(se2Meta.SetID[:4]))
-		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, se2Meta.Index, se2Meta.Threshold)
+		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, se2Meta.Index, se2Meta.Total)
 		// Vertical WID/SET line: 3mm right of the QR safe-zone edge.
 		metaRotW, metaRotH := rotatedInkSizeMMTracked(descriptorFace, dpi, meta, descTrackPx)
 		metaX := qrX + qrSize + margin
