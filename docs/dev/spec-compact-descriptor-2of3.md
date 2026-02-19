@@ -125,3 +125,16 @@ Reject with explicit errors for:
 2. Add explicit mode toggle in backup flow for 2-of-3 wallets only.
 3. Keep SE1 as default until physical QA confirms scan/etch gains.
 4. Promote compact mode after successful field validation.
+
+## Compatibility contract (normative)
+- `Xi` key-record schema MUST be explicitly versioned and immutable per version.
+  - Existing `Xi` versions MUST NOT be reinterpreted.
+  - Any incompatible schema change MUST use a new SE2 version.
+- Derivation path/children encoding MUST remain canonical binary (u32 indices + hardened bit), not string-based serialization.
+- Key material bytes (pubkey/chaincode and related binary fields) MUST be stored exactly as parsed and MUST NOT be transformed via text pretty-print/roundtrip.
+- Golden vectors are the protocol contract:
+  - repository MUST include fixed wallets with expected exact `SE2:` payload strings,
+  - CI/release checks MUST fail if a known vector payload changes unexpectedly.
+- Decoder backward compatibility is mandatory:
+  - decoders MUST continue to parse all historical SE2 versions used by released plates,
+  - new encoder behavior is allowed only for new versions while preserving old decode support.

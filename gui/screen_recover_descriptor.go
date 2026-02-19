@@ -12,6 +12,7 @@ import (
 	"github.com/kortschak/qr"
 	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/descriptor/compact2of3"
 	"seedetcher.com/descriptor/legacy"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/gui/assets"
@@ -91,6 +92,7 @@ type RecoverDescriptorFlowScreen struct {
 	recoveredURPayload  []byte
 	recoveredQR         image.Image
 	decodedShares       map[uint8]shard.Share
+	decodedSE2Shares    map[uint8]compact2of3.Share
 	modeChoice          int
 	displayMode         recoverDisplayMode
 	viewQR              image.Image
@@ -112,6 +114,7 @@ func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			s.recoveredURPayload = nil
 			s.recoveredQR = nil
 			s.decodedShares = make(map[uint8]shard.Share)
+			s.decodedSE2Shares = make(map[uint8]compact2of3.Share)
 		}
 	}()
 
@@ -121,6 +124,9 @@ func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	}
 	if s.decodedShares == nil {
 		s.decodedShares = make(map[uint8]shard.Share)
+	}
+	if s.decodedSE2Shares == nil {
+		s.decodedSE2Shares = make(map[uint8]compact2of3.Share)
 	}
 
 	switch s.stage {
@@ -166,6 +172,10 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 		raw := strings.TrimSpace(string(v))
 		up := strings.ToUpper(raw)
 		if strings.HasPrefix(up, shard.Prefix) {
+			if len(s.decodedSE2Shares) > 0 {
+				showError(ctx, ops, th, fmt.Errorf("share set mismatch: mixed SE1 and SE2 shares"))
+				return s
+			}
 			sh, err := shard.Decode(up)
 			if err != nil {
 				showError(ctx, ops, th, fmt.Errorf("invalid share QR: %v", err))
@@ -193,34 +203,41 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 				showError(ctx, ops, th, fmt.Errorf("combine shares failed: %v", err))
 				return s
 			}
-			rawPayload := append([]byte(nil), payload...)
-			urPayload, err := buildURPayload(rawPayload)
-			if err != nil {
-				showError(ctx, ops, th, fmt.Errorf("failed to build recovered descriptor"))
-				logutil.DebugLog("recover payload build failed: %v", err)
+			return s.finishRecoveredPayload(ctx, ops, th, payload)
+		}
+		if strings.HasPrefix(up, compact2of3.Prefix) {
+			if len(s.decodedShares) > 0 {
+				showError(ctx, ops, th, fmt.Errorf("share set mismatch: mixed SE1 and SE2 shares"))
 				return s
 			}
-			recoveredUR, err := safeEncodeURPayload(urPayload)
+			sh, err := compact2of3.Decode(up)
 			if err != nil {
-				showError(ctx, ops, th, fmt.Errorf("failed to encode recovered descriptor"))
-				logutil.DebugLog("recover UR encode failed: %v", err)
+				showError(ctx, ops, th, fmt.Errorf("invalid share QR: %v", err))
 				return s
 			}
-			s.recoveredUR = recoveredUR
-			s.recoveredText = buildDescriptorText(rawPayload)
-			s.recoveredPayloadRaw = rawPayload
-			s.recoveredURPayload = urPayload
-			dims := ctx.Platform.DisplaySize()
-			qrSize := dims.X
-			if dims.Y < qrSize {
-				qrSize = dims.Y
+			if base, ok := firstDecodedSE2Share(s.decodedSE2Shares); ok && !se2SharesCompatible(base, sh) {
+				showError(ctx, ops, th, fmt.Errorf("share set mismatch: different wallet or shard set"))
+				return s
 			}
-			qrSize -= 8
-			s.recoveredQR = renderQRImage(s.recoveredUR, qrSize)
-			s.returnScreen = &ActionChoiceScreen{Theme: th}
-			s.stage = recoverStageExport
-			ctx.addToast("Descriptor recovered", 1200)
-			return s
+			if _, exists := s.decodedSE2Shares[sh.Index]; exists {
+				showError(ctx, ops, th, fmt.Errorf("share %d already scanned", sh.Index))
+				return s
+			}
+			s.decodedSE2Shares[sh.Index] = sh
+			if len(s.decodedSE2Shares) < int(sh.Threshold) {
+				ctx.addToast(fmt.Sprintf("Captured share #%d (%d/%d)", sh.Index, len(s.decodedSE2Shares), sh.Threshold), 1700)
+				return s
+			}
+			shares := make([]compact2of3.Share, 0, len(s.decodedSE2Shares))
+			for _, part := range s.decodedSE2Shares {
+				shares = append(shares, part)
+			}
+			payload, err := compact2of3.CombineToDescriptorPayload(shares)
+			if err != nil {
+				showError(ctx, ops, th, fmt.Errorf("combine shares failed: %v", err))
+				return s
+			}
+			return s.finishRecoveredPayload(ctx, ops, th, payload)
 		}
 		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
 		return s
@@ -231,6 +248,37 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
 		return s
 	}
+}
+
+func (s *RecoverDescriptorFlowScreen) finishRecoveredPayload(ctx *Context, ops op.Ctx, th *Colors, payload []byte) Screen {
+	rawPayload := append([]byte(nil), payload...)
+	urPayload, err := buildURPayload(rawPayload)
+	if err != nil {
+		showError(ctx, ops, th, fmt.Errorf("failed to build recovered descriptor"))
+		logutil.DebugLog("recover payload build failed: %v", err)
+		return s
+	}
+	recoveredUR, err := safeEncodeURPayload(urPayload)
+	if err != nil {
+		showError(ctx, ops, th, fmt.Errorf("failed to encode recovered descriptor"))
+		logutil.DebugLog("recover UR encode failed: %v", err)
+		return s
+	}
+	s.recoveredUR = recoveredUR
+	s.recoveredText = buildDescriptorText(rawPayload)
+	s.recoveredPayloadRaw = rawPayload
+	s.recoveredURPayload = urPayload
+	dims := ctx.Platform.DisplaySize()
+	qrSize := dims.X
+	if dims.Y < qrSize {
+		qrSize = dims.Y
+	}
+	qrSize -= 8
+	s.recoveredQR = renderQRImage(s.recoveredUR, qrSize)
+	s.returnScreen = &ActionChoiceScreen{Theme: th}
+	s.stage = recoverStageExport
+	ctx.addToast("Descriptor recovered", 1200)
+	return s
 }
 
 func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *Colors) Screen {
@@ -257,6 +305,7 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 				s.recoveredURPayload = nil
 				s.recoveredQR = nil
 				s.decodedShares = make(map[uint8]shard.Share)
+				s.decodedSE2Shares = make(map[uint8]compact2of3.Share)
 				s.stage = recoverStageScan
 				ctx.addToast("Recovery state deleted", 1200)
 				if s.returnScreen != nil {
@@ -287,6 +336,9 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 
 		wid, sid := "", ""
 		if base, ok := firstDecodedShare(s.decodedShares); ok {
+			wid = strings.ToUpper(fmt.Sprintf("%x", base.WalletID))
+			sid = strings.ToUpper(fmt.Sprintf("%x", base.SetID[:4]))
+		} else if base, ok := firstDecodedSE2Share(s.decodedSE2Shares); ok {
 			wid = strings.ToUpper(fmt.Sprintf("%x", base.WalletID))
 			sid = strings.ToUpper(fmt.Sprintf("%x", base.SetID[:4]))
 		}
@@ -406,15 +458,25 @@ func (s *RecoverDescriptorFlowScreen) updateViewerQR(ctx *Context, dims image.Po
 }
 
 func (s *RecoverDescriptorFlowScreen) scanLead() string {
-	if len(s.decodedShares) == 0 {
+	if len(s.decodedShares) == 0 && len(s.decodedSE2Shares) == 0 {
 		return "Scan descriptor share"
 	}
 	ids := make([]int, 0, len(s.decodedShares))
 	threshold := 0
-	for _, sh := range s.decodedShares {
-		ids = append(ids, int(sh.Index))
-		if int(sh.Threshold) > threshold {
-			threshold = int(sh.Threshold)
+	if len(s.decodedSE2Shares) > 0 {
+		ids = make([]int, 0, len(s.decodedSE2Shares))
+		for _, sh := range s.decodedSE2Shares {
+			ids = append(ids, int(sh.Index))
+			if int(sh.Threshold) > threshold {
+				threshold = int(sh.Threshold)
+			}
+		}
+	} else {
+		for _, sh := range s.decodedShares {
+			ids = append(ids, int(sh.Index))
+			if int(sh.Threshold) > threshold {
+				threshold = int(sh.Threshold)
+			}
 		}
 	}
 	sort.Ints(ids)
@@ -432,12 +494,29 @@ func firstDecodedShare(m map[uint8]shard.Share) (shard.Share, bool) {
 	return shard.Share{}, false
 }
 
+func firstDecodedSE2Share(m map[uint8]compact2of3.Share) (compact2of3.Share, bool) {
+	for _, sh := range m {
+		return sh, true
+	}
+	return compact2of3.Share{}, false
+}
+
 func sharesCompatible(a, b shard.Share) bool {
 	return a.Version == b.Version &&
 		a.SetID == b.SetID &&
 		a.WalletID == b.WalletID &&
 		a.Network == b.Network &&
 		a.Script == b.Script &&
+		a.Threshold == b.Threshold &&
+		a.Total == b.Total
+}
+
+func se2SharesCompatible(a, b compact2of3.Share) bool {
+	return a.Version == b.Version &&
+		a.SetID == b.SetID &&
+		a.WalletID == b.WalletID &&
+		a.Script == b.Script &&
+		a.Network == b.Network &&
 		a.Threshold == b.Threshold &&
 		a.Total == b.Total
 }

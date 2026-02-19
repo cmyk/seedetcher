@@ -21,6 +21,7 @@ import (
 	"golang.org/x/image/math/fixed"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
+	"seedetcher.com/descriptor/compact2of3"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/seedqr"
 	"seedetcher.com/version"
@@ -75,6 +76,7 @@ var (
 
 	shardSetMu     sync.RWMutex
 	forcedShardSet *[16]byte
+	compact2of3On  bool
 )
 
 type seedPlateLayout struct {
@@ -482,6 +484,25 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 		}
 		return []string{qr}, nil
 	}
+	if compact2of3Enabled() && desc.Type == urtypes.SortedMulti && threshold == 2 && totalShares == 3 {
+		opts := compact2of3.SplitOptions{}
+		if setID, ok := forcedDescriptorShardSetID(); ok {
+			opts.SetID = setID
+		}
+		shares, err := compact2of3.SplitDescriptor(desc, opts)
+		if err != nil {
+			return nil, fmt.Errorf("split compact descriptor payload: %w", err)
+		}
+		out := make([]string, len(shares))
+		for i, sh := range shares {
+			enc, err := compact2of3.Encode(sh)
+			if err != nil {
+				return nil, fmt.Errorf("encode compact share %d: %w", i+1, err)
+			}
+			out[i] = enc
+		}
+		return out, nil
+	}
 	if threshold < 2 || threshold > totalShares {
 		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
 	}
@@ -538,6 +559,14 @@ func SetDescriptorShardSetID(id *[16]byte) {
 	forcedShardSet = &v
 }
 
+// SetCompactDescriptor2of3Enabled toggles compact SE2 share generation for
+// sortedmulti 2-of-3 descriptors. Disabled by default.
+func SetCompactDescriptor2of3Enabled(on bool) {
+	shardSetMu.Lock()
+	defer shardSetMu.Unlock()
+	compact2of3On = on
+}
+
 func forcedDescriptorShardSetID() ([16]byte, bool) {
 	shardSetMu.RLock()
 	defer shardSetMu.RUnlock()
@@ -545,6 +574,12 @@ func forcedDescriptorShardSetID() ([16]byte, bool) {
 		return [16]byte{}, false
 	}
 	return *forcedShardSet, true
+}
+
+func compact2of3Enabled() bool {
+	shardSetMu.RLock()
+	defer shardSetMu.RUnlock()
+	return compact2of3On
 }
 
 // SavePNG writes a paletted image to disk.

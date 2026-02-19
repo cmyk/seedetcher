@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"seedetcher.com/descriptor/compact2of3"
 	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/testutils"
 )
@@ -95,5 +96,45 @@ func TestDescriptorShardQRCodesSinglesigUsesDescriptorQR(t *testing.T) {
 	}
 	if strings.HasPrefix(strings.ToUpper(qrs[0]), shard.Prefix) {
 		t.Fatalf("singlesig descriptor QR unexpectedly sharded: %q", qrs[0])
+	}
+}
+
+func TestDescriptorShardQRCodesCompact2of3WhenEnabled(t *testing.T) {
+	cfg := testutils.WalletConfigs["multisig-mainnet-2of3"]
+	_, desc, err := testutils.ParseWallet(cfg, "", "")
+	if err != nil {
+		t.Fatalf("parse wallet: %v", err)
+	}
+	if desc == nil {
+		t.Fatal("missing descriptor")
+	}
+	SetCompactDescriptor2of3Enabled(true)
+	defer SetCompactDescriptor2of3Enabled(false)
+
+	qrs, err := descriptorShardQRCodes(desc, len(desc.Keys))
+	if err != nil {
+		t.Fatalf("descriptorShardQRCodes compact: %v", err)
+	}
+	if len(qrs) != 3 {
+		t.Fatalf("got %d qrs, want 3", len(qrs))
+	}
+	shares := make([]compact2of3.Share, 0, 3)
+	for i, q := range qrs {
+		if !strings.HasPrefix(strings.ToUpper(q), compact2of3.Prefix) {
+			t.Fatalf("share %d has non-compact payload: %q", i+1, q)
+		}
+		sh, err := compact2of3.Decode(strings.ToUpper(q))
+		if err != nil {
+			t.Fatalf("decode compact share %d: %v", i+1, err)
+		}
+		shares = append(shares, sh)
+	}
+	got, err := compact2of3.CombineToDescriptorPayload([]compact2of3.Share{shares[0], shares[2]})
+	if err != nil {
+		t.Fatalf("combine compact shares: %v", err)
+	}
+	want := desc.Encode()
+	if string(got) != string(want) {
+		t.Fatal("recovered compact payload mismatch")
 	}
 }
