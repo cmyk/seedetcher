@@ -3,19 +3,20 @@ package testutils
 import "flag"
 
 type Flags struct {
-	Mnemonic   string
-	Descriptor string
-	Output     string
-	PaperSize  string
-	Verbose    bool
-	WalletType string
-	BitmapDir  string
-	DPI        int
-	Mirror     bool
-	Invert     bool
-	DescQRMM   float64
-	PCLOut     string
-	WalletName string
+	Mnemonic      string
+	Descriptor    string
+	Output        string
+	PaperSize     string
+	Verbose       bool
+	WalletType    string
+	BitmapDir     string
+	DPI           int
+	Mirror        bool
+	Invert        bool
+	DescQRMM      float64
+	PCLOut        string
+	WalletName    string
+	EtchStatsPage bool
 }
 
 func DefineFlags() *Flags {
@@ -33,5 +34,6 @@ func DefineFlags() *Flags {
 	flag.Float64Var(&f.DescQRMM, "desc-qr-mm", 75.0, "Maximum descriptor QR size in millimeters")
 	flag.StringVar(&f.PCLOut, "pcl-out", "", "Optional output path for raw PCL (bitmap raster)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
+	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")
 	return f
 }
