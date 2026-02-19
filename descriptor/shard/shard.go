@@ -397,6 +397,13 @@ func walletIDForPayload(payload []byte) [walletIDLen]byte {
 	return out
 }
 
+// WalletIDForPayloadBytes computes the SE1-compatible wallet_id for arbitrary
+// payload bytes using the same normalization rules as split/combine paths.
+func WalletIDForPayloadBytes(payload []byte) [walletIDLen]byte {
+	payload = normalizeSplitPayload(payload)
+	return walletIDForPayload(payload)
+}
+
 func inferHints(canonical string) (NetworkHint, ScriptHint, error) {
 	desc, err := nonstandard.OutputDescriptor([]byte(canonical))
 	if err != nil {

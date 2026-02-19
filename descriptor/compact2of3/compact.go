@@ -23,6 +23,21 @@ const (
 	minContainerSz = 3 + 1 + setIDLen + walletIDLen + 1 + 1 + 1 + 1 + 1 + 1 + 2 + 2 + 1 + 1 + keyOrderLen*4 + 4
 )
 
+var gfExpTable [512]byte
+var gfLogTable [256]byte
+
+func init() {
+	x := byte(1)
+	for i := 0; i < 255; i++ {
+		gfExpTable[i] = x
+		gfLogTable[x] = byte(i)
+		x = gfXtime(x)
+	}
+	for i := 255; i < len(gfExpTable); i++ {
+		gfExpTable[i] = gfExpTable[i-255]
+	}
+}
+
 type Share struct {
 	Version         uint8
 	SetID           [setIDLen]byte
@@ -92,12 +107,13 @@ func SplitDescriptor(desc *urtypes.OutputDescriptor, opts SplitOptions) ([]Share
 	if err != nil {
 		return nil, fmt.Errorf("split parity: %w", err)
 	}
+	descriptorWalletID := shard.WalletIDForPayloadBytes(desc.Encode())
 	out := make([]Share, 0, 3)
 	for i := 0; i < 3; i++ {
 		out = append(out, Share{
 			Version:         Version,
 			SetID:           setID,
-			WalletID:        parityShares[i].WalletID,
+			WalletID:        descriptorWalletID,
 			Script:          scriptCode(desc.Script),
 			Network:         networkCode(desc.Keys[0].Network),
 			Threshold:       2,
@@ -150,19 +166,13 @@ func CombineToDescriptorPayload(shares []Share) ([]byte, error) {
 	}
 	// Any 2 are enough by construction.
 	uniq = uniq[:2]
-	parityParts := make([]shard.Share, 0, 2)
+	parts := make([][]byte, 0, len(uniq))
+	x := make([]byte, 0, len(uniq))
 	for _, sh := range uniq {
-		parityParts = append(parityParts, shard.Share{
-			Version:   shard.Version,
-			SetID:     sh.SetID,
-			WalletID:  sh.WalletID,
-			Threshold: 2,
-			Total:     3,
-			Index:     sh.Index,
-			Data:      append([]byte(nil), sh.ParityShareData...),
-		})
+		parts = append(parts, append([]byte(nil), sh.ParityShareData...))
+		x = append(x, sh.Index)
 	}
-	parity, err := shard.CombinePayloadBytes(parityParts)
+	parity, err := combineBytes(parts, x)
 	if err != nil {
 		return nil, fmt.Errorf("combine parity shares: %w", err)
 	}
@@ -212,7 +222,78 @@ func CombineToDescriptorPayload(shares []Share) ([]byte, error) {
 		Type:      urtypes.SortedMulti,
 		Keys:      keys,
 	}
+	if shard.WalletIDForPayloadBytes(desc.Encode()) != base.WalletID {
+		return nil, errors.New("wallet_id mismatch after reconstruction")
+	}
 	return desc.Encode(), nil
+}
+
+func combineBytes(parts [][]byte, x []byte) ([]byte, error) {
+	if len(parts) == 0 || len(parts) != len(x) {
+		return nil, errors.New("invalid shard inputs")
+	}
+	n := len(parts[0])
+	for i := range parts {
+		if len(parts[i]) != n {
+			return nil, errors.New("share length mismatch")
+		}
+	}
+	out := make([]byte, n)
+	xi := make([]byte, len(x))
+	for b := 0; b < n; b++ {
+		yi := make([]byte, len(parts))
+		for i := range parts {
+			yi[i] = parts[i][b]
+			xi[i] = x[i]
+		}
+		out[b] = gfInterpolateAtZero(xi, yi)
+	}
+	return out, nil
+}
+
+func gfXtime(x byte) byte {
+	if x&0x80 != 0 {
+		return (x << 1) ^ 0x1d
+	}
+	return x << 1
+}
+
+func gfMul(a, b byte) byte {
+	if a == 0 || b == 0 {
+		return 0
+	}
+	return gfExpTable[int(gfLogTable[a])+int(gfLogTable[b])]
+}
+
+func gfInv(a byte) byte {
+	if a == 0 {
+		panic("gf inverse of zero")
+	}
+	return gfExpTable[255-int(gfLogTable[a])]
+}
+
+func gfLagrangeAtZero(x []byte, i int) byte {
+	num := byte(1)
+	den := byte(1)
+	xi := x[i]
+	for j := 0; j < len(x); j++ {
+		if j == i {
+			continue
+		}
+		xj := x[j]
+		num = gfMul(num, xj)
+		den = gfMul(den, xj^xi)
+	}
+	return gfMul(num, gfInv(den))
+}
+
+func gfInterpolateAtZero(x []byte, y []byte) byte {
+	var acc byte
+	for i := 0; i < len(x); i++ {
+		li := gfLagrangeAtZero(x, i)
+		acc ^= gfMul(y[i], li)
+	}
+	return acc
 }
 
 func Encode(sh Share) (string, error) {

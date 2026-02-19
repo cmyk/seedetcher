@@ -354,9 +354,14 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		return nil, fmt.Errorf("empty descriptor QR content")
 	}
 	var shMeta *shard.Share
+	var se2Meta *compact2of3.Share
 	if strings.HasPrefix(strings.ToUpper(qrContent), shard.Prefix) {
 		if sh, err := shard.Decode(strings.ToUpper(qrContent)); err == nil {
 			shMeta = &sh
+		}
+	} else if strings.HasPrefix(strings.ToUpper(qrContent), compact2of3.Prefix) {
+		if sh, err := compact2of3.Decode(strings.ToUpper(qrContent)); err == nil {
+			se2Meta = &sh
 		}
 	}
 	qrCode, err := qr.Encode(qrContent, descriptorQRECC)
@@ -405,6 +410,27 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		wid := strings.ToUpper(hex.EncodeToString(shMeta.WalletID[:4]))
 		sid := strings.ToUpper(hex.EncodeToString(shMeta.SetID[:4]))
 		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, shMeta.Index, shMeta.Threshold)
+		// Vertical WID/SET line: 3mm right of the QR safe-zone edge.
+		metaRotW, metaRotH := rotatedInkSizeMMTracked(descriptorFace, dpi, meta, descTrackPx)
+		metaX := qrX + qrSize + margin
+		if metaX+metaRotW > plateSizeMM-margin {
+			metaX = plateSizeMM - margin - metaRotW
+		}
+		if metaX < margin {
+			metaX = margin
+		}
+		metaY := plateSizeMM - margin - metaRotH
+		if metaY < margin {
+			metaY = margin
+		}
+		if metaY+metaRotH > plateSizeMM-margin {
+			metaY = plateSizeMM - margin - metaRotH
+		}
+		drawTextRotatedCCW90Tracked(canvas, descriptorFace, dpi, metaX, metaY, meta, blackIdx, descTrackPx)
+	} else if se2Meta != nil {
+		wid := strings.ToUpper(hex.EncodeToString(se2Meta.WalletID[:4]))
+		sid := strings.ToUpper(hex.EncodeToString(se2Meta.SetID[:4]))
+		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, se2Meta.Index, se2Meta.Threshold)
 		// Vertical WID/SET line: 3mm right of the QR safe-zone edge.
 		metaRotW, metaRotH := rotatedInkSizeMMTracked(descriptorFace, dpi, meta, descTrackPx)
 		metaX := qrX + qrSize + margin
