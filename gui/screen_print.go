@@ -20,9 +20,10 @@ type PrintSeedScreen struct {
 }
 
 type printOptions struct {
-	DPI    int
-	Invert bool
-	Mirror bool
+	DPI       int
+	Invert    bool
+	Mirror    bool
+	EtchStats bool
 }
 
 func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, label string) bool {
@@ -102,9 +103,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				status = "Printer: Connected"
 			}
 		}
-		lead := fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\n\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror)
+		lead := fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t\n\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats)
 		if desc != nil {
-			lead = fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\n\nPrinting %d wallet shares.\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, len(desc.Keys))
+			lead = fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t\n\nPrinting %d wallet shares.\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats, len(desc.Keys))
 		}
 		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, lead)
 		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
@@ -117,9 +118,10 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 
 func choosePrintOptions(ctx *Context, ops op.Ctx, th *Colors) (printOptions, bool) {
 	out := printOptions{
-		DPI:    1200,
-		Invert: true,
-		Mirror: true,
+		DPI:       1200,
+		Invert:    true,
+		Mirror:    true,
+		EtchStats: false,
 	}
 	dpiChoice := &ChoiceScreen{
 		Title:   "Print DPI",
@@ -153,6 +155,16 @@ func choosePrintOptions(ctx *Context, ops op.Ctx, th *Colors) (printOptions, boo
 		return out, false
 	}
 	out.Mirror = choice == 0
+	statsChoice := &ChoiceScreen{
+		Title:   "Etch Stats Page",
+		Lead:    "Append etch stats page?",
+		Choices: []string{"Off", "On"},
+	}
+	choice, ok = statsChoice.Choose(ctx, ops, th)
+	if !ok {
+		return out, false
+	}
+	out.EtchStats = choice == 1
 	return out, true
 }
 
@@ -243,9 +255,10 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 	}
 	go func() {
 		opts := printer.RasterOptions{
-			DPI:    float64(printOpts.DPI),
-			Mirror: printOpts.Mirror,
-			Invert: printOpts.Invert,
+			DPI:           float64(printOpts.DPI),
+			Mirror:        printOpts.Mirror,
+			Invert:        printOpts.Invert,
+			EtchStatsPage: printOpts.EtchStats,
 		}
 		printErr = ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx, paperFormat, opts)
 		close(done)

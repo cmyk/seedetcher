@@ -362,6 +362,14 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		sendDone := int64(0)
 		sendTotal := int64(0)
 		sendBatchBytes := int64(-1)
+		var statsSeedImgs []*image.Paletted
+		var statsDescImgs []*image.Paletted
+		if opts.EtchStatsPage {
+			statsSeedImgs = make([]*image.Paletted, 0, totalShares)
+			if descForHost != nil {
+				statsDescImgs = make([]*image.Paletted, 0, totalShares)
+			}
+		}
 		for start := 0; start < totalShares; start += sharesPerBatch {
 			end := start + sharesPerBatch
 			if end > totalShares {
@@ -384,6 +392,9 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 					return fmt.Errorf("render: seed plate %d: %w", i+1, err)
 				}
 				seedBatch = append(seedBatch, seedImg)
+				if opts.EtchStatsPage {
+					statsSeedImgs = append(statsSeedImgs, seedImg)
+				}
 				prepareDone++
 				if progress != nil && prepareTotal > 0 {
 					progress(printer.StagePrepare, prepareDone, prepareTotal)
@@ -399,6 +410,9 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 						return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
 					}
 					descBatch = append(descBatch, descImg)
+					if opts.EtchStatsPage {
+						statsDescImgs = append(statsDescImgs, descImg)
+					}
 					prepareDone++
 					if progress != nil && prepareTotal > 0 {
 						progress(printer.StagePrepare, prepareDone, prepareTotal)
@@ -446,6 +460,19 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			progress(printer.StageCompose, 1, 1)
 			composeMarked = true
 		}
+		if opts.EtchStatsPage {
+			report, err := printer.BuildEtchStatsReport(statsSeedImgs, statsDescImgs, opts.DPI, paper)
+			if err != nil {
+				return fmt.Errorf("stats: build report: %w", err)
+			}
+			statsPage, err := printer.RenderEtchStatsPage(report, paper, opts.DPI)
+			if err != nil {
+				return fmt.Errorf("stats: render page: %w", err)
+			}
+			if err := printer.WritePCL(printerDev, []*image.Paletted{statsPage}, opts.DPI, paper, progress); err != nil {
+				return fmt.Errorf("stats: write pcl page: %w", err)
+			}
+		}
 		logutil.DebugLog("PCL write complete (shares=%d dpi=%.0f, batched)", totalShares, opts.DPI)
 		return nil
 	}
@@ -458,6 +485,17 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, progress)
 	if err != nil {
 		return fmt.Errorf("render: compose pages: %w", err)
+	}
+	if opts.EtchStatsPage {
+		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, paper)
+		if err != nil {
+			return fmt.Errorf("stats: build report: %w", err)
+		}
+		statsPage, err := printer.RenderEtchStatsPage(report, paper, opts.DPI)
+		if err != nil {
+			return fmt.Errorf("stats: render page: %w", err)
+		}
+		pages = append(pages, statsPage)
 	}
 
 	// Fallback: serialize canonical raster pages as PDF (gadget capture/dev).

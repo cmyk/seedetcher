@@ -73,9 +73,10 @@ func runCLI(f *testutils.Flags) error {
 	printer.SetDescriptorQRSize(f.DescQRMM)
 
 	opts := printer.RasterOptions{
-		DPI:    float64(f.DPI),
-		Mirror: f.Mirror,
-		Invert: f.Invert,
+		DPI:           float64(f.DPI),
+		Mirror:        f.Mirror,
+		Invert:        f.Invert,
+		EtchStatsPage: f.EtchStatsPage,
 	}
 	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, 0, opts, nil)
 	if err != nil {
@@ -84,6 +85,17 @@ func runCLI(f *testutils.Flags) error {
 	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, nil)
 	if err != nil {
 		return fmt.Errorf("compose pages: %w", err)
+	}
+	if opts.EtchStatsPage {
+		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, printer.PaperSize(f.PaperSize))
+		if err != nil {
+			return fmt.Errorf("build etch stats report: %w", err)
+		}
+		statsPage, err := printer.RenderEtchStatsPage(report, printer.PaperSize(f.PaperSize), opts.DPI)
+		if err != nil {
+			return fmt.Errorf("render etch stats page: %w", err)
+		}
+		pages = append(pages, statsPage)
 	}
 
 	const outPDF = "/tmp/test_output.pdf"

@@ -31,6 +31,8 @@ type RasterOptions struct {
 	DPI    float64 // target resolution; defaults to 600 if unset
 	Mirror bool    // mirror horizontally (for toner transfer)
 	Invert bool    // swap black/white for negative output
+	// EtchStatsPage appends an additional page with per-plate coverage metrics.
+	EtchStatsPage bool
 }
 
 type plateQRShape uint8
@@ -1253,9 +1255,9 @@ func loadFaceMedium(sizePt, dpi float64) font.Face {
 	faceMuMedium.Unlock()
 
 	fontOnceMedium.Do(func() {
-		data := loadFirstFontData(plateFontPrimary, martianMonoMedium, martianMono)
+		data := loadFirstFontData(martianMonoMedium, martianMono, plateFontPrimary)
 		if data == nil {
-			fontErrMedium = fmt.Errorf("font data not found (tried %s, %s, %s)", plateFontPrimary, martianMonoMedium, martianMono)
+			fontErrMedium = fmt.Errorf("font data not found (tried %s, %s, %s)", martianMonoMedium, martianMono, plateFontPrimary)
 			return
 		}
 		fontFaceDataMedium, fontErrMedium = opentype.Parse(data)
