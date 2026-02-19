@@ -228,7 +228,15 @@ func TestRecoverFlowCompactSE2CombineToDescriptor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("combine compact: %v", err)
 	}
-	if !bytes.Equal(got, desc.Encode()) {
+	expShares, err := compact2of3.SplitDescriptor(desc, compact2of3.SplitOptions{})
+	if err != nil {
+		t.Fatalf("split expected compact shares: %v", err)
+	}
+	want, err := compact2of3.CombineToDescriptorPayload([]compact2of3.Share{expShares[0], expShares[1]})
+	if err != nil {
+		t.Fatalf("combine expected compact shares: %v", err)
+	}
+	if !bytes.Equal(got, want) {
 		t.Fatal("compact recovered payload mismatch")
 	}
 }

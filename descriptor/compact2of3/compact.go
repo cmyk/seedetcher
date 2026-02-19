@@ -1,12 +1,14 @@
 package compact2of3
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"hash/crc32"
+	"sort"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"seedetcher.com/bc/urtypes"
@@ -79,14 +81,15 @@ func SplitDescriptor(desc *urtypes.OutputDescriptor, opts SplitOptions) ([]Share
 	if desc.Type != urtypes.SortedMulti || desc.Threshold != 2 || len(desc.Keys) != 3 {
 		return nil, errors.New("compact SE2 supports sortedmulti 2-of-3 only")
 	}
-	path, children, err := commonPathChildren(desc)
+	canonical := canonicalizeSortedMultiDescriptor(desc)
+	path, children, err := commonPathChildren(&canonical)
 	if err != nil {
 		return nil, err
 	}
 	rec := [3][keyRecordLen]byte{}
 	keyOrder := [3]uint32{}
 	for i := 0; i < 3; i++ {
-		k := desc.Keys[i]
+		k := canonical.Keys[i]
 		keyOrder[i] = k.MasterFingerprint
 		r, err := keyRecordFromDescriptor(k)
 		if err != nil {
@@ -95,9 +98,10 @@ func SplitDescriptor(desc *urtypes.OutputDescriptor, opts SplitOptions) ([]Share
 		rec[i] = r
 	}
 	parity := xor3(rec[0][:], rec[1][:], rec[2][:])
+	canonicalPayload := canonical.Encode()
 	setID := opts.SetID
 	if setID == [setIDLen]byte{} {
-		setID = DeriveSetID(desc.Encode())
+		setID = DeriveSetID(canonicalPayload)
 	}
 	parityShares, err := shard.SplitPayloadBytes(parity, shard.SplitOptions{
 		Threshold: 2,
@@ -107,15 +111,15 @@ func SplitDescriptor(desc *urtypes.OutputDescriptor, opts SplitOptions) ([]Share
 	if err != nil {
 		return nil, fmt.Errorf("split parity: %w", err)
 	}
-	descriptorWalletID := shard.WalletIDForPayloadBytes(desc.Encode())
+	descriptorWalletID := shard.WalletIDForPayloadBytes(canonicalPayload)
 	out := make([]Share, 0, 3)
 	for i := 0; i < 3; i++ {
 		out = append(out, Share{
 			Version:         Version,
 			SetID:           setID,
 			WalletID:        descriptorWalletID,
-			Script:          scriptCode(desc.Script),
-			Network:         networkCode(desc.Keys[0].Network),
+			Script:          scriptCode(canonical.Script),
+			Network:         networkCode(canonical.Keys[0].Network),
 			Threshold:       2,
 			Total:           3,
 			Index:           uint8(i + 1),
@@ -528,6 +532,83 @@ func commonPathChildren(desc *urtypes.OutputDescriptor) (urtypes.Path, []urtypes
 		}
 	}
 	return path, children, nil
+}
+
+func canonicalizeSortedMultiDescriptor(desc *urtypes.OutputDescriptor) urtypes.OutputDescriptor {
+	out := *desc
+	out.Keys = make([]urtypes.KeyDescriptor, len(desc.Keys))
+	for i, k := range desc.Keys {
+		kc := k
+		kc.KeyData = append([]byte(nil), k.KeyData...)
+		kc.ChainCode = append([]byte(nil), k.ChainCode...)
+		kc.DerivationPath = append(urtypes.Path(nil), k.DerivationPath...)
+		kc.Children = append([]urtypes.Derivation(nil), k.Children...)
+		out.Keys[i] = kc
+	}
+	normalizeSortedMultiChildren(&out)
+	sort.Slice(out.Keys, func(i, j int) bool {
+		return bytes.Compare(keyDescriptorSortKey(out.Keys[i]), keyDescriptorSortKey(out.Keys[j])) < 0
+	})
+	return out
+}
+
+func normalizeSortedMultiChildren(desc *urtypes.OutputDescriptor) {
+	const (
+		changeStart = uint32(0)
+		changeEnd   = uint32(1)
+	)
+	for i := range desc.Keys {
+		if len(desc.Keys[i].Children) != 0 {
+			continue
+		}
+		desc.Keys[i].Children = []urtypes.Derivation{
+			{Type: urtypes.RangeDerivation, Index: changeStart, End: changeEnd},
+			{Type: urtypes.WildcardDerivation},
+		}
+	}
+}
+
+func keyDescriptorSortKey(k urtypes.KeyDescriptor) []byte {
+	out := make([]byte, 0, 128+len(k.KeyData)+len(k.ChainCode))
+	var b4 [4]byte
+	binary.BigEndian.PutUint32(b4[:], k.MasterFingerprint)
+	out = append(out, b4[:]...)
+	binary.BigEndian.PutUint32(b4[:], k.ParentFingerprint)
+	out = append(out, b4[:]...)
+	if k.Network != nil {
+		out = append(out, []byte(k.Network.Name)...)
+	}
+	out = append(out, 0x00)
+
+	binary.BigEndian.PutUint32(b4[:], uint32(len(k.DerivationPath)))
+	out = append(out, b4[:]...)
+	for _, p := range k.DerivationPath {
+		binary.BigEndian.PutUint32(b4[:], p)
+		out = append(out, b4[:]...)
+	}
+
+	binary.BigEndian.PutUint32(b4[:], uint32(len(k.Children)))
+	out = append(out, b4[:]...)
+	for _, c := range k.Children {
+		out = append(out, byte(c.Type))
+		if c.Hardened {
+			out = append(out, 1)
+		} else {
+			out = append(out, 0)
+		}
+		binary.BigEndian.PutUint32(b4[:], c.Index)
+		out = append(out, b4[:]...)
+		binary.BigEndian.PutUint32(b4[:], c.End)
+		out = append(out, b4[:]...)
+	}
+
+	binary.BigEndian.PutUint32(b4[:], uint32(len(k.KeyData)))
+	out = append(out, b4[:]...)
+	out = append(out, k.KeyData...)
+	binary.BigEndian.PutUint32(b4[:], uint32(len(k.ChainCode)))
+	out = append(out, b4[:]...)
+	out = append(out, k.ChainCode...)
+	return out
 }
 
 func keyRecordFromDescriptor(k urtypes.KeyDescriptor) ([keyRecordLen]byte, error) {

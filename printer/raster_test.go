@@ -133,7 +133,14 @@ func TestDescriptorShardQRCodesCompact2of3WhenEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("combine compact shares: %v", err)
 	}
-	want := desc.Encode()
+	expShares, err := compact2of3.SplitDescriptor(desc, compact2of3.SplitOptions{})
+	if err != nil {
+		t.Fatalf("split expected compact shares: %v", err)
+	}
+	want, err := compact2of3.CombineToDescriptorPayload([]compact2of3.Share{expShares[0], expShares[1]})
+	if err != nil {
+		t.Fatalf("combine expected compact shares: %v", err)
+	}
 	if string(got) != string(want) {
 		t.Fatal("recovered compact payload mismatch")
 	}
