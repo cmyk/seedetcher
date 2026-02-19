@@ -55,6 +55,9 @@ Rules:
 - Same descriptor MUST always produce byte-identical `Xi` records.
 - Key order MUST be canonical (descriptor order after normalization).
 - Any mismatch in fingerprint/path/network MUST fail recovery.
+- Implementation decision:
+  - Use a dedicated compact `Xi` schema (versioned for this protocol), not full `urtypes` serialization.
+  - Rationale: tighter payload size, explicit field control, and stable long-term wire compatibility.
 
 ## Compact share payload format (new prefix)
 Use a new prefix, e.g. `SE2:` (do not reuse `SE1:`).
@@ -73,6 +76,18 @@ Required fields:
 - `key_order_fingerprints` (3 entries)
 - `payload` (Shamir share bytes of `P`)
 - integrity checksum/MAC (scheme-defined)
+- `set_id` policy:
+  - Deterministic only in compact mode (derived from canonical descriptor context).
+  - No user override.
+
+## QR encoding target
+- Design target for compact descriptor share QR: ECC level `Q`.
+- QR sizing convention in this spec: stated QR size is data area only (quiet zone excluded).
+- Seed-side layout budget: `28 mm` QR data area.
+- Physical layout budget under discussion for compact descriptor-share QR: single-sided `37x37 mm` QR data area.
+- Final payload encoding MUST be validated against this budget after wire format is frozen:
+  - keep module size in a scan-safe range for etched output,
+  - confirm end-to-end scan/recovery on real printed plates.
 
 ## Determinism
 For identical canonical descriptor input, compact share outputs SHOULD be deterministic if deterministic set IDs are enabled in controller policy.
@@ -91,6 +106,9 @@ Reject with explicit errors for:
 - One plate contains one seed + one compact share: insufficient for full descriptor by design.
 - Two plates reveal two seeds and allow descriptor reconstruction (aligned with 2-of-3 policy).
 - This scheme is custom and must be treated as protocol-critical code.
+- Integrity decision:
+  - Use CRC32C for corruption detection plus strict structural/semantic validation.
+  - No keyed MAC in compact mode v1 (avoids extra key-management complexity in offline plate workflow).
 
 ## Interoperability
 - External wallets will not parse `SE2` directly.
@@ -107,8 +125,3 @@ Reject with explicit errors for:
 2. Add explicit mode toggle in backup flow for 2-of-3 wallets only.
 3. Keep SE1 as default until physical QA confirms scan/etch gains.
 4. Promote compact mode after successful field validation.
-
-## Open questions
-- Final binary encoding for `Xi` (reuse urtypes serialization vs dedicated schema).
-- Integrity primitive (CRC32C vs keyed MAC in this context).
-- Whether `set_id` should be deterministic or user-overridable in compact mode.
