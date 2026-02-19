@@ -166,13 +166,14 @@ go run cmd/cli/main.go -w multisig \
 - `-papersize` (default: `A4`): paper size (`A4` or `Letter`)
 - `-verbose` (default: `false`): verbose logging
 - `-w` (default: `multisig`): wallet fixture (`singlesig`, `multisig`, `multisig-mainnet-2of3`, `multisig-3of5`, `multisig-7of10`)
-- `-png-out` (default: empty): optional output directory for plate PNGs
-- `-dpi` (default: `600`): raster output DPI
+- `-png-out` (default: empty): optional output directory for plate PNGs (mirrored/inverted if set)
+- `-dpi` (default: `600`): raster output DPI when using `-png-out`
 - `-mirror` (default: `false`): mirror raster output horizontally (toner transfer)
 - `-invert` (default: `false`): invert raster output (white/black swap)
 - `-desc-qr-mm` (default: `75.0`): maximum descriptor QR size in millimeters
 - `-pcl-out` (default: empty): optional output path for raw PCL
 - `-wallet-name` (default: empty): optional wallet name printed on plates (defaults to `SEEDETCHER`)
+- `-etch-stats-page` (default: `false`): append an additional etch stats page with per-plate coverage and PSU guidance
 
 ### Host-mode printer check (usblp)
 - `image`/`image-debug` load `usblp` automatically (CONFIG_USB_PRINTER). With a USB printer attached you should see dmesg like `usblp0: USB Bidirectional printer` and `/dev/usb/lp0` present.

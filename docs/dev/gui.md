@@ -19,12 +19,12 @@ flowchart TD
     FP --> S2[Descriptor shares review<br>t/n + wallet_id/set_id]
     S2 --> H2[Add wallet label]
     H2 --> PS[Select paper size]
-    PS --> PO[Select print options<br>DPI, Invert, Mirror]
+    PS --> PO[Select print options<br>DPI, Invert, Mirror, Etch stats page]
     PO --> P2[Print flow with descriptor shares per plate]
     P2 --> A
 
     F1 --> H3[Add wallet label]
-    H3 --> PO1[Select print options<br>DPI, Invert, Mirror]
+    H3 --> PO1[Select print options<br>DPI, Invert, Mirror, Etch stats page]
     PO1 --> P3[Print flow singlesig]
     P3 --> A
 
@@ -51,7 +51,10 @@ Notes:
 - Backup review sequence for multisig is:
   - `Confirm wallet` -> `Fingerprints` -> `Descriptor shares` -> `Wallet label` -> `Paper size` -> `Print options` -> `Print`.
 - `Fingerprints` uses page navigation (left/right arrows) and keeps back/check nav buttons.
-- Print options screen exposes `DPI`, `Invert`, and `Mirror` prior to print submission.
+- Print options screen exposes `DPI`, `Invert`, `Mirror`, and `Etch stats page` prior to print submission.
+- When `Etch stats page` is enabled, one additional stats page is appended after plate pages:
+  - area/coverage table per printed plate side (`mm²` and `%`),
+  - per-plate PSU current guide (`Set A masked` / `Set A unmasked`) using bench defaults.
 - Recovery mode accepts both sharded shares and plain descriptor QR input.
 - Plain descriptor QR input bypasses shard threshold accumulation and goes directly to export/confirm.
 - Recovery QR screen copy:

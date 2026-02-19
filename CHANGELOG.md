@@ -1,7 +1,15 @@
 # Changelog
 
 ## Unreleased
-- (no changes yet)
+- Optional etch stats page added to print output (`-etch-stats-page` in CLI; toggle in print options UI).
+- Etch stats now include two sections:
+  - area/coverage table per plate (`TONER`, `EXPOSED90`, `EXPOSED+MARGIN`, `%MASKED`, `%UNMASKED`),
+  - PSU guide table per plate with `SET A MASKED` / `SET A UNMASKED`.
+- Etch stats model now assumes a fixed physical plate size of `100x100 mm` and reports both scenarios:
+  - masked margin (only `90x90` center exposed),
+  - unmasked margin (`90x90` exposure + outer margin exposure).
+- Etch defaults block added to stats page for bench setup:
+  - `Na2SO4 100 g/L`, `34C`, `15 mm` electrode gap, `12 V` limit, `J=0.04 A/cm2`.
 
 ## Release v0.3.0-beta.1
 - b0.3 plate layout overhaul (seed + descriptor sides) with etched-first styling:

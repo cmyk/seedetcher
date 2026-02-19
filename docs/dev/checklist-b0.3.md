@@ -40,7 +40,10 @@
 ### 4) Test artifacts and docs
 - [x] Add visual reference fixtures for new layout (seed + descriptor plates).
 - [ ] Add manual QA checklist for scan/readability on real laser prints.
-- [ ] Add optional host-mode etch stats page (additional print page) with clear per-plate coverage metrics (`mm²` and `%`) mapped to each printed plate side.
+- [x] Add optional etch stats page (additional print page) across print paths (CLI/controller host+gadget) with clear per-plate coverage metrics (`mm²` and `%`) mapped to each printed plate side.
+  - [x] Fixed physical plate model: `100x100 mm` basis with masked/unmasked margin scenarios.
+  - [x] Include operator-ready PSU guidance table per plate (`Set A masked` / `Set A unmasked`) derived from exposed area.
+  - [x] Include global bench defaults block (`Na2SO4 100 g/L`, `34C`, `15 mm` gap, `12 V` limit, `J=0.04 A/cm²`).
 - [x] Update docs (`docs/dev/gui.md` or dedicated layout doc) with new design constraints.
 - [x] Update CHANGELOG.md
 - [x] Document known scanner limits/tradeoffs for hybrid QR rendering (square islands + circular data dots).
