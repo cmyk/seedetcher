@@ -50,9 +50,11 @@ Note: Sparrow just needs the xpubs of the seedphrases for this and not the actua
 Example: Create the 3 seedphrases for a 2/3 multisig on [SeedSigner](https://seedsigner.com). Use sparrow to create the descriptor.
 Scan the descriptor from sparrow with SeedEtcher and then each seedphrase QR from the SeedSigner. Tip: use a magnifiying glass in front of the SeedEtcher cam to scan the tiny dotted QR from the SeedSigner.
 
-## Descriptor Sharding (b0.2)
+## Descriptor Shares
 
-For multisig backups, SeedEtcher now prints descriptor shares (`SE1:`) instead of a full descriptor on each plate.
+For multisig backups, SeedEtcher prints descriptor shares instead of a full descriptor on each plate.
+For `2/3` multisig in current b0.3 flow, descriptor shares use UR/XOR-compatible payloads (interoperability-first).
+Legacy `SE1:` recovery remains available for previously created backups.
 
 - No single plate reveals the full descriptor.
 - You must scan at least `t` descriptor shares to reconstruct and export the descriptor QR.
@@ -66,7 +68,7 @@ For multisig backups, the on-device review/setup flow is:
 
 1. Confirm wallet
 2. Fingerprints review (all cosigner fingerprints, paged)
-3. Descriptor shares summary (`t/n`, `WID`, `SET`)
+3. Descriptor shares summary (`t/n`)
 4. Wallet label
 5. Paper size
 6. Print
@@ -201,6 +203,5 @@ Carefully sand the etched plate until the undesired etching errors are mostly go
 Do not keep failed prints or transfer sheets: destroy immediately!
 
 And lastly: Please do test your backup before calling it done.
-
 
 

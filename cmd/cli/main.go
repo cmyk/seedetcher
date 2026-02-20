@@ -19,6 +19,7 @@ func main() {
 	if f.WalletName != "" {
 		printer.SetWalletLabel(f.WalletName)
 	}
+	printer.SetCompactDescriptor2of3Enabled(f.Compact2of3)
 
 	usr, err := user.Current()
 	if err != nil {

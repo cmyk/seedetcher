@@ -22,6 +22,7 @@ import (
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/descriptor/shard"
+	"seedetcher.com/descriptor/urxor2of3"
 	"seedetcher.com/seedqr"
 	"seedetcher.com/version"
 )
@@ -75,6 +76,8 @@ var (
 
 	shardSetMu     sync.RWMutex
 	forcedShardSet *[16]byte
+	compactMu      sync.RWMutex
+	compact2of3On  bool
 )
 
 type seedPlateLayout struct {
@@ -117,7 +120,6 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 	}
 	if isSinglesigDesc {
 		path := strings.ToUpper(derivationPathForKey(desc.Keys[0], desc.Script))
-		path = strings.ReplaceAll(path, "'", "H")
 		seedLayout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[0].Network))
 	}
 
@@ -135,6 +137,16 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 			return nil, nil, err
 		}
 	}
+	compactSingleSided := hasDesc &&
+		CompactDescriptor2of3Enabled() &&
+		desc.Type == urtypes.SortedMulti &&
+		desc.Threshold == 2 &&
+		len(desc.Keys) == 3 &&
+		totalShares == 3 &&
+		len(shardQRCodes) == 3
+	if compactSingleSided {
+		descImgs = nil
+	}
 
 	for i := 0; i < totalShares; i++ {
 		mnemonic := mnemonics[i%len(mnemonics)]
@@ -142,9 +154,17 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		if err != nil {
 			return nil, nil, err
 		}
+		if compactSingleSided {
+			descKeyIdx := i % len(desc.Keys)
+			sharePayload := shardQRCodes[i]
+			seedImg, err = renderCompact2of3PlateBitmap(mnemonic, desc, descKeyIdx, opts, sharePayload)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
 		seedImgs[i] = seedImg
 
-		if hasDesc {
+		if hasDesc && !compactSingleSided {
 			descKeyIdx := i % len(desc.Keys)
 			descQR := ""
 			if i < len(shardQRCodes) {
@@ -168,6 +188,12 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 // RenderSeedPlateBitmap mirrors the PDF layout at 600dpi as a 1-bit paletted image.
 func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions) (*image.Paletted, error) {
 	return renderSeedPlateBitmapWithLayout(mnemonic, shareNum, totalShares, opts, defaultSeedPlateLayout(totalShares, false))
+}
+
+// RenderCompact2of3PlateBitmap renders a single-sided compact 2-of-3 plate
+// containing both seed and descriptor-share QR payloads.
+func RenderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions, descQR string) (*image.Paletted, error) {
+	return renderCompact2of3PlateBitmap(mnemonic, desc, keyIdx, opts, descQR)
 }
 
 func renderSeedPlateBitmapWithLayout(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions, layout seedPlateLayout) (*image.Paletted, error) {
@@ -362,30 +388,35 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		return nil, err
 	}
 
-	// Anchor QR sizing to the actual rendered text bottom:
-	// last baseline + font descent.
-	descentMM := float64(descriptorFace.Metrics().Descent.Ceil()) * 25.4 / dpi
-	lastBaselineY := y
-	textBottom := lastBaselineY + descentMM
-	qrGap := 2.0    // gap between text and QR
-	qrBottom := 3.0 // bottom safe margin for etched plate layout
-	// Keep descriptor QR at or below the b0.3 layout target. If an explicit
-	// override is set smaller, honor that.
-	qrMaxMM := 80.0
-	if descriptorQRSizeMM > 0 && descriptorQRSizeMM < qrMaxMM {
-		qrMaxMM = descriptorQRSizeMM
-	}
-	// sizeMm is the full QR footprint (data modules + quiet zone).
-	maxByTop := plateSizeMM - qrBottom - (textBottom + qrGap)
-	qrSize := qrMaxMM
-	if qrSize > maxByTop {
-		qrSize = maxByTop
+	// Descriptor QR placement is explicit for easier layout tuning.
+	// Coordinates are top-left in mm; size includes safe zones.
+	const (
+		descriptorQRXMM         = 10.0
+		descriptorQRYMM         = 10.0
+		descriptorQRDefaultSize = 80.0
+	)
+	qrSize := descriptorQRDefaultSize
+	if descriptorQRSizeMM > 0 {
+		qrSize = descriptorQRSizeMM
 	}
 	if qrSize < 5.0 {
-		qrSize = 5.0 // Prevent degenerate QR
+		qrSize = 5.0
 	}
-	qrX := (plateSizeMM - qrSize) / 2
-	qrY := plateSizeMM - qrBottom - qrSize
+	qrX := descriptorQRXMM
+	qrY := descriptorQRYMM
+	// Clamp to plate bounds.
+	if qrX < 0 {
+		qrX = 0
+	}
+	if qrY < 0 {
+		qrY = 0
+	}
+	if qrX+qrSize > plateSizeMM {
+		qrX = plateSizeMM - qrSize
+	}
+	if qrY+qrSize > plateSizeMM {
+		qrY = plateSizeMM - qrSize
+	}
 	drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
 		QuietModules:      4,
 		Shape:             plateQRCircle,
@@ -485,6 +516,13 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 	if threshold < 2 || threshold > totalShares {
 		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
 	}
+	if desc.Type == urtypes.SortedMulti && threshold == 2 && totalShares == 3 {
+		shares, err := urxor2of3.SplitDescriptor(desc)
+		if err != nil {
+			return nil, fmt.Errorf("split ur/xor descriptor shares: %w", err)
+		}
+		return shares, nil
+	}
 	if threshold > math.MaxUint8 {
 		return nil, fmt.Errorf("descriptor threshold too large: %d", threshold)
 	}
@@ -547,6 +585,21 @@ func forcedDescriptorShardSetID() ([16]byte, bool) {
 	return *forcedShardSet, true
 }
 
+// SetCompactDescriptor2of3Enabled toggles compact single-sided 2-of-3 plate rendering.
+func SetCompactDescriptor2of3Enabled(on bool) {
+	compactMu.Lock()
+	defer compactMu.Unlock()
+	compact2of3On = on
+}
+
+// CompactDescriptor2of3Enabled reports whether compact single-sided 2-of-3
+// rendering is enabled.
+func CompactDescriptor2of3Enabled() bool {
+	compactMu.RLock()
+	defer compactMu.RUnlock()
+	return compact2of3On
+}
+
 // SavePNG writes a paletted image to disk.
 func SavePNG(path string, img image.Image) error {
 	f, err := os.Create(path)
@@ -579,14 +632,6 @@ func mmToPxFloat(mm, dpi float64) float64 {
 	return mm / 25.4 * dpi
 }
 
-func textWidthMM(face font.Face, dpi float64, text string) float64 {
-	d := font.Drawer{
-		Face: face,
-	}
-	wPx := d.MeasureString(text).Round()
-	return float64(wPx) * 25.4 / dpi
-}
-
 func strokeRect(img *image.Paletted, x, y, w, h, thickness int, idx uint8) {
 	fillRect(img, x, y, w, thickness, idx)             // top
 	fillRect(img, x, y+h-thickness, w, thickness, idx) // bottom
@@ -617,19 +662,6 @@ func clamp(v, lo, hi int) int {
 		return hi
 	}
 	return v
-}
-
-func drawText(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string) {
-	d := font.Drawer{
-		Dst:  img,
-		Src:  image.NewUniform(color.Black),
-		Face: face,
-		Dot: fixed.Point26_6{
-			X: fixed.I(int(math.Round(mmToPxFloat(xMm, dpi)))),
-			Y: fixed.I(int(math.Round(mmToPxFloat(yMm, dpi)))),
-		},
-	}
-	d.DrawString(text)
 }
 
 func drawTrackedText(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, trackingPx float64) {
@@ -670,55 +702,6 @@ func trackedTextWidthMM(face font.Face, dpi float64, text string, trackingPx flo
 	return float64(width.Ceil()) * 25.4 / dpi
 }
 
-func drawCenteredText(img *image.Paletted, face font.Face, dpi, yMm float64, text string) {
-	d := font.Drawer{
-		Dst:  img,
-		Src:  image.NewUniform(color.Black),
-		Face: face,
-	}
-	textWidth := d.MeasureString(text).Round()
-	xPx := (img.Bounds().Dx() - textWidth) / 2
-	d.Dot = fixed.Point26_6{
-		X: fixed.I(xPx),
-		Y: fixed.I(int(math.Round(mmToPxFloat(yMm, dpi)))),
-	}
-	d.DrawString(text)
-}
-
-func drawRotatedSideMeta(img *image.Paletted, face font.Face, dpi, qrX, qrY, qrSize float64, text string, idx uint8) {
-	if text == "" {
-		return
-	}
-	const (
-		sideMarginMM = 1.2
-		qrGapMM      = 1.2
-	)
-	rotWmm, rotHmm := rotatedTextSizeMM(face, dpi, text)
-	if rotWmm <= 0 || rotHmm <= 0 {
-		return
-	}
-	leftAvail := (qrX - qrGapMM) - sideMarginMM
-	rightAvail := (plateSizeMM - sideMarginMM) - (qrX + qrSize + qrGapMM)
-	if rotWmm > leftAvail && rotWmm > rightAvail {
-		return // no safe strip wide enough; never overlap QR
-	}
-	xMm := sideMarginMM
-	if rightAvail >= rotWmm && rightAvail >= leftAvail {
-		xMm = qrX + qrSize + qrGapMM
-	} else {
-		xMm = sideMarginMM + (leftAvail-rotWmm)/2
-	}
-	yMm := qrY + (qrSize-rotHmm)/2
-	if yMm < sideMarginMM {
-		yMm = sideMarginMM
-	}
-	maxY := plateSizeMM - sideMarginMM - rotHmm
-	if yMm > maxY {
-		yMm = maxY
-	}
-	drawTextRotatedCW90(img, face, dpi, xMm, yMm, text, idx)
-}
-
 func rotatedTextSizeMM(face font.Face, dpi float64, text string) (wMm, hMm float64) {
 	return rotatedTextSizeMMTracked(face, dpi, text, 0)
 }
@@ -752,48 +735,6 @@ func rotatedInkSizeMMTracked(face font.Face, dpi float64, text string, trackingP
 	trimW := maxX - minX + 1
 	trimH := maxY - minY + 1
 	return float64(trimH) * 25.4 / dpi, float64(trimW) * 25.4 / dpi
-}
-
-func drawTextRotatedCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8) {
-	drawTextRotatedCW90Tracked(img, face, dpi, xMm, yMm, text, idx, 0)
-}
-
-func drawTextRotatedCW90Tracked(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8, trackingPx float64) {
-	src := rasterizeTextAlpha(face, text, trackingPx)
-	if src == nil {
-		return
-	}
-	minX, minY, maxX, maxY, ok := alphaInkBounds(src)
-	if !ok {
-		return
-	}
-	trimW := maxX - minX + 1
-	trimH := maxY - minY + 1
-
-	x0 := mmToPx(xMm, dpi)
-	y0 := mmToPx(yMm, dpi)
-	b := img.Bounds()
-	for sy := 0; sy < trimH; sy++ {
-		for sx := 0; sx < trimW; sx++ {
-			tx := minX + sx
-			ty := minY + sy
-			if src.AlphaAt(tx, ty).A == 0 {
-				continue
-			}
-			dx := trimH - 1 - sy
-			dy := sx
-			x := x0 + dx
-			y := y0 + dy
-			if x < b.Min.X || x >= b.Max.X || y < b.Min.Y || y >= b.Max.Y {
-				continue
-			}
-			img.Pix[y*img.Stride+x] = idx
-		}
-	}
-}
-
-func drawTextRotatedCCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8) {
-	drawTextRotatedCCW90Tracked(img, face, dpi, xMm, yMm, text, idx, 0)
 }
 
 func drawTextRotatedCCW90Tracked(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8, trackingPx float64) {
@@ -919,31 +860,6 @@ func capBaselineOffsetMM(face font.Face, dpi float64) float64 {
 		return float64(face.Metrics().Ascent.Ceil()) * 25.4 / dpi
 	}
 	return (-minYpx) * 25.4 / dpi
-}
-
-func drawQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float64, idx uint8) {
-	if code == nil {
-		return
-	}
-	x0 := mmToPx(xMm, dpi)
-	y0 := mmToPx(yMm, dpi)
-	sizePx := mmToPx(sizeMm, dpi)
-	const quiet = 4
-	step := float64(sizePx) / float64(code.Size+2*quiet)
-	offset := int(math.Round(float64(quiet) * step))
-
-	for y := 0; y < code.Size; y++ {
-		yStart := y0 + offset + int(math.Round(float64(y)*step))
-		yEnd := y0 + offset + int(math.Round(float64(y+1)*step))
-		for x := 0; x < code.Size; x++ {
-			if !code.Black(x, y) {
-				continue
-			}
-			xStart := x0 + offset + int(math.Round(float64(x)*step))
-			xEnd := x0 + offset + int(math.Round(float64(x+1)*step))
-			fillRect(img, xStart, yStart, xEnd-xStart, yEnd-yStart, idx)
-		}
-	}
 }
 
 func drawPlateQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float64, idx uint8, opts plateQROptions) {
@@ -1084,46 +1000,11 @@ func isAlignmentCenter(code *qr.Code, cx, cy int) bool {
 	return true
 }
 
-func inFinder(x, y, fx, fy int) bool {
-	return x >= fx && x < fx+7 && y >= fy && y < fy+7
-}
-
 func absInt(v int) int {
 	if v < 0 {
 		return -v
 	}
 	return v
-}
-
-func alignmentPatternCenters(size int) []int {
-	version := (size - 17) / 4
-	if version < 2 {
-		return nil
-	}
-	num := version/7 + 2
-	if num <= 0 {
-		return nil
-	}
-	step := 0
-	if version == 32 {
-		step = 26
-	} else {
-		step = ((size - 13) / (num - 1))
-		if step%2 == 1 {
-			step++
-		}
-	}
-	centers := make([]int, num)
-	centers[0] = 6
-	for i := num - 1; i > 0; i-- {
-		centers[i] = size - 7 - (num-1-i)*step
-	}
-	return centers
-}
-
-// wrapText performs character-level wrapping to ensure long descriptors fit even without spaces.
-func wrapText(face font.Face, dpi float64, text string, maxWidthMm float64) []string {
-	return wrapTextTracked(face, dpi, text, maxWidthMm, 0)
 }
 
 func wrapTextTracked(face font.Face, dpi float64, text string, maxWidthMm float64, trackingPx float64) []string {

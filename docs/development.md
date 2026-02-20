@@ -170,10 +170,11 @@ go run cmd/cli/main.go -w multisig \
 - `-dpi` (default: `600`): raster output DPI when using `-png-out`
 - `-mirror` (default: `false`): mirror raster output horizontally (toner transfer)
 - `-invert` (default: `false`): invert raster output (white/black swap)
-- `-desc-qr-mm` (default: `75.0`): maximum descriptor QR size in millimeters
+- `-desc-qr-mm` (default: `80.0`): descriptor QR size in millimeters (includes safe zone)
 - `-pcl-out` (default: empty): optional output path for raw PCL
 - `-wallet-name` (default: empty): optional wallet name printed on plates (defaults to `SEEDETCHER`)
 - `-etch-stats-page` (default: `false`): append an additional etch stats page with per-plate coverage and PSU guidance
+- `-compact-2of3` (default: `false`): use compact single-sided layout for `sortedmulti` 2-of-3 descriptor shares
 
 ### Host-mode printer check (usblp)
 - `image`/`image-debug` load `usblp` automatically (CONFIG_USB_PRINTER). With a USB printer attached you should see dmesg like `usblp0: USB Bidirectional printer` and `/dev/usb/lp0` present.

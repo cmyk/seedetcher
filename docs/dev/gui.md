@@ -15,11 +15,11 @@ flowchart TD
     M -->|No singlesig| F1[Seed input confirm<br>1 of 1]
     M -->|Yes multisig| F2
     F2[Seeds loop<br>Scan or manual per key<br>Confirm and no duplicates] --> G1[Confirm wallet<br>choose key index]
-    G1 --> FP[Fingerprints review<br>All cosigner fingerprints<br>5 per page]
-    FP --> S2[Descriptor shares review<br>t/n + wallet_id/set_id]
+    G1 --> FP[Fingerprints review<br>All cosigner fingerprints<br>7 per page]
+    FP --> S2[Descriptor shares review<br>t/n summary]
     S2 --> H2[Add wallet label]
     H2 --> PS[Select paper size]
-    PS --> PO[Select print options<br>DPI, Invert, Mirror, Etch stats page]
+    PS --> PO[Select print options<br>DPI, Invert, Mirror, Etch stats page<br>Compact 2/3 when eligible]
     PO --> P2[Print flow with descriptor shares per plate]
     P2 --> A
 
@@ -29,13 +29,8 @@ flowchart TD
     P3 --> A
 
     R0 --> R1[Scan input]
-    R1 --> RX{Input type}
-    RX -->|Plain descriptor QR| R4[Validate descriptor]
-    R4 --> R6[Export/confirm screen]
-    R6 --> A
-
-    RX -->|Sharded share QR| R2[Collect shares<br>Progress k of t]
-    R2 --> R3[Validate set version network<br>Checksum and duplicate checks]
+    R1 --> R2[Collect descriptor shares<br>Progress k of t]
+    R2 --> R3[Validate format/set/duplicates]
     R3 -->|k gte t| R5[Reconstruct descriptor in RAM]
     R5 --> R6
 ```
@@ -50,13 +45,12 @@ Notes:
 - Singlesig backup stays non-sharded.
 - Backup review sequence for multisig is:
   - `Confirm wallet` -> `Fingerprints` -> `Descriptor shares` -> `Wallet label` -> `Paper size` -> `Print options` -> `Print`.
-- `Fingerprints` uses page navigation (left/right arrows) and keeps back/check nav buttons.
-- Print options screen exposes `DPI`, `Invert`, `Mirror`, and `Etch stats page` prior to print submission.
+- `Fingerprints` uses page navigation (left/right arrows) and keeps back/check nav buttons (`7` entries/page).
+- Print options screen exposes `DPI`, `Invert`, `Mirror`, and `Etch stats page`; `Compact 2/3` appears only for eligible `sortedmulti 2-of-3`.
 - When `Etch stats page` is enabled, one additional stats page is appended after plate pages:
   - area/coverage table per printed plate side (`mm²` and `%`),
   - per-plate PSU current guide (`Set A masked` / `Set A unmasked`) using bench defaults.
-- Recovery mode accepts both sharded shares and plain descriptor QR input.
-- Plain descriptor QR input bypasses shard threshold accumulation and goes directly to export/confirm.
+- Recovery mode is descriptor-share recovery; plain descriptor QR input is rejected with an explicit message.
 - Recovery QR screen copy:
   - Title: `Recovered Descriptor QR`
   - Body: `Scan with your coordinator, then choose:`

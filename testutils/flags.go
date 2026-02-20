@@ -17,6 +17,7 @@ type Flags struct {
 	PCLOut        string
 	WalletName    string
 	EtchStatsPage bool
+	Compact2of3   bool
 }
 
 func DefineFlags() *Flags {
@@ -31,9 +32,10 @@ func DefineFlags() *Flags {
 	flag.IntVar(&f.DPI, "dpi", 600, "Raster output DPI when using -png-out")
 	flag.BoolVar(&f.Mirror, "mirror", false, "Mirror raster output horizontally (toner transfer)")
 	flag.BoolVar(&f.Invert, "invert", false, "Invert raster output (white/black swap)")
-	flag.Float64Var(&f.DescQRMM, "desc-qr-mm", 75.0, "Maximum descriptor QR size in millimeters")
+	flag.Float64Var(&f.DescQRMM, "desc-qr-mm", 80.0, "Maximum descriptor QR size in millimeters")
 	flag.StringVar(&f.PCLOut, "pcl-out", "", "Optional output path for raw PCL (bitmap raster)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")
+	flag.BoolVar(&f.Compact2of3, "compact-2of3", false, "Use compact single-sided layout for sortedmulti 2-of-3 descriptor shares")
 	return f
 }
