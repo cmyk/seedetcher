@@ -51,7 +51,6 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	drawTrackedText(canvas, metaFace, dpi, topRightRightMM-labelW, topBaselineY, label, metaTrackPx)
 
 	path := strings.ToUpper(derivationPathForKey(desc.Keys[keyIdx], desc.Script))
-	path = strings.ReplaceAll(path, "'", "H")
 	leftMeta := fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[keyIdx].Network))
 	drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, leftPathXMM, topMarginMM, leftMeta, blackIdx, metaTrackPx)
 
@@ -70,7 +69,7 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 
 	wordStartBaselineY := wordsStartTopCapYMM + capBaselineOffsetMM(wordFace, dpi)
 	numColW := trackedTextWidthMM(wordFace, dpi, "24", wordTrackPx)
-	spaceW := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx) + 0.35
+	spaceW := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx) + 0.1 // space between numbers col and word col
 	y1 := wordStartBaselineY
 	y2 := wordStartBaselineY
 	y3 := wordStartBaselineY

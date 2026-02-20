@@ -287,10 +287,15 @@ func createDescriptorQR(desc *urtypes.OutputDescriptor) string {
 }
 
 func derivationPathForKey(key urtypes.KeyDescriptor, script urtypes.Script) string {
-	if len(key.DerivationPath) > 0 {
-		return key.DerivationPath.String()
+	normalize := func(path string) string {
+		path = strings.ReplaceAll(path, "H", "'")
+		path = strings.ReplaceAll(path, "h", "'")
+		return path
 	}
-	return script.DerivationPath().String()
+	if len(key.DerivationPath) > 0 {
+		return normalize(key.DerivationPath.String())
+	}
+	return normalize(script.DerivationPath().String())
 }
 
 // SetDescriptorQRSize overrides the maximum descriptor QR size in millimeters.

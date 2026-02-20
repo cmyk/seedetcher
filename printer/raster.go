@@ -76,6 +76,7 @@ var (
 
 	shardSetMu     sync.RWMutex
 	forcedShardSet *[16]byte
+	compactMu      sync.RWMutex
 	compact2of3On  bool
 )
 
@@ -119,7 +120,6 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 	}
 	if isSinglesigDesc {
 		path := strings.ToUpper(derivationPathForKey(desc.Keys[0], desc.Script))
-		path = strings.ReplaceAll(path, "'", "H")
 		seedLayout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[0].Network))
 	}
 
@@ -138,7 +138,7 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		}
 	}
 	compactSingleSided := hasDesc &&
-		compact2of3Enabled() &&
+		CompactDescriptor2of3Enabled() &&
 		desc.Type == urtypes.SortedMulti &&
 		desc.Threshold == 2 &&
 		len(desc.Keys) == 3 &&
@@ -582,21 +582,17 @@ func forcedDescriptorShardSetID() ([16]byte, bool) {
 
 // SetCompactDescriptor2of3Enabled toggles compact single-sided 2-of-3 plate rendering.
 func SetCompactDescriptor2of3Enabled(on bool) {
-	shardSetMu.Lock()
-	defer shardSetMu.Unlock()
+	compactMu.Lock()
+	defer compactMu.Unlock()
 	compact2of3On = on
 }
 
 // CompactDescriptor2of3Enabled reports whether compact single-sided 2-of-3
 // rendering is enabled.
 func CompactDescriptor2of3Enabled() bool {
-	shardSetMu.RLock()
-	defer shardSetMu.RUnlock()
+	compactMu.RLock()
+	defer compactMu.RUnlock()
 	return compact2of3On
-}
-
-func compact2of3Enabled() bool {
-	return CompactDescriptor2of3Enabled()
 }
 
 // SavePNG writes a paletted image to disk.
@@ -631,14 +627,6 @@ func mmToPxFloat(mm, dpi float64) float64 {
 	return mm / 25.4 * dpi
 }
 
-func textWidthMM(face font.Face, dpi float64, text string) float64 {
-	d := font.Drawer{
-		Face: face,
-	}
-	wPx := d.MeasureString(text).Round()
-	return float64(wPx) * 25.4 / dpi
-}
-
 func strokeRect(img *image.Paletted, x, y, w, h, thickness int, idx uint8) {
 	fillRect(img, x, y, w, thickness, idx)             // top
 	fillRect(img, x, y+h-thickness, w, thickness, idx) // bottom
@@ -669,19 +657,6 @@ func clamp(v, lo, hi int) int {
 		return hi
 	}
 	return v
-}
-
-func drawText(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string) {
-	d := font.Drawer{
-		Dst:  img,
-		Src:  image.NewUniform(color.Black),
-		Face: face,
-		Dot: fixed.Point26_6{
-			X: fixed.I(int(math.Round(mmToPxFloat(xMm, dpi)))),
-			Y: fixed.I(int(math.Round(mmToPxFloat(yMm, dpi)))),
-		},
-	}
-	d.DrawString(text)
 }
 
 func drawTrackedText(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, trackingPx float64) {
@@ -722,55 +697,6 @@ func trackedTextWidthMM(face font.Face, dpi float64, text string, trackingPx flo
 	return float64(width.Ceil()) * 25.4 / dpi
 }
 
-func drawCenteredText(img *image.Paletted, face font.Face, dpi, yMm float64, text string) {
-	d := font.Drawer{
-		Dst:  img,
-		Src:  image.NewUniform(color.Black),
-		Face: face,
-	}
-	textWidth := d.MeasureString(text).Round()
-	xPx := (img.Bounds().Dx() - textWidth) / 2
-	d.Dot = fixed.Point26_6{
-		X: fixed.I(xPx),
-		Y: fixed.I(int(math.Round(mmToPxFloat(yMm, dpi)))),
-	}
-	d.DrawString(text)
-}
-
-func drawRotatedSideMeta(img *image.Paletted, face font.Face, dpi, qrX, qrY, qrSize float64, text string, idx uint8) {
-	if text == "" {
-		return
-	}
-	const (
-		sideMarginMM = 1.2
-		qrGapMM      = 1.2
-	)
-	rotWmm, rotHmm := rotatedTextSizeMM(face, dpi, text)
-	if rotWmm <= 0 || rotHmm <= 0 {
-		return
-	}
-	leftAvail := (qrX - qrGapMM) - sideMarginMM
-	rightAvail := (plateSizeMM - sideMarginMM) - (qrX + qrSize + qrGapMM)
-	if rotWmm > leftAvail && rotWmm > rightAvail {
-		return // no safe strip wide enough; never overlap QR
-	}
-	xMm := sideMarginMM
-	if rightAvail >= rotWmm && rightAvail >= leftAvail {
-		xMm = qrX + qrSize + qrGapMM
-	} else {
-		xMm = sideMarginMM + (leftAvail-rotWmm)/2
-	}
-	yMm := qrY + (qrSize-rotHmm)/2
-	if yMm < sideMarginMM {
-		yMm = sideMarginMM
-	}
-	maxY := plateSizeMM - sideMarginMM - rotHmm
-	if yMm > maxY {
-		yMm = maxY
-	}
-	drawTextRotatedCW90(img, face, dpi, xMm, yMm, text, idx)
-}
-
 func rotatedTextSizeMM(face font.Face, dpi float64, text string) (wMm, hMm float64) {
 	return rotatedTextSizeMMTracked(face, dpi, text, 0)
 }
@@ -806,10 +732,6 @@ func rotatedInkSizeMMTracked(face font.Face, dpi float64, text string, trackingP
 	return float64(trimH) * 25.4 / dpi, float64(trimW) * 25.4 / dpi
 }
 
-func drawTextRotatedCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8) {
-	drawTextRotatedCW90Tracked(img, face, dpi, xMm, yMm, text, idx, 0)
-}
-
 func drawTextRotatedCW90Tracked(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8, trackingPx float64) {
 	src := rasterizeTextAlpha(face, text, trackingPx)
 	if src == nil {
@@ -842,10 +764,6 @@ func drawTextRotatedCW90Tracked(img *image.Paletted, face font.Face, dpi, xMm, y
 			img.Pix[y*img.Stride+x] = idx
 		}
 	}
-}
-
-func drawTextRotatedCCW90(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8) {
-	drawTextRotatedCCW90Tracked(img, face, dpi, xMm, yMm, text, idx, 0)
 }
 
 func drawTextRotatedCCW90Tracked(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8, trackingPx float64) {
@@ -971,31 +889,6 @@ func capBaselineOffsetMM(face font.Face, dpi float64) float64 {
 		return float64(face.Metrics().Ascent.Ceil()) * 25.4 / dpi
 	}
 	return (-minYpx) * 25.4 / dpi
-}
-
-func drawQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float64, idx uint8) {
-	if code == nil {
-		return
-	}
-	x0 := mmToPx(xMm, dpi)
-	y0 := mmToPx(yMm, dpi)
-	sizePx := mmToPx(sizeMm, dpi)
-	const quiet = 4
-	step := float64(sizePx) / float64(code.Size+2*quiet)
-	offset := int(math.Round(float64(quiet) * step))
-
-	for y := 0; y < code.Size; y++ {
-		yStart := y0 + offset + int(math.Round(float64(y)*step))
-		yEnd := y0 + offset + int(math.Round(float64(y+1)*step))
-		for x := 0; x < code.Size; x++ {
-			if !code.Black(x, y) {
-				continue
-			}
-			xStart := x0 + offset + int(math.Round(float64(x)*step))
-			xEnd := x0 + offset + int(math.Round(float64(x+1)*step))
-			fillRect(img, xStart, yStart, xEnd-xStart, yEnd-yStart, idx)
-		}
-	}
 }
 
 func drawPlateQR(img *image.Paletted, code *qr.Code, dpi, xMm, yMm, sizeMm float64, idx uint8, opts plateQROptions) {
@@ -1136,46 +1029,11 @@ func isAlignmentCenter(code *qr.Code, cx, cy int) bool {
 	return true
 }
 
-func inFinder(x, y, fx, fy int) bool {
-	return x >= fx && x < fx+7 && y >= fy && y < fy+7
-}
-
 func absInt(v int) int {
 	if v < 0 {
 		return -v
 	}
 	return v
-}
-
-func alignmentPatternCenters(size int) []int {
-	version := (size - 17) / 4
-	if version < 2 {
-		return nil
-	}
-	num := version/7 + 2
-	if num <= 0 {
-		return nil
-	}
-	step := 0
-	if version == 32 {
-		step = 26
-	} else {
-		step = ((size - 13) / (num - 1))
-		if step%2 == 1 {
-			step++
-		}
-	}
-	centers := make([]int, num)
-	centers[0] = 6
-	for i := num - 1; i > 0; i-- {
-		centers[i] = size - 7 - (num-1-i)*step
-	}
-	return centers
-}
-
-// wrapText performs character-level wrapping to ensure long descriptors fit even without spaces.
-func wrapText(face font.Face, dpi float64, text string, maxWidthMm float64) []string {
-	return wrapTextTracked(face, dpi, text, maxWidthMm, 0)
 }
 
 func wrapTextTracked(face font.Face, dpi float64, text string, maxWidthMm float64, trackingPx float64) []string {
