@@ -70,3 +70,31 @@
   - [x] all pairwise recovery combinations pass (`C(3,2)=3`)
 - [ ] Validate interoperability in external wallets (Sparrow, Nunchuk, BlueWallet).
 - [x] Update docs/changelog for UR/XOR migration and experimental status of `SE1`/`SE2`.
+
+### 7) UR/XOR family support (SeedHammer II parity)
+- [ ] Define and document supported UR/XOR wallet families for b0.3:
+  - [ ] `1/1`
+  - [x] `2/3` (already complete)
+  - [ ] `3/5`
+  - [ ] generic `m = n-1` family
+- [ ] Implement UR/XOR descriptor-share generation for `3/5`:
+  - [ ] deterministic descriptor canonicalization (same rules as `2/3`)
+  - [ ] deterministic part assignment per share
+  - [ ] stable share ordering and payload encoding
+- [ ] Implement UR/XOR descriptor-share recovery for `3/5`:
+  - [ ] accept any 3 of 5 shares
+  - [ ] reject duplicates/mixed sets/invalid fragments with explicit errors
+  - [ ] deterministic reconstruction output
+- [ ] Add tests for `3/5`:
+  - [ ] all pairwise/combination recovery tests (`C(5,3)=10`)
+  - [ ] stable share payload vectors for fixture wallet(s)
+  - [ ] GUI scan/recover regression tests for success and failure paths
+- [ ] Implement generic `m = n-1` UR/XOR support:
+  - [ ] generation path
+  - [ ] recovery path
+  - [ ] capability guardrails in UI/CLI (clear supported/unsupported messaging)
+- [ ] Interop validation matrix for new families:
+  - [ ] Sparrow
+  - [ ] Nunchuk
+  - [ ] BlueWallet
+- [ ] Docs/changelog updates for expanded UR/XOR family support.
