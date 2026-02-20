@@ -1,7 +1,8 @@
-# Compact Descriptor Shares (2-of-3) Spec (Draft)
+# SE2 Compact Descriptor Shares (2-of-3) Spec (Experimental)
 
 ## Status
-Draft proposal. Not implemented.
+Experimental draft. Not release-default.
+Current release path for 2-of-3 is UR/XOR (`docs/dev/spec-ur-xor-2of3-b0.3.md`).
 
 ## Goal
 Reduce descriptor-share payload size for 2-of-3 multisig backups by avoiding storage of all xpubs in every descriptor shard, while still allowing full descriptor reconstruction from any 2 plates.

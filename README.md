@@ -23,7 +23,7 @@ A documented, repeatable workflow for chemically etching printed layouts onto st
 ---
 
 ## Features
-- b0.2 uses Shamir descriptor shares. No single plate contains the full descriptor. An m-of-n wallet uses `t=m` descriptor shares for recovery (e.g., a 2/3 wallet needs 2 descriptor shares).
+- Multisig uses descriptor-share backups (no full descriptor on a single plate). In b0.3, `sortedmulti 2/3` defaults to UR/XOR-compatible shares; other multisig configurations remain on legacy share encoding.
 - The SeedEtcher controller has a descriptor recovery mode. TODO: cross-platform binaries will make this inheritance-friendly.
 - Manual mnemonic input with validation (`bip39`).
 - GUI-driven, with physical button navigation.

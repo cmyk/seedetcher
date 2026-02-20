@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+- UR/XOR 2-of-3 descriptor-share path is now the default backup/recovery path for `sortedmulti 2/3`.
+- Compact single-sided 2-of-3 layout is wired to UR/XOR shares (seed QR + descriptor-share QR on one plate).
+- Compact layout tuning:
+  - 24-word split `10/7/7`, 12-word split `6/6`,
+  - descriptor-side warning block and updated custom font glyph support for arrows,
+  - derivation path rendering uses apostrophe hardened markers (`'`) in plate text.
+- Descriptor plate QR placement is now explicit by top-left coordinates and size (including safe zone), with default size now aligned to `80 mm`.
+- Backup/recovery UX cleanup:
+  - removed WID/SET lines from active screens,
+  - scan UI shows deterministic `x/2` only in dedicated UR/XOR share-capture mode,
+  - generic animated UR scans continue to show `%` progress.
+- Fingerprints review screen updates:
+  - bold fingerprint rows,
+  - 7 entries per page,
+  - pagination line shown only when there are multiple pages.
+- Print confirmation screen now shows `Compact 2/3` line only for eligible `sortedmulti 2/3` jobs.
 - Optional etch stats page added to print output (`-etch-stats-page` in CLI; toggle in print options UI).
 - Etch stats now include two sections:
   - area/coverage table per plate (`TONER`, `EXPOSED90`, `EXPOSED+MARGIN`, `%MASKED`, `%UNMASKED`),
