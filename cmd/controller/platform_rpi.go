@@ -393,7 +393,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				if isSinglesigJob {
 					seedShareNum, seedShareTotal = 1, 1
 				}
-				seedImg, err := printer.RenderSeedPlateBitmap(m, seedShareNum, seedShareTotal, opts)
+				seedImg, err := printer.RenderSeedPlateBitmapWithDescriptor(m, seedShareNum, seedShareTotal, desc, opts)
 				if err != nil {
 					return fmt.Errorf("render: seed plate %d: %w", i+1, err)
 				}

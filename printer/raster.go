@@ -190,6 +190,21 @@ func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, o
 	return renderSeedPlateBitmapWithLayout(mnemonic, shareNum, totalShares, opts, defaultSeedPlateLayout(totalShares, false))
 }
 
+// RenderSeedPlateBitmapWithDescriptor renders a seed plate and applies
+// descriptor-derived singlesig metadata when a singlesig descriptor is provided.
+func RenderSeedPlateBitmapWithDescriptor(mnemonic bip39.Mnemonic, shareNum, totalShares int, desc *urtypes.OutputDescriptor, opts RasterOptions) (*image.Paletted, error) {
+	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
+	layout := defaultSeedPlateLayout(totalShares, isSinglesigDesc)
+	if isSinglesigDesc {
+		path := strings.ToUpper(derivationPathForKey(desc.Keys[0], desc.Script))
+		layout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[0].Network))
+		// Marker is wallet-key pagination, not physical copy count.
+		layout.ShareNum = 1
+		layout.ShareTotal = 1
+	}
+	return renderSeedPlateBitmapWithLayout(mnemonic, shareNum, totalShares, opts, layout)
+}
+
 // RenderCompact2of3PlateBitmap renders a single-sided compact 2-of-3 plate
 // containing both seed and descriptor-share QR payloads.
 func RenderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions, descQR string) (*image.Paletted, error) {
