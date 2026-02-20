@@ -26,7 +26,7 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	wordFace := loadFace(11, dpi)
 	metaTrackPx := 0.08 * 10.0 * dpi / 72.0
 	metaTrackPxNm := 0 * 10.0 * dpi / 72.0
-	wordTrackPx := 0.10 * 11.0 * dpi / 72.0
+	wordTrackPx := 0.04 * 11.0 * dpi / 72.0
 	wordLeadingMM := 9.8 * 25.4 / 72.0
 
 	const (
@@ -34,11 +34,12 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 		topLeftXMM          = 8.5
 		topRightRightMM     = plateSizeMM - 3.0
 		leftPathXMM         = 3.0
-		wordsStartTopCapYMM = 7.0
-		leftWordsXMM        = 11.5
-		rightWordsXMM       = 41.5
-		descQRSizeMM        = 50.0
-		seedQRSizeMM        = 33.0
+		wordsStartTopCapYMM = 8.0
+		col1WordsXMM        = 8.0
+		col2WordsXMM        = 34.0
+		col3WordsXMM        = 61.0
+		descQRSizeMM        = 59.0
+		seedQRSizeMM        = 27.0
 		qrPairRightMarginMM = 3.0
 	)
 
@@ -62,22 +63,26 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	}
 	drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, leftPathXMM, nmY, nm, blackIdx, metaTrackPxNm)
 
-	descQRX := plateSizeMM - qrPairRightMarginMM - descQRSizeMM + 2
+	descQRX := plateSizeMM - qrPairRightMarginMM - descQRSizeMM + 3
 	descQRY := plateSizeMM - descQRSizeMM
-	seedQRX := descQRX - seedQRSizeMM + 2
+	seedQRX := descQRX - seedQRSizeMM + 2.5
 	seedQRY := plateSizeMM - seedQRSizeMM
 
 	wordStartBaselineY := wordsStartTopCapYMM + capBaselineOffsetMM(wordFace, dpi)
 	numColW := trackedTextWidthMM(wordFace, dpi, "24", wordTrackPx)
-	spaceW := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx) + 0.4
-	yLeft := wordStartBaselineY
-	yRight := wordStartBaselineY
-	leftCount := len(mnemonic) / 2
+	spaceW := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx) + 0.35
+	y1 := wordStartBaselineY
+	y2 := wordStartBaselineY
+	y3 := wordStartBaselineY
+	leading := wordLeadingMM
+	col1Count := len(mnemonic) / 2
+	col2Count := len(mnemonic) - col1Count
+	col3Count := 0
 	if len(mnemonic) == 24 {
-		leftCount = 14
+		col1Count, col2Count, col3Count = 10, 7, 7
+	} else if len(mnemonic) == 12 {
+		col1Count, col2Count, col3Count = 6, 6, 0
 	}
-	leftLeading := wordLeadingMM
-	rightLeading := wordLeadingMM
 	for i := 0; i < len(mnemonic); i++ {
 		if mnemonic[i] == -1 {
 			continue
@@ -85,15 +90,39 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 		num := fmt.Sprintf("%d", i+1)
 		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
 		numW := trackedTextWidthMM(wordFace, dpi, num, wordTrackPx)
-		if i < leftCount {
-			drawTrackedText(canvas, wordFace, dpi, leftWordsXMM+numColW-numW, yLeft, num, wordTrackPx)
-			drawTrackedText(canvas, wordFace, dpi, leftWordsXMM+numColW+spaceW, yLeft, word, wordTrackPx)
-			yLeft += leftLeading
-		} else {
-			drawTrackedText(canvas, wordFace, dpi, rightWordsXMM+numColW-numW, yRight, num, wordTrackPx)
-			drawTrackedText(canvas, wordFace, dpi, rightWordsXMM+numColW+spaceW, yRight, word, wordTrackPx)
-			yRight += rightLeading
+		if i < col1Count {
+			drawTrackedText(canvas, wordFace, dpi, col1WordsXMM+numColW-numW, y1, num, wordTrackPx)
+			drawTrackedText(canvas, wordFace, dpi, col1WordsXMM+numColW+spaceW, y1, word, wordTrackPx)
+			y1 += leading
+			continue
 		}
+		if i < col1Count+col2Count {
+			drawTrackedText(canvas, wordFace, dpi, col2WordsXMM+numColW-numW, y2, num, wordTrackPx)
+			drawTrackedText(canvas, wordFace, dpi, col2WordsXMM+numColW+spaceW, y2, word, wordTrackPx)
+			y2 += leading
+			continue
+		}
+		if col3Count > 0 {
+			drawTrackedText(canvas, wordFace, dpi, col3WordsXMM+numColW-numW, y3, num, wordTrackPx)
+			drawTrackedText(canvas, wordFace, dpi, col3WordsXMM+numColW+spaceW, y3, word, wordTrackPx)
+			y3 += leading
+		}
+	}
+
+	// Compact warning block in lower-left free space.
+	warnFace := loadFace(10, dpi)
+	warnTrackPx := 0.04 * 10.0 * dpi / 72.0
+	warnLeadingMM := 9.7 * 25.4 / 72.0
+	descrX := 18.0
+	descrBaselineY := 47.0 + capBaselineOffsetMM(warnFace, dpi)
+	drawTrackedText(canvas, warnFace, dpi, descrX, descrBaselineY, "DESCR→", warnTrackPx)
+
+	warnX := 9.0
+	warnBaselineY := 50 + capBaselineOffsetMM(warnFace, dpi)
+	warnLines := []string{"↑", "NEVER SCAN", "WITH ONLINE", "DEVICE↓"}
+	for _, line := range warnLines {
+		drawTrackedText(canvas, warnFace, dpi, warnX, warnBaselineY, line, warnTrackPx)
+		warnBaselineY += warnLeadingMM
 	}
 
 	seedPayload := seedqr.QR(mnemonic)
