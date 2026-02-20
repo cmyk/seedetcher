@@ -346,15 +346,7 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 		titleY := 8 // fixed top offset
 		op.Position(ops, ops.End(), image.Pt((dims.X-tsz.X)/2, titleY))
 
-		wid, sid := "", ""
-		if base, ok := firstDecodedShare(s.decodedShares); ok {
-			wid = strings.ToUpper(fmt.Sprintf("%x", base.WalletID))
-			sid = strings.ToUpper(fmt.Sprintf("%x", base.SetID[:4]))
-		}
 		lead := "Shares reconstructed successfully."
-		if wid != "" && sid != "" {
-			lead = fmt.Sprintf("Shares reconstructed successfully.\nWID: %s\nSET: %s", wid, sid)
-		}
 		leadStyle := ctx.Styles.lead
 		leadStyle.Alignment = text.AlignStart
 		lsz := widget.Labelwf(ops.Begin(), leadStyle, textW, th.Text, "%s", lead)
