@@ -8,6 +8,7 @@ import (
 
 	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/descriptor/urxor2of3"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/layout"
 	"seedetcher.com/gui/op"
@@ -125,8 +126,9 @@ func (d *QRDecoder) parseQR(qr []byte) (any, bool) {
 
 // ScanScreen handles QR scanning flow.
 type ScanScreen struct {
-	Title string
-	Lead  string
+	Title            string
+	Lead             string
+	RawURXOR2of3Only bool
 }
 
 func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
@@ -178,6 +180,12 @@ func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
 				scaleRot(feed, gray, ctx.RotateCamera)
 				results, _ := ctx.Platform.ScanQR(gray)
 				for _, res := range results {
+					if s.RawURXOR2of3Only {
+						raw := strings.ToUpper(strings.TrimSpace(string(res)))
+						if typ, _, seqLen, ok := urxor2of3.ParseShare(raw); ok && typ == "crypto-output" && seqLen == urxor2of3.RequiredShares {
+							return []byte(raw), true
+						}
+					}
 					if v, ok := decoder.parseQR(res); ok {
 						return v, true
 					}

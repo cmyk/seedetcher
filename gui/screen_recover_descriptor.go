@@ -155,8 +155,9 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 	}()
 
 	res, ok := (&ScanScreen{
-		Title: "Recover Descriptor",
-		Lead:  s.scanLead(),
+		Title:            "Recover Descriptor",
+		Lead:             s.scanLead(),
+		RawURXOR2of3Only: true,
 	}).Scan(ctx, ops)
 	if !ok {
 		if s.returnScreen != nil {
