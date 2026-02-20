@@ -732,40 +732,6 @@ func rotatedInkSizeMMTracked(face font.Face, dpi float64, text string, trackingP
 	return float64(trimH) * 25.4 / dpi, float64(trimW) * 25.4 / dpi
 }
 
-func drawTextRotatedCW90Tracked(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8, trackingPx float64) {
-	src := rasterizeTextAlpha(face, text, trackingPx)
-	if src == nil {
-		return
-	}
-	minX, minY, maxX, maxY, ok := alphaInkBounds(src)
-	if !ok {
-		return
-	}
-	trimW := maxX - minX + 1
-	trimH := maxY - minY + 1
-
-	x0 := mmToPx(xMm, dpi)
-	y0 := mmToPx(yMm, dpi)
-	b := img.Bounds()
-	for sy := 0; sy < trimH; sy++ {
-		for sx := 0; sx < trimW; sx++ {
-			tx := minX + sx
-			ty := minY + sy
-			if src.AlphaAt(tx, ty).A == 0 {
-				continue
-			}
-			dx := trimH - 1 - sy
-			dy := sx
-			x := x0 + dx
-			y := y0 + dy
-			if x < b.Min.X || x >= b.Max.X || y < b.Min.Y || y >= b.Max.Y {
-				continue
-			}
-			img.Pix[y*img.Stride+x] = idx
-		}
-	}
-}
-
 func drawTextRotatedCCW90Tracked(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, idx uint8, trackingPx float64) {
 	src := rasterizeTextAlpha(face, text, trackingPx)
 	if src == nil {
