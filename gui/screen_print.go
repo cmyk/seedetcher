@@ -20,10 +20,11 @@ type PrintSeedScreen struct {
 }
 
 type printOptions struct {
-	DPI       int
-	Invert    bool
-	Mirror    bool
-	EtchStats bool
+	DPI         int
+	Invert      bool
+	Mirror      bool
+	EtchStats   bool
+	Compact2of3 bool
 }
 
 func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, label string) bool {
@@ -54,7 +55,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	if choice == 1 {
 		selectedPaper = printer.PaperLetter
 	}
-	opts, ok := choosePrintOptions(ctx, ops, th)
+	opts, ok := choosePrintOptions(ctx, ops, th, desc)
 	if !ok {
 		return false
 	}
@@ -103,9 +104,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				status = "Printer: Connected"
 			}
 		}
-		lead := fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t\n\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats)
+		lead := fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t\nCompact 2/3: %t\n\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats, opts.Compact2of3)
 		if desc != nil {
-			lead = fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t\n\nPrinting %d wallet shares.\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats, len(desc.Keys))
+			lead = fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t\nCompact 2/3: %t\n\nPrinting %d wallet shares.\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats, opts.Compact2of3, len(desc.Keys))
 		}
 		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, lead)
 		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
@@ -116,12 +117,13 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	}
 }
 
-func choosePrintOptions(ctx *Context, ops op.Ctx, th *Colors) (printOptions, bool) {
+func choosePrintOptions(ctx *Context, ops op.Ctx, th *Colors, desc *urtypes.OutputDescriptor) (printOptions, bool) {
 	out := printOptions{
-		DPI:       1200,
-		Invert:    true,
-		Mirror:    true,
-		EtchStats: false,
+		DPI:         1200,
+		Invert:      true,
+		Mirror:      true,
+		EtchStats:   false,
+		Compact2of3: false,
 	}
 	dpiChoice := &ChoiceScreen{
 		Title:   "Print DPI",
@@ -165,7 +167,26 @@ func choosePrintOptions(ctx *Context, ops op.Ctx, th *Colors) (printOptions, boo
 		return out, false
 	}
 	out.EtchStats = choice == 1
+	if isCompact2of3Eligible(desc) {
+		compactChoice := &ChoiceScreen{
+			Title:   "Compact 2/3",
+			Lead:    "Use compact single-sided\n2-of-3 layout?",
+			Choices: []string{"Off", "On"},
+		}
+		choice, ok = compactChoice.Choose(ctx, ops, th)
+		if !ok {
+			return out, false
+		}
+		out.Compact2of3 = choice == 1
+	}
 	return out, true
+}
+
+func isCompact2of3Eligible(desc *urtypes.OutputDescriptor) bool {
+	if desc == nil {
+		return false
+	}
+	return desc.Type == urtypes.SortedMulti && desc.Threshold == 2 && len(desc.Keys) == 3
 }
 
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
@@ -260,6 +281,8 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 			Invert:        printOpts.Invert,
 			EtchStatsPage: printOpts.EtchStats,
 		}
+		printer.SetCompactDescriptor2of3Enabled(printOpts.Compact2of3)
+		defer printer.SetCompactDescriptor2of3Enabled(false)
 		printErr = ctx.Platform.CreatePlates(ctx, mnemonic, desc, keyIdx, paperFormat, opts)
 		close(done)
 	}()

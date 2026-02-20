@@ -334,6 +334,12 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		if totalShares <= 0 {
 			return fmt.Errorf("no shares to print")
 		}
+		compactSingleSided := descForHost != nil &&
+			printer.CompactDescriptor2of3Enabled() &&
+			descForHost.Type == urtypes.SortedMulti &&
+			descForHost.Threshold == 2 &&
+			len(descForHost.Keys) == 3 &&
+			totalShares == 3
 		var shardQRCodes []string
 		var err error
 		if descForHost != nil && len(descForHost.Keys) > 0 {
@@ -343,7 +349,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			}
 		}
 		sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
-		if descForHost == nil {
+		if descForHost == nil || compactSingleSided {
 			sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
 		}
 		if sharesPerBatch < 1 {
@@ -355,7 +361,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		}
 		prepareDone := int64(0)
 		prepareTotal := int64(totalShares)
-		if descForHost != nil {
+		if descForHost != nil && !compactSingleSided {
 			prepareTotal *= 2
 		}
 		composeMarked := false
@@ -366,7 +372,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		var statsDescImgs []*image.Paletted
 		if opts.EtchStatsPage {
 			statsSeedImgs = make([]*image.Paletted, 0, totalShares)
-			if descForHost != nil {
+			if descForHost != nil && !compactSingleSided {
 				statsDescImgs = make([]*image.Paletted, 0, totalShares)
 			}
 		}
@@ -378,7 +384,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			batchSize := end - start
 			seedBatch := make([]*image.Paletted, 0, batchSize)
 			var descBatch []*image.Paletted
-			if descForHost != nil {
+			if descForHost != nil && !compactSingleSided {
 				descBatch = make([]*image.Paletted, 0, batchSize)
 			}
 			for i := start; i < end; i++ {
@@ -391,6 +397,17 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				if err != nil {
 					return fmt.Errorf("render: seed plate %d: %w", i+1, err)
 				}
+				if compactSingleSided {
+					descKeyIdx := i % len(descForHost.Keys)
+					descQR := ""
+					if i < len(shardQRCodes) {
+						descQR = shardQRCodes[i]
+					}
+					seedImg, err = printer.RenderCompact2of3PlateBitmap(m, descForHost, descKeyIdx, opts, descQR)
+					if err != nil {
+						return fmt.Errorf("render: compact plate %d: %w", i+1, err)
+					}
+				}
 				seedBatch = append(seedBatch, seedImg)
 				if opts.EtchStatsPage {
 					statsSeedImgs = append(statsSeedImgs, seedImg)
@@ -399,7 +416,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				if progress != nil && prepareTotal > 0 {
 					progress(printer.StagePrepare, prepareDone, prepareTotal)
 				}
-				if descForHost != nil {
+				if descForHost != nil && !compactSingleSided {
 					descKeyIdx := i % len(descForHost.Keys)
 					descQR := ""
 					if i < len(shardQRCodes) {

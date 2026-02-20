@@ -17,6 +17,7 @@ type Flags struct {
 	PCLOut        string
 	WalletName    string
 	EtchStatsPage bool
+	Compact2of3   bool
 }
 
 func DefineFlags() *Flags {
@@ -35,5 +36,6 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.PCLOut, "pcl-out", "", "Optional output path for raw PCL (bitmap raster)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")
+	flag.BoolVar(&f.Compact2of3, "compact-2of3", false, "Use compact single-sided layout for sortedmulti 2-of-3 descriptor shares")
 	return f
 }

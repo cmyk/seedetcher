@@ -76,6 +76,7 @@ var (
 
 	shardSetMu     sync.RWMutex
 	forcedShardSet *[16]byte
+	compact2of3On  bool
 )
 
 type seedPlateLayout struct {
@@ -136,6 +137,16 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 			return nil, nil, err
 		}
 	}
+	compactSingleSided := hasDesc &&
+		compact2of3Enabled() &&
+		desc.Type == urtypes.SortedMulti &&
+		desc.Threshold == 2 &&
+		len(desc.Keys) == 3 &&
+		totalShares == 3 &&
+		len(shardQRCodes) == 3
+	if compactSingleSided {
+		descImgs = nil
+	}
 
 	for i := 0; i < totalShares; i++ {
 		mnemonic := mnemonics[i%len(mnemonics)]
@@ -143,9 +154,17 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		if err != nil {
 			return nil, nil, err
 		}
+		if compactSingleSided {
+			descKeyIdx := i % len(desc.Keys)
+			sharePayload := shardQRCodes[i]
+			seedImg, err = renderCompact2of3PlateBitmap(mnemonic, desc, descKeyIdx, opts, sharePayload)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
 		seedImgs[i] = seedImg
 
-		if hasDesc {
+		if hasDesc && !compactSingleSided {
 			descKeyIdx := i % len(desc.Keys)
 			descQR := ""
 			if i < len(shardQRCodes) {
@@ -169,6 +188,12 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 // RenderSeedPlateBitmap mirrors the PDF layout at 600dpi as a 1-bit paletted image.
 func RenderSeedPlateBitmap(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions) (*image.Paletted, error) {
 	return renderSeedPlateBitmapWithLayout(mnemonic, shareNum, totalShares, opts, defaultSeedPlateLayout(totalShares, false))
+}
+
+// RenderCompact2of3PlateBitmap renders a single-sided compact 2-of-3 plate
+// containing both seed and descriptor-share QR payloads.
+func RenderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions, descQR string) (*image.Paletted, error) {
+	return renderCompact2of3PlateBitmap(mnemonic, desc, keyIdx, opts, descQR)
 }
 
 func renderSeedPlateBitmapWithLayout(mnemonic bip39.Mnemonic, shareNum, totalShares int, opts RasterOptions, layout seedPlateLayout) (*image.Paletted, error) {
@@ -553,6 +578,25 @@ func forcedDescriptorShardSetID() ([16]byte, bool) {
 		return [16]byte{}, false
 	}
 	return *forcedShardSet, true
+}
+
+// SetCompactDescriptor2of3Enabled toggles compact single-sided 2-of-3 plate rendering.
+func SetCompactDescriptor2of3Enabled(on bool) {
+	shardSetMu.Lock()
+	defer shardSetMu.Unlock()
+	compact2of3On = on
+}
+
+// CompactDescriptor2of3Enabled reports whether compact single-sided 2-of-3
+// rendering is enabled.
+func CompactDescriptor2of3Enabled() bool {
+	shardSetMu.RLock()
+	defer shardSetMu.RUnlock()
+	return compact2of3On
+}
+
+func compact2of3Enabled() bool {
+	return CompactDescriptor2of3Enabled()
 }
 
 // SavePNG writes a paletted image to disk.
