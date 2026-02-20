@@ -104,9 +104,18 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				status = "Printer: Connected"
 			}
 		}
-		lead := fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t\nCompact 2/3: %t\n\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats, opts.Compact2of3)
+		showCompactLine := isCompact2of3Eligible(desc)
+		lead := fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats)
+		if showCompactLine {
+			lead += fmt.Sprintf("\nCompact 2/3: %t", opts.Compact2of3)
+		}
+		lead += "\n\nPress Print to continue."
 		if desc != nil {
-			lead = fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t\nCompact 2/3: %t\n\nPrinting %d wallet shares.\nPress Print to continue.", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats, opts.Compact2of3, len(desc.Keys))
+			lead = fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats)
+			if showCompactLine {
+				lead += fmt.Sprintf("\nCompact 2/3: %t", opts.Compact2of3)
+			}
+			lead += fmt.Sprintf("\n\nPrinting %d wallet shares.\nPress Print to continue.", len(desc.Keys))
 		}
 		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, lead)
 		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
