@@ -1,7 +1,6 @@
 package printer
 
 import (
-	"encoding/hex"
 	"fmt"
 	"image"
 	"strings"
@@ -9,7 +8,6 @@ import (
 	"github.com/kortschak/qr"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
-	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/seedqr"
 )
 
@@ -32,19 +30,16 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	wordLeadingMM := 9.8 * 25.4 / 72.0
 
 	const (
-		topMarginMM          = 3.0
-		topLeftXMM           = 8.5
-		topRightRightMM      = plateSizeMM - 3.0
-		leftPathXMM          = 3.0
-		wordsStartTopCapYMM  = 7.0
-		leftWordsXMM         = 11.5
-		rightWordsXMM        = 41.5
-		descQRSizeMM         = 50.0
-		seedQRSizeMM         = 33.0
-		qrPairRightMarginMM  = 3.0
-		rightMetaBlockBottom = 41.0
-		rightMetaBaselineGap = 4.0
-		rightMetaSetRightMM  = 2.0
+		topMarginMM         = 3.0
+		topLeftXMM          = 8.5
+		topRightRightMM     = plateSizeMM - 3.0
+		leftPathXMM         = 3.0
+		wordsStartTopCapYMM = 7.0
+		leftWordsXMM        = 11.5
+		rightWordsXMM       = 41.5
+		descQRSizeMM        = 50.0
+		seedQRSizeMM        = 33.0
+		qrPairRightMarginMM = 3.0
 	)
 
 	fpText := strings.ToUpper(fmt.Sprintf("%08x", desc.Keys[keyIdx].MasterFingerprint))
@@ -128,48 +123,6 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 		Shape:             plateQRCircle,
 		KeepIslandsSquare: true,
 	})
-
-	wid := ""
-	sid := ""
-	if strings.HasPrefix(strings.ToUpper(qrContent), shard.Prefix) {
-		if sh, err := shard.Decode(strings.ToUpper(qrContent)); err == nil {
-			wid = strings.ToUpper(hex.EncodeToString(sh.WalletID[:4]))
-			sid = strings.ToUpper(hex.EncodeToString(sh.SetID[:4]))
-		}
-	}
-	if wid == "" {
-		wid = strings.ToUpper(fmt.Sprintf("%08x", desc.Keys[keyIdx].MasterFingerprint))
-	}
-	if sid == "" {
-		set := shard.DeriveSetID(desc.Encode(), uint8(desc.Threshold), uint8(len(desc.Keys)))
-		sid = strings.ToUpper(hex.EncodeToString(set[:4]))
-	}
-	rightLines := []string{
-		"SEEDETCHER.COM",
-		"WID:" + wid,
-		"SET:" + sid,
-	}
-	lineHs := make([]float64, len(rightLines))
-	lineWs := make([]float64, len(rightLines))
-	for i, line := range rightLines {
-		w, h := rotatedTextSizeMMTracked(metaFace, dpi, line, metaTrackPx)
-		lineWs[i], lineHs[i] = w, h
-	}
-	setBaselineX := plateSizeMM - rightMetaSetRightMM
-	widBaselineX := setBaselineX - rightMetaBaselineGap
-	urlBaselineX := widBaselineX - rightMetaBaselineGap
-	baselines := []float64{setBaselineX, widBaselineX, urlBaselineX}
-	for i, line := range rightLines {
-		x := baselines[i] - lineWs[i]
-		if x < 3.0 {
-			x = 3.0
-		}
-		y := rightMetaBlockBottom - lineHs[i]
-		if y < topMarginMM {
-			y = topMarginMM
-		}
-		drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, x, y, line, blackIdx, metaTrackPx)
-	}
 
 	if opts.Invert {
 		invertInterior(canvas, border)
