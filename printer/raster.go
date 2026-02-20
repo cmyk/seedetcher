@@ -22,6 +22,7 @@ import (
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/descriptor/shard"
+	"seedetcher.com/descriptor/urxor2of3"
 	"seedetcher.com/seedqr"
 	"seedetcher.com/version"
 )
@@ -484,6 +485,13 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 	}
 	if threshold < 2 || threshold > totalShares {
 		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
+	}
+	if desc.Type == urtypes.SortedMulti && threshold == 2 && totalShares == 3 {
+		shares, err := urxor2of3.SplitDescriptor(desc)
+		if err != nil {
+			return nil, fmt.Errorf("split ur/xor descriptor shares: %w", err)
+		}
+		return shares, nil
 	}
 	if threshold > math.MaxUint8 {
 		return nil, fmt.Errorf("descriptor threshold too large: %d", threshold)

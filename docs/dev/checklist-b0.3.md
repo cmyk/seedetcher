@@ -56,17 +56,17 @@
 
 ### 6) UR/XOR 2-of-3 migration (interoperability-first)
 - [ ] Mark `SE1`/`SE2` path as experimental-only (non-release default).
-- [ ] Implement UR/XOR descriptor share generation for 2-of-3:
-  - [ ] deterministic split assignment `A`, `B`, `A⊕B`
-  - [ ] deterministic descriptor canonicalization before split
-- [ ] Implement UR/XOR descriptor share recovery for 2-of-3:
-  - [ ] accept any 2 shares
-  - [ ] reconstruct full descriptor payload deterministically
-  - [ ] reject mixed/invalid share sets with clear UI message
-- [ ] Wire UR/XOR into backup/recover GUI flow as the default 2-of-3 path.
+- [x] Implement UR/XOR descriptor share generation for 2-of-3:
+  - [x] deterministic split assignment `A`, `B`, `A⊕B`
+  - [x] deterministic descriptor canonicalization before split
+- [x] Implement UR/XOR descriptor share recovery for 2-of-3:
+  - [x] accept any 2 shares
+  - [x] reconstruct full descriptor payload deterministically
+  - [x] reject mixed/invalid share sets with clear UI message
+- [x] Wire UR/XOR into backup/recover GUI flow as the default 2-of-3 path.
 - [ ] Reuse compact single-sided 2-of-3 layout with UR/XOR payloads.
 - [ ] Add test vectors and regression tests:
   - [ ] stable share payload strings for fixture wallet(s)
-  - [ ] all pairwise recovery combinations pass (`C(3,2)=3`)
+  - [x] all pairwise recovery combinations pass (`C(3,2)=3`)
 - [ ] Validate interoperability in external wallets (Sparrow, Nunchuk, BlueWallet).
 - [ ] Update docs/changelog for UR/XOR migration and experimental status of `SE1`/`SE2`.

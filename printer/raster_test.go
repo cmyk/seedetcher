@@ -1,14 +1,17 @@
 package printer
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 
+	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/descriptor/shard"
+	"seedetcher.com/descriptor/urxor2of3"
 	"seedetcher.com/testutils"
 )
 
-func TestDescriptorShardQRCodesAreSE1AndConsistentSet(t *testing.T) {
+func TestDescriptorShardQRCodes2of3UseURXORAndRecover(t *testing.T) {
 	cfg := testutils.WalletConfigs["multisig"]
 	_, desc, err := testutils.ParseWallet(cfg, "", "")
 	if err != nil {
@@ -24,24 +27,29 @@ func TestDescriptorShardQRCodesAreSE1AndConsistentSet(t *testing.T) {
 	if len(qrs) != len(desc.Keys) {
 		t.Fatalf("got %d qrs, want %d", len(qrs), len(desc.Keys))
 	}
-	var base shard.Share
+	want, err := urxor2of3.Combine([]string{qrs[0], qrs[1]})
+	if err != nil {
+		t.Fatalf("combine first two shares: %v", err)
+	}
 	for i, q := range qrs {
-		if !strings.HasPrefix(strings.ToUpper(q), shard.Prefix) {
-			t.Fatalf("share %d has non-shard payload: %q", i+1, q)
+		typ, _, seqLen, ok := urxor2of3.ParseShare(q)
+		if !ok || typ != "crypto-output" || seqLen != urxor2of3.RequiredShares {
+			t.Fatalf("share %d has non ur/xor payload: %q", i+1, q)
 		}
-		sh, err := shard.Decode(strings.ToUpper(q))
+		got, err := urxor2of3.Combine([]string{qrs[i], qrs[(i+1)%len(qrs)]})
 		if err != nil {
-			t.Fatalf("decode share %d: %v", i+1, err)
+			t.Fatalf("combine pair for share %d: %v", i+1, err)
 		}
-		if i == 0 {
-			base = sh
+		if !bytes.Equal(got, want) {
+			t.Fatalf("share %d recovered payload mismatch", i+1)
 		}
-		if sh.SetID != base.SetID {
-			t.Fatalf("share %d set_id mismatch", i+1)
-		}
-		if sh.Threshold != uint8(desc.Threshold) || sh.Total != uint8(len(desc.Keys)) {
-			t.Fatalf("share %d threshold/total mismatch: got %d/%d want %d/%d", i+1, sh.Threshold, sh.Total, desc.Threshold, len(desc.Keys))
-		}
+	}
+	v, err := urtypes.Parse("crypto-output", want)
+	if err != nil {
+		t.Fatalf("parse recovered payload: %v", err)
+	}
+	if _, ok := v.(urtypes.OutputDescriptor); !ok {
+		t.Fatalf("recovered payload type: %T", v)
 	}
 }
 
