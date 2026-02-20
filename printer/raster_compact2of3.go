@@ -30,24 +30,25 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	// Tracking values use the same convention as the rest of the renderer:
 	// 0.04 == +40%. So +80% => 0.08, +100% => 0.10.
 	metaTrackPx := 0.08 * 10.0 * dpi / 72.0
+	metaTrackPxNm := 0 * 10.0 * dpi / 72.0
 	wordTrackPx := 0.10 * 11.0 * dpi / 72.0
-	wordLeadingMM := 10.0 * 25.4 / 72.0
+	wordLeadingMM := 9.8 * 25.4 / 72.0
 
 	const (
 		topMarginMM          = 3.0
 		topLeftXMM           = 8.5
 		topRightRightMM      = plateSizeMM - 3.0
 		leftPathXMM          = 3.0
-		wordsStartTopCapYMM  = 8.0
+		wordsStartTopCapYMM  = 7.0
 		leftWordsXMM         = 11.5
 		rightWordsXMM        = 41.5
-		descQRSizeMM         = 47.0
+		descQRSizeMM         = 50.0
 		seedQRSizeMM         = 33.0
 		qrPairRightMarginMM  = 3.0
 		rightMetaBlockRight  = 87.0
-		rightMetaBlockBottom = 43.0
-		rightMetaBaselineGap = 3
-		rightMetaSetRightMM  = 2
+		rightMetaBlockBottom = 41.0
+		rightMetaBaselineGap = 4.0
+		rightMetaSetRightMM  = 2.0
 	)
 
 	// Top line: fingerprint (left) and label (right).
@@ -66,16 +67,17 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 
 	// Left vertical bottom marker: plate index and wallet threshold, e.g. 1/3(2/3).
 	nm := fmt.Sprintf("%d/%d(%d/%d)", keyIdx+1, len(desc.Keys), desc.Threshold, len(desc.Keys))
-	_, nmRotH := rotatedTextSizeMMTracked(metaFace, dpi, nm, metaTrackPx)
+	// Anchor using untracked text height so tracking tweaks don't shift vertical placement.
+	_, nmRotH := rotatedTextSizeMM(metaFace, dpi, nm)
 	nmY := plateSizeMM - topMarginMM - nmRotH
 	if nmY < topMarginMM {
 		nmY = topMarginMM
 	}
-	drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, leftPathXMM, nmY, nm, blackIdx, metaTrackPx)
+	drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, leftPathXMM, nmY, nm, blackIdx, metaTrackPxNm)
 
 	// Bottom QR layout: right descriptor QR + adjacent seed QR.
 	// Leave a dedicated right strip for vertical metadata.
-	descQRX := plateSizeMM - qrPairRightMarginMM - descQRSizeMM
+	descQRX := plateSizeMM - qrPairRightMarginMM - descQRSizeMM + 2
 	descQRY := plateSizeMM - descQRSizeMM
 	seedQRX := descQRX - seedQRSizeMM + 2
 	seedQRY := plateSizeMM - seedQRSizeMM
@@ -87,27 +89,13 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	spaceW := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx) + 0.4
 	yLeft := wordStartBaselineY
 	yRight := wordStartBaselineY
-	descentMM := float64(wordFace.Metrics().Descent.Ceil()) * 25.4 / dpi
 	leftCount := len(mnemonic) / 2
 	if len(mnemonic) == 24 {
 		leftCount = 14
 	}
-	rightCount := len(mnemonic) - leftCount
 	// Respect requested 10pt leading, but shrink only if needed to fit each QR top.
 	leftLeading := wordLeadingMM
-	if leftCount > 1 {
-		maxLead := (seedQRY - descentMM - wordStartBaselineY) / float64(leftCount-1)
-		if maxLead > 0 && maxLead < leftLeading {
-			leftLeading = maxLead
-		}
-	}
 	rightLeading := wordLeadingMM
-	if rightCount > 1 {
-		maxLead := (descQRY - descentMM - wordStartBaselineY) / float64(rightCount-1)
-		if maxLead > 0 && maxLead < rightLeading {
-			rightLeading = maxLead
-		}
-	}
 	for i := 0; i < len(mnemonic); i++ {
 		if mnemonic[i] == -1 {
 			continue
@@ -157,21 +145,15 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	// Right metadata block, starting at descriptor QR safe-zone top.
 	wid := ""
 	sid := ""
-	idx := shareNum
-	total := totalShares
 	if strings.HasPrefix(strings.ToUpper(qrContent), compact2of3.Prefix) {
 		if sh, err := compact2of3.Decode(strings.ToUpper(qrContent)); err == nil {
 			wid = strings.ToUpper(hex.EncodeToString(sh.WalletID[:4]))
 			sid = strings.ToUpper(hex.EncodeToString(sh.SetID[:4]))
-			idx = int(sh.Index)
-			total = int(sh.Total)
 		}
 	} else if strings.HasPrefix(strings.ToUpper(qrContent), shard.Prefix) {
 		if sh, err := shard.Decode(strings.ToUpper(qrContent)); err == nil {
 			wid = strings.ToUpper(hex.EncodeToString(sh.WalletID[:4]))
 			sid = strings.ToUpper(hex.EncodeToString(sh.SetID[:4]))
-			idx = int(sh.Index)
-			total = int(sh.Total)
 		}
 	}
 	if wid == "" {
@@ -182,9 +164,9 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 		sid = strings.ToUpper(hex.EncodeToString(set[:4]))
 	}
 	rightLines := []string{
-		fmt.Sprintf("SET:%s %d/%d", sid, idx, total),
-		"WID:" + wid,
 		"SEEDETCHER.COM",
+		"WID:" + wid,
+		"SET:" + sid,
 	}
 	lineHs := make([]float64, len(rightLines))
 	lineWs := make([]float64, len(rightLines))
@@ -198,7 +180,6 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	widBaselineX := setBaselineX - rightMetaBaselineGap
 	urlBaselineX := widBaselineX - rightMetaBaselineGap
 	baselines := []float64{setBaselineX, widBaselineX, urlBaselineX}
-
 	for i, line := range rightLines {
 		x := baselines[i] - lineWs[i]
 		if x < 3.0 {
