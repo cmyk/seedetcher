@@ -388,30 +388,35 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		return nil, err
 	}
 
-	// Anchor QR sizing to the actual rendered text bottom:
-	// last baseline + font descent.
-	descentMM := float64(descriptorFace.Metrics().Descent.Ceil()) * 25.4 / dpi
-	lastBaselineY := y
-	textBottom := lastBaselineY + descentMM
-	qrGap := 2.0    // gap between text and QR
-	qrBottom := 3.0 // bottom safe margin for etched plate layout
-	// Keep descriptor QR at or below the b0.3 layout target. If an explicit
-	// override is set smaller, honor that.
-	qrMaxMM := 80.0
-	if descriptorQRSizeMM > 0 && descriptorQRSizeMM < qrMaxMM {
-		qrMaxMM = descriptorQRSizeMM
-	}
-	// sizeMm is the full QR footprint (data modules + quiet zone).
-	maxByTop := plateSizeMM - qrBottom - (textBottom + qrGap)
-	qrSize := qrMaxMM
-	if qrSize > maxByTop {
-		qrSize = maxByTop
+	// Descriptor QR placement is explicit for easier layout tuning.
+	// Coordinates are top-left in mm; size includes safe zones.
+	const (
+		descriptorQRXMM         = 10.0
+		descriptorQRYMM         = 10.0
+		descriptorQRDefaultSize = 80.0
+	)
+	qrSize := descriptorQRDefaultSize
+	if descriptorQRSizeMM > 0 {
+		qrSize = descriptorQRSizeMM
 	}
 	if qrSize < 5.0 {
-		qrSize = 5.0 // Prevent degenerate QR
+		qrSize = 5.0
 	}
-	qrX := (plateSizeMM - qrSize) / 2
-	qrY := plateSizeMM - qrBottom - qrSize
+	qrX := descriptorQRXMM
+	qrY := descriptorQRYMM
+	// Clamp to plate bounds.
+	if qrX < 0 {
+		qrX = 0
+	}
+	if qrY < 0 {
+		qrY = 0
+	}
+	if qrX+qrSize > plateSizeMM {
+		qrX = plateSizeMM - qrSize
+	}
+	if qrY+qrSize > plateSizeMM {
+		qrY = plateSizeMM - qrSize
+	}
 	drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
 		QuietModules:      4,
 		Shape:             plateQRCircle,
