@@ -290,9 +290,11 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 
 	var mnemonics []bip39.Mnemonic
 	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
+	singlesigWithDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithDescriptorQR
+	singlesigWithInfo := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithInfo
 	isSinglesigJob := desc == nil || isSinglesigDesc
 	descForHost := desc
-	if isSinglesigDesc {
+	if isSinglesigDesc && !singlesigWithDescriptorSide {
 		// Singlesig descriptor is seed-side metadata only; no descriptor-side plates.
 		descForHost = nil
 	}
@@ -328,7 +330,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	if p.supportsPCL {
 		// Host-mode PCL path: render and send in page-sized batches to reduce peak RAM.
 		totalShares := len(mnemonics)
-		if descForHost != nil && len(descForHost.Keys) > 0 {
+		if descForHost != nil && len(descForHost.Keys) > 0 && !isSinglesigDesc {
 			totalShares = len(descForHost.Keys)
 		}
 		if totalShares <= 0 {
@@ -343,9 +345,20 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		var shardQRCodes []string
 		var err error
 		if descForHost != nil && len(descForHost.Keys) > 0 {
-			shardQRCodes, err = printer.DescriptorShardQRCodes(descForHost, totalShares)
-			if err != nil {
-				return fmt.Errorf("render: descriptor shard qrs: %w", err)
+			if isSinglesigDesc && singlesigWithDescriptorSide {
+				qrPayload := printer.DescriptorQRPayload(descForHost)
+				if qrPayload == "" {
+					return fmt.Errorf("render: empty singlesig descriptor qr payload")
+				}
+				shardQRCodes = make([]string, totalShares)
+				for i := range shardQRCodes {
+					shardQRCodes[i] = qrPayload
+				}
+			} else {
+				shardQRCodes, err = printer.DescriptorShardQRCodes(descForHost, totalShares)
+				if err != nil {
+					return fmt.Errorf("render: descriptor shard qrs: %w", err)
+				}
 			}
 		}
 		sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
@@ -393,7 +406,11 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				if isSinglesigJob {
 					seedShareNum, seedShareTotal = 1, 1
 				}
-				seedImg, err := printer.RenderSeedPlateBitmapWithDescriptor(m, seedShareNum, seedShareTotal, desc, opts)
+				seedDesc := (*urtypes.OutputDescriptor)(nil)
+				if singlesigWithInfo {
+					seedDesc = desc
+				}
+				seedImg, err := printer.RenderSeedPlateBitmapWithDescriptor(m, seedShareNum, seedShareTotal, seedDesc, opts)
 				if err != nil {
 					return fmt.Errorf("render: seed plate %d: %w", i+1, err)
 				}

@@ -32,9 +32,21 @@ type RasterOptions struct {
 	DPI    float64 // target resolution; defaults to 600 if unset
 	Mirror bool    // mirror horizontally (for toner transfer)
 	Invert bool    // swap black/white for negative output
+	// SinglesigLayout controls singlesig plate rendering strategy.
+	// Zero value keeps the current default: seed + descriptor info (single-sided).
+	SinglesigLayout SinglesigLayoutMode
 	// EtchStatsPage appends an additional page with per-plate coverage metrics.
 	EtchStatsPage bool
 }
+
+type SinglesigLayoutMode uint8
+
+const (
+	// Default zero-value behavior.
+	SinglesigLayoutSeedWithInfo SinglesigLayoutMode = iota
+	SinglesigLayoutSeedOnly
+	SinglesigLayoutSeedWithDescriptorQR
+)
 
 type plateQRShape uint8
 
@@ -107,6 +119,8 @@ func defaultSeedPlateLayout(totalShares int, singlesigVariant bool) seedPlateLay
 func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions, progress ProgressFunc) ([]*image.Paletted, []*image.Paletted, error) {
 	totalShares := len(mnemonics)
 	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
+	includeSinglesigInfo := isSinglesigDesc && opts.SinglesigLayout == SinglesigLayoutSeedWithInfo
+	includeSinglesigDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == SinglesigLayoutSeedWithDescriptorQR
 	isSinglesigJob := desc == nil || isSinglesigDesc
 	if desc != nil && len(desc.Keys) > 0 && !isSinglesigDesc {
 		totalShares = len(desc.Keys)
@@ -118,23 +132,34 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		seedLayout.ShareNum = 1
 		seedLayout.ShareTotal = 1
 	}
-	if isSinglesigDesc {
+	if includeSinglesigInfo {
 		path := strings.ToUpper(derivationPathForKey(desc.Keys[0], desc.Script))
 		seedLayout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[0].Network))
 	}
 
 	seedImgs := make([]*image.Paletted, totalShares)
 	var descImgs []*image.Paletted
-	hasDesc := desc != nil && len(desc.Keys) > 0 && !isSinglesigDesc
+	hasDesc := desc != nil && len(desc.Keys) > 0 && (!isSinglesigDesc || includeSinglesigDescriptorSide)
 	if hasDesc {
 		descImgs = make([]*image.Paletted, totalShares)
 	}
 	var shardQRCodes []string
 	if hasDesc {
-		var err error
-		shardQRCodes, err = descriptorShardQRCodes(desc, totalShares)
-		if err != nil {
-			return nil, nil, err
+		if isSinglesigDesc && includeSinglesigDescriptorSide {
+			qrPayload := createDescriptorQR(desc)
+			if qrPayload == "" {
+				return nil, nil, fmt.Errorf("empty descriptor QR content")
+			}
+			shardQRCodes = make([]string, totalShares)
+			for i := range shardQRCodes {
+				shardQRCodes[i] = qrPayload
+			}
+		} else {
+			var err error
+			shardQRCodes, err = descriptorShardQRCodes(desc, totalShares)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 	}
 	compactSingleSided := hasDesc &&

@@ -25,6 +25,7 @@ type printOptions struct {
 	Mirror      bool
 	EtchStats   bool
 	Compact2of3 bool
+	Singlesig   printer.SinglesigLayoutMode
 }
 
 func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, label string) bool {
@@ -105,15 +106,22 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			}
 		}
 		showCompactLine := isCompact2of3Eligible(desc)
+		showSinglesigLine := isSinglesigDescriptor(desc)
 		lead := fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats)
 		if showCompactLine {
 			lead += fmt.Sprintf("\nCompact 2/3: %t", opts.Compact2of3)
+		}
+		if showSinglesigLine {
+			lead += fmt.Sprintf("\nSinglesig layout: %s", singlesigLayoutLabel(opts.Singlesig))
 		}
 		lead += "\n\nPress Print to continue."
 		if desc != nil {
 			lead = fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats)
 			if showCompactLine {
 				lead += fmt.Sprintf("\nCompact 2/3: %t", opts.Compact2of3)
+			}
+			if showSinglesigLine {
+				lead += fmt.Sprintf("\nSinglesig layout: %s", singlesigLayoutLabel(opts.Singlesig))
 			}
 			lead += fmt.Sprintf("\n\nPrinting %d wallet shares.\nPress Print to continue.", len(desc.Keys))
 		}
@@ -133,6 +141,21 @@ func choosePrintOptions(ctx *Context, ops op.Ctx, th *Colors, desc *urtypes.Outp
 		Mirror:      true,
 		EtchStats:   false,
 		Compact2of3: false,
+		Singlesig:   printer.SinglesigLayoutSeedWithInfo,
+	}
+	if isSinglesigDescriptor(desc) {
+		choice, ok := chooseSinglesigLayoutOption(ctx, ops, th)
+		if !ok {
+			return out, false
+		}
+		switch choice {
+		case 0:
+			out.Singlesig = printer.SinglesigLayoutSeedOnly
+		case 1:
+			out.Singlesig = printer.SinglesigLayoutSeedWithInfo
+		case 2:
+			out.Singlesig = printer.SinglesigLayoutSeedWithDescriptorQR
+		}
 	}
 	dpiChoice := &ChoiceScreen{
 		Title:   "Print DPI",
@@ -191,11 +214,136 @@ func choosePrintOptions(ctx *Context, ops op.Ctx, th *Colors, desc *urtypes.Outp
 	return out, true
 }
 
+func chooseSinglesigLayoutOption(ctx *Context, ops op.Ctx, th *Colors) (int, bool) {
+	inp := new(InputTracker)
+	choice := 1
+	labels := []string{
+		"Seed Only",
+		"Seed + Info",
+		"Seed + Descr QR",
+	}
+	details := []string{
+		"1-sided, 2 copies",
+		"1-sided, 2 copies",
+		"2-sided, 2 copies",
+	}
+
+	for {
+		for {
+			e, ok := inp.Next(ctx, Button1, Button3, Center, Up, Down, CCW, CW)
+			if !ok {
+				break
+			}
+			switch e.Button {
+			case Button1:
+				if inp.Clicked(e.Button) {
+					return 0, false
+				}
+			case Button3, Center:
+				if inp.Clicked(e.Button) {
+					return choice, true
+				}
+			case Up, CCW:
+				if e.Pressed && choice > 0 {
+					choice--
+				}
+			case Down, CW:
+				if e.Pressed && choice < len(labels)-1 {
+					choice++
+				}
+			}
+		}
+
+		dims := ctx.Platform.DisplaySize()
+		op.ColorOp(ops, th.Background)
+		titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Singlesig layout")
+		infoRect := layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, "Choose print layout:")
+
+		choicesMinY := infoRect.Max.Y + 4
+		choicesMaxY := dims.Y - leadingSize - 30
+		if choicesMaxY < choicesMinY+10 {
+			choicesMaxY = choicesMinY + 10
+		}
+		content := layout.Rectangle(image.Rect(16, choicesMinY, dims.X-16, choicesMaxY))
+
+		children := make([]struct {
+			Size image.Point
+			W    op.CallOp
+		}, len(labels))
+		maxW := 0
+		for i, c := range labels {
+			style := ctx.Styles.button
+			col := th.Text
+			if i == choice {
+				col = th.Background
+			}
+			sz := widget.Labelf(ops.Begin(), style, col, "%s", c)
+			ch := ops.End()
+			children[i].Size = sz
+			children[i].W = ch
+			if sz.X > maxW {
+				maxW = sz.X
+			}
+		}
+		inner := ops.Begin()
+		h := 0
+		for i, c := range children {
+			xoff := (maxW - c.Size.X) / 2
+			pos := image.Pt(xoff, h)
+			txt := c.W
+			if i == choice {
+				bg := image.Rectangle{Max: c.Size}
+				bg.Min.X -= xoff
+				bg.Max.X += xoff
+				assets.ButtonFocused.Add(inner.Begin(), bg, true)
+				op.ColorOp(inner, th.Text)
+				txt.Add(inner)
+				txt = inner.End()
+			}
+			op.Position(inner, txt, pos)
+			h += c.Size.Y
+		}
+		op.Position(ops, ops.End(), content.Center(image.Pt(maxW, h)))
+		descRect := image.Rectangle{
+			Min: image.Pt(10, choicesMaxY+4),
+			Max: image.Pt(dims.X-10, dims.Y-leadingSize-6),
+		}
+		if descRect.Dy() > 0 {
+			style := ctx.Styles.body
+			widget.Labelwf(ops.Begin(), style, descRect.Dx(), th.Text, "%s", details[choice])
+			op.Position(ops, ops.End(), descRect.Min)
+		}
+		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
+			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
+			{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
+		}...)
+		ctx.Frame()
+	}
+}
+
 func isCompact2of3Eligible(desc *urtypes.OutputDescriptor) bool {
 	if desc == nil {
 		return false
 	}
 	return desc.Type == urtypes.SortedMulti && desc.Threshold == 2 && len(desc.Keys) == 3
+}
+
+func isSinglesigDescriptor(desc *urtypes.OutputDescriptor) bool {
+	if desc == nil {
+		return false
+	}
+	return desc.Type == urtypes.Singlesig && len(desc.Keys) == 1
+}
+
+func singlesigLayoutLabel(mode printer.SinglesigLayoutMode) string {
+	switch mode {
+	case printer.SinglesigLayoutSeedOnly:
+		return "Seed Only"
+	case printer.SinglesigLayoutSeedWithDescriptorQR:
+		return "Seed + Descr QR"
+	default:
+		return "Seed + Info"
+	}
 }
 
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
@@ -285,10 +433,11 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 	}
 	go func() {
 		opts := printer.RasterOptions{
-			DPI:           float64(printOpts.DPI),
-			Mirror:        printOpts.Mirror,
-			Invert:        printOpts.Invert,
-			EtchStatsPage: printOpts.EtchStats,
+			DPI:             float64(printOpts.DPI),
+			Mirror:          printOpts.Mirror,
+			Invert:          printOpts.Invert,
+			SinglesigLayout: printOpts.Singlesig,
+			EtchStatsPage:   printOpts.EtchStats,
 		}
 		printer.SetCompactDescriptor2of3Enabled(printOpts.Compact2of3)
 		defer printer.SetCompactDescriptor2of3Enabled(false)

@@ -73,7 +73,7 @@
 
 ### 7) UR/XOR family support (SeedHammer II parity)
 - [ ] Define and document supported UR/XOR wallet families for b0.3:
-  - [ ] `1/1`
+  - [x] `1/1` stays singlesig-special (no UR/XOR share mode)
   - [x] `2/3` (already complete)
   - [ ] `3/5`
   - [ ] generic `m = n-1` family
