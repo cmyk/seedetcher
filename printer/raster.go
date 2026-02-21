@@ -22,7 +22,6 @@ import (
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
 	"seedetcher.com/descriptor/shard"
-	"seedetcher.com/descriptor/urxor2of3"
 	"seedetcher.com/seedqr"
 	"seedetcher.com/version"
 )
@@ -406,10 +405,10 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	allText := fmt.Sprintf("TYPE:%s/SCRIPT:%s/NET:%s/THRESHOLD:%d/KEYS:%d/KEY:%d",
 		descriptorTypeTag(desc.Type), descriptorScriptTag(desc.Script), descriptorNetworkTag(key.Network), desc.Threshold, len(desc.Keys), keyIdx+1)
 
-	const margin = 3.0
+	margin := descriptorSingleQRLayout.MarginMM
 	ascentMM := capBaselineOffsetMM(descriptorFace, dpi)
 	lines := wrapTextTracked(descriptorFace, dpi, allText, plateSizeMM-2*margin, descTrackPx)
-	lineSpacing := 4.2
+	lineSpacing := descriptorSingleQRLayout.LineGapMM
 	y := margin + ascentMM
 	tb := TextBlock{
 		Face:      descriptorFace,
@@ -425,7 +424,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	dualQRLayout := len(qrPayloads) == 2
 	// Keep PATH in the top text block only for dual-QR descriptor layouts.
 	if dualQRLayout {
-		y += lineSpacing
+		y += descriptorSingleQRLayout.PathGapMM
 		DrawMetaLine(canvas, dpi, margin, y, descriptorFace, descTrackPx, pathText)
 	}
 	if len(qrPayloads) == 0 {
@@ -443,11 +442,11 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 	if dualQRLayout {
 		guide := fmt.Sprintf("RECOVER: SCAN BOTH QRS FROM >=%d PLATES", desc.Threshold)
-		gy := y + lineSpacing + 1.5
+		gy := y + lineSpacing + descriptorDualQRLayout.GuideGapMM
 		_ = DrawTextBlock(canvas, dpi, TextBlock{
 			Face:      descriptorFace,
 			Tracking:  descTrackPx,
-			LeadingMM: lineSpacing,
+			LeadingMM: descriptorDualQRLayout.LineGapMM,
 			WidthMM:   plateSizeMM - 2*margin,
 			Align:     TextAlignStart,
 			OriginXMM: margin,
@@ -455,25 +454,20 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		}, guide)
 	}
 	// Descriptor QR placement with explicit support for one or two payloads.
-	const descriptorQRTopMM = 24.0
 	if len(qrPayloads) == 1 {
 		qrCode, err := qr.Encode(qrPayloads[0], descriptorQRECC)
 		if err != nil {
 			return nil, err
 		}
-		const (
-			descriptorQRXMM = 12.0
-			descriptorQRYMM = 12.0
-		)
 		qrSize := descriptorQRSizeMM
 		if qrSize <= 0 {
-			qrSize = 80.0
+			qrSize = descriptorSingleQRLayout.DefaultSize
 		}
 		if qrSize < 5.0 {
 			qrSize = 5.0
 		}
-		qrX := descriptorQRXMM
-		qrY := descriptorQRYMM
+		qrX := descriptorSingleQRLayout.QRXMM
+		qrY := descriptorSingleQRLayout.QRYMM
 		// Clamp to plate bounds while keeping fixed-anchor semantics.
 		if qrX < 0 {
 			qrX = 0
@@ -501,16 +495,16 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		if err != nil {
 			return nil, err
 		}
-		usableH := plateSizeMM - descriptorQRTopMM
+		usableH := plateSizeMM - descriptorDualQRLayout.QRTopLimitMM
 		qrSize := math.Min(plateSizeMM/2, usableH)
-		const quietModules = 4
+		quietModules := descriptorDualQRLayout.QuietModules
 		// Collapse the inter-QR quiet-zone from two full bands to one shared band.
 		// This increases each QR size while keeping a clear separator.
-		for i := 0; i < 8; i++ {
+		for i := 0; i < descriptorDualQRLayout.OverlapIters; i++ {
 			overlap := math.Min(quietZoneMM(qrL, qrSize, quietModules), quietZoneMM(qrR, qrSize, quietModules))
 			maxByWidth := (plateSizeMM + overlap) / 2
 			next := math.Min(maxByWidth, usableH)
-			if math.Abs(next-qrSize) < 0.001 {
+			if math.Abs(next-qrSize) < descriptorDualQRLayout.OverlapEpsilon {
 				break
 			}
 			qrSize = next
@@ -611,95 +605,6 @@ func descriptorNetworkTag(net *chaincfg.Params) string {
 		return "MAIN"
 	}
 	return "TEST"
-}
-
-func descriptorShardQRPayloadsForShare(desc *urtypes.OutputDescriptor, totalShares, keyIdx int) ([]string, error) {
-	if desc == nil {
-		return nil, fmt.Errorf("descriptor is nil")
-	}
-	if totalShares <= 0 {
-		return nil, fmt.Errorf("invalid share count: %d", totalShares)
-	}
-	if keyIdx < 0 || keyIdx >= totalShares {
-		return nil, fmt.Errorf("invalid key index: %d", keyIdx)
-	}
-	threshold := desc.Threshold
-	if threshold == 1 && totalShares == 1 {
-		qr := createDescriptorQR(desc)
-		if qr == "" {
-			return nil, fmt.Errorf("empty descriptor QR content")
-		}
-		return []string{qr}, nil
-	}
-	if threshold < 2 || threshold > totalShares {
-		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
-	}
-	if desc.Type == urtypes.SortedMulti && threshold >= 2 && supportsURXORScheme(threshold, totalShares) {
-		if payloads, err := urxor2of3.SplitDescriptorForShare(desc, keyIdx); err == nil {
-			return payloads, nil
-		}
-	}
-	if threshold > math.MaxUint8 {
-		return nil, fmt.Errorf("descriptor threshold too large: %d", threshold)
-	}
-	if totalShares > math.MaxUint8 {
-		return nil, fmt.Errorf("descriptor share count too large: %d", totalShares)
-	}
-	payload := desc.Encode()
-	if len(payload) == 0 {
-		return nil, fmt.Errorf("empty descriptor payload")
-	}
-	threshold8 := uint8(threshold)
-	totalShares8 := uint8(totalShares)
-	opts := shard.SplitOptions{
-		Threshold: threshold8,
-		Total:     totalShares8,
-	}
-	if setID, ok := forcedDescriptorShardSetID(); ok {
-		opts.SetID = setID
-	}
-	shares, err := shard.SplitPayloadBytes(payload, opts)
-	if err != nil {
-		return nil, fmt.Errorf("split descriptor payload: %w", err)
-	}
-	for i, sh := range shares {
-		if int(sh.Index) == keyIdx+1 {
-			enc, err := shard.Encode(sh)
-			if err != nil {
-				return nil, fmt.Errorf("encode share %d: %w", i+1, err)
-			}
-			return []string{enc}, nil
-		}
-	}
-	return nil, fmt.Errorf("share %d not found", keyIdx+1)
-}
-
-func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]string, error) {
-	out := make([]string, totalShares)
-	for i := 0; i < totalShares; i++ {
-		payloads, err := descriptorShardQRPayloadsForShare(desc, totalShares, i)
-		if err != nil {
-			return nil, err
-		}
-		if len(payloads) != 1 {
-			return nil, fmt.Errorf("share %d has %d fragments (expected 1)", i+1, len(payloads))
-		}
-		out[i] = payloads[0]
-	}
-	return out, nil
-}
-
-func supportsURXORScheme(threshold, totalShares int) bool {
-	switch {
-	case totalShares-threshold <= 1:
-		return true
-	case totalShares == 4 && threshold == 2:
-		return true
-	case totalShares == 5 && threshold == 3:
-		return true
-	default:
-		return false
-	}
 }
 
 // DescriptorShardQRCodes returns descriptor QR payloads (or shard payloads) for each share.
