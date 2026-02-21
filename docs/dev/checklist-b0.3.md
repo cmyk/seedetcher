@@ -66,7 +66,7 @@
 - [x] Wire UR/XOR into backup/recover GUI flow as the default 2-of-3 path.
 - [x] Reuse compact single-sided 2-of-3 layout with UR/XOR payloads.
 - [ ] Add test vectors and regression tests:
-  - [ ] stable share payload strings for fixture wallet(s)
+  - [x] stable share payload strings for fixture wallet(s)
   - [x] all pairwise recovery combinations pass (`C(3,2)=3`)
 - [ ] Validate interoperability in external wallets (Sparrow, Nunchuk, BlueWallet).
 - [x] Update docs/changelog for UR/XOR migration and experimental status of `SE1`/`SE2`.
@@ -88,8 +88,8 @@
   - [x] reject duplicates/mixed sets/invalid fragments with explicit errors
   - [x] deterministic reconstruction output
 - [ ] Add tests for `3/5`:
-  - [ ] all pairwise/combination recovery tests (`C(5,3)=10`)
-  - [ ] stable share payload vectors for fixture wallet(s)
+  - [x] all pairwise/combination recovery tests (`C(5,3)=10`)
+  - [x] stable share payload vectors for fixture wallet(s)
   - [x] matrix regression coverage added for representative script/network families
 - [x] Implement generic `m = n-1` UR/XOR support:
   - [x] generation path
