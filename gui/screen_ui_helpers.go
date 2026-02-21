@@ -201,7 +201,7 @@ func layoutBodyLeftUnderTitle(ctx *Context, ops op.Ctx, dims image.Point, col co
 		leftPad      = 10
 		rightPad     = 10
 		titleBodyGap = 10
-		navGap       = 6
+		navGap       = 2
 	)
 	rightReserved := assets.NavBtnPrimary.Bounds().Dx() + navGap
 	width := dims.X - leftPad - rightPad - rightReserved

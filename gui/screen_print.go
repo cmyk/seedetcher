@@ -36,7 +36,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	inp := &s.inp
 	paperChoice := &ChoiceScreen{
 		Title:   "Select Paper Size",
-		Lead:    "Choose your printer's\npaper size",
+		Lead:    "Choose paper size",
 		Choices: []string{"A4", "Letter"},
 	}
 	choice, ok := paperChoice.Choose(ctx, ops, th)
@@ -107,23 +107,43 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		}
 		showCompactLine := isCompact2of3Eligible(desc)
 		showSinglesigLine := isSinglesigDescriptor(desc)
-		lead := fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats)
+		lead := fmt.Sprintf("%s\nPaper:%s @%d dpi\nInvert: %s, Mirror: %s\nEtch stats page: %s", status, selectedPaper, opts.DPI, onOff(opts.Invert), onOff(opts.Mirror), onOff(opts.EtchStats))
 		if showCompactLine {
-			lead += fmt.Sprintf("\nCompact 2/3: %t", opts.Compact2of3)
+			lead += fmt.Sprintf("\nCompact 2/3: %s", onOff(opts.Compact2of3))
 		}
 		if showSinglesigLine {
 			lead += fmt.Sprintf("\nSinglesig layout: %s", singlesigLayoutLabel(opts.Singlesig))
 		}
-		lead += "\n\nPress Print to continue."
 		if desc != nil {
-			lead = fmt.Sprintf("%s\nPaper: %s  DPI: %d\nInvert: %t\nMirror: %t\nEtch stats page: %t", status, selectedPaper, opts.DPI, opts.Invert, opts.Mirror, opts.EtchStats)
+			lead = fmt.Sprintf("%s\nPaper:%s @%d dpi\nInvert: %s, Mirror: %s\nEtch stats page: %s", status, selectedPaper, opts.DPI, onOff(opts.Invert), onOff(opts.Mirror), onOff(opts.EtchStats))
 			if showCompactLine {
-				lead += fmt.Sprintf("\nCompact 2/3: %t", opts.Compact2of3)
+				lead += fmt.Sprintf("\nCompact 2/3: %s", onOff(opts.Compact2of3))
 			}
 			if showSinglesigLine {
 				lead += fmt.Sprintf("\nSinglesig layout: %s", singlesigLayoutLabel(opts.Singlesig))
 			}
-			lead += fmt.Sprintf("\n\nPrinting %d wallet shares.\nPress Print to continue.", len(desc.Keys))
+			walletShares := len(desc.Keys)
+			maxSlotsPerPage := 6
+			if selectedPaper == printer.PaperLetter {
+				maxSlotsPerPage = 4
+			}
+			slotsPerShare := 2
+			if showCompactLine && opts.Compact2of3 {
+				slotsPerShare = 1
+			}
+			if showSinglesigLine && opts.Singlesig != printer.SinglesigLayoutSeedWithDescriptorQR {
+				slotsPerShare = 1
+			}
+			sharesPerPage := maxSlotsPerPage / slotsPerShare
+			if sharesPerPage < 1 {
+				sharesPerPage = 1
+			}
+			totalPages := (walletShares + sharesPerPage - 1) / sharesPerPage
+			statsSuffix := ""
+			if opts.EtchStats {
+				statsSuffix = " (+1)"
+			}
+			lead += fmt.Sprintf("\n\nPrinting %d wallet shares\nTotal pages: %d%s", walletShares, totalPages, statsSuffix)
 		}
 		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, lead)
 		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
@@ -344,6 +364,13 @@ func singlesigLayoutLabel(mode printer.SinglesigLayoutMode) string {
 	default:
 		return "Seed + Info"
 	}
+}
+
+func onOff(v bool) string {
+	if v {
+		return "On"
+	}
+	return "Off"
 }
 
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
