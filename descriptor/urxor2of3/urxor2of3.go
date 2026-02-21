@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"seedetcher.com/bc/fountain"
 	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/descriptor/legacy"
@@ -17,36 +16,64 @@ import (
 var ErrInsufficientShares = errors.New("insufficient shares")
 
 const (
-	RequiredShares = 2
-	TotalShares    = 3
+	MinShares = 2
 )
 
-// SplitDescriptor returns three UR multipart shares for canonical 2-of-3 sortedmulti
-// descriptors using deterministic A/B/A^B fragment assignment.
+// SplitDescriptor returns one UR share per key for canonical sortedmulti
+// descriptors when the selected UR/XOR scheme encodes one fragment per share.
+// For schemes that require multiple fragments per share (for example 3-of-5),
+// use SplitDescriptorForShare.
 func SplitDescriptor(desc *urtypes.OutputDescriptor) ([]string, error) {
+	if desc == nil {
+		return nil, fmt.Errorf("descriptor is nil")
+	}
+	shares := make([]string, 0, len(desc.Keys))
+	for i := range desc.Keys {
+		frags, err := SplitDescriptorForShare(desc, i)
+		if err != nil {
+			return nil, err
+		}
+		if len(frags) != 1 {
+			return nil, fmt.Errorf("scheme requires %d fragments per share for %d-of-%d", len(frags), desc.Threshold, len(desc.Keys))
+		}
+		shares = append(shares, frags[0])
+	}
+	return shares, nil
+}
+
+// SplitDescriptorForShare returns UR share fragment(s) for a specific cosigner index.
+// For 2-of-3 this is one fragment. For some schemes (e.g. 3-of-5) this can be two.
+func SplitDescriptorForShare(desc *urtypes.OutputDescriptor, keyIdx int) ([]string, error) {
 	payload, err := canonicalURPayload(desc)
 	if err != nil {
 		return nil, err
 	}
-	checksum := fountain.Checksum(payload)
-	seqNumXOR := fountain.SeqNumFor(RequiredShares, checksum, []int{0, 1})
-	return []string{
-		ur.Encode("crypto-output", payload, 1, RequiredShares),
-		ur.Encode("crypto-output", payload, 2, RequiredShares),
-		ur.Encode("crypto-output", payload, seqNumXOR, RequiredShares),
-	}, nil
+	if keyIdx < 0 || keyIdx >= len(desc.Keys) {
+		return nil, fmt.Errorf("invalid key index %d", keyIdx)
+	}
+	return ur.Split(ur.Data{
+		Data:      payload,
+		Threshold: desc.Threshold,
+		Shards:    len(desc.Keys),
+	}, keyIdx), nil
 }
 
 // Combine recovers the canonical descriptor payload from 2 or more UR shares.
 func Combine(shares []string) ([]byte, error) {
-	if len(shares) < RequiredShares {
+	if len(shares) < MinShares {
 		return nil, ErrInsufficientShares
 	}
 	var d ur.Decoder
+	seqLen := 0
 	for _, s := range shares {
-		typ, _, seqLen, ok := ParseShare(s)
-		if !ok || typ != "crypto-output" || seqLen != RequiredShares {
-			return nil, fmt.Errorf("invalid 2-of-3 ur share")
+		typ, _, n, ok := ParseShare(s)
+		if !ok || typ != "crypto-output" || n < 2 {
+			return nil, fmt.Errorf("invalid ur share")
+		}
+		if seqLen == 0 {
+			seqLen = n
+		} else if seqLen != n {
+			return nil, fmt.Errorf("mixed ur share set")
 		}
 		if err := d.Add(s); err != nil {
 			return nil, err
@@ -94,8 +121,8 @@ func canonicalURPayload(desc *urtypes.OutputDescriptor) ([]byte, error) {
 	if desc == nil {
 		return nil, fmt.Errorf("descriptor is nil")
 	}
-	if desc.Type != urtypes.SortedMulti || desc.Threshold != 2 || len(desc.Keys) != 3 {
-		return nil, fmt.Errorf("ur/xor supports sortedmulti 2-of-3 only")
+	if desc.Type != urtypes.SortedMulti {
+		return nil, fmt.Errorf("ur/xor supports sortedmulti only")
 	}
 	canonical := canonicalizeSortedMultiDescriptor(desc)
 	normalized := legacy.NormalizeDescriptorForLegacyUR(canonical)

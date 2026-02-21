@@ -94,6 +94,7 @@ type RecoverDescriptorFlowScreen struct {
 	recoveredQR         image.Image
 	decodedShares       map[uint8]shard.Share
 	decodedURShares     map[string]struct{}
+	decodedURSeqLen     int
 	modeChoice          int
 	displayMode         recoverDisplayMode
 	viewQR              image.Image
@@ -116,6 +117,7 @@ func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			s.recoveredQR = nil
 			s.decodedShares = make(map[uint8]shard.Share)
 			s.decodedURShares = make(map[string]struct{})
+			s.decodedURSeqLen = 0
 		}
 	}()
 
@@ -173,9 +175,15 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 	case []byte:
 		raw := strings.TrimSpace(string(v))
 		up := strings.ToUpper(raw)
-		if typ, _, seqLen, ok := urxor2of3.ParseShare(raw); ok && typ == "crypto-output" && seqLen == urxor2of3.RequiredShares {
+		if typ, _, seqLen, ok := urxor2of3.ParseShare(raw); ok && typ == "crypto-output" && seqLen >= urxor2of3.MinShares {
 			if len(s.decodedShares) > 0 {
 				showError(ctx, ops, th, fmt.Errorf("share set mismatch: mixed descriptor share formats"))
+				return s
+			}
+			if s.decodedURSeqLen == 0 {
+				s.decodedURSeqLen = seqLen
+			} else if s.decodedURSeqLen != seqLen {
+				showError(ctx, ops, th, fmt.Errorf("share set mismatch: mixed descriptor share sets"))
 				return s
 			}
 			key := strings.ToLower(strings.TrimSpace(raw))
@@ -191,7 +199,7 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 			payload, err := urxor2of3.Combine(parts)
 			if err != nil {
 				if errors.Is(err, urxor2of3.ErrInsufficientShares) {
-					ctx.addToast(fmt.Sprintf("Captured share (%d/%d)", len(s.decodedURShares), urxor2of3.RequiredShares), 1700)
+					ctx.addToast(fmt.Sprintf("Captured share (%d/%d)", len(s.decodedURShares), s.decodedURSeqLen), 1700)
 					return s
 				}
 				delete(s.decodedURShares, key)
@@ -318,6 +326,7 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 				s.recoveredQR = nil
 				s.decodedShares = make(map[uint8]shard.Share)
 				s.decodedURShares = make(map[string]struct{})
+				s.decodedURSeqLen = 0
 				s.stage = recoverStageScan
 				ctx.addToast("Recovery state deleted", 1200)
 				if s.returnScreen != nil {
@@ -460,7 +469,11 @@ func (s *RecoverDescriptorFlowScreen) updateViewerQR(ctx *Context, dims image.Po
 
 func (s *RecoverDescriptorFlowScreen) scanLead() string {
 	if len(s.decodedURShares) > 0 {
-		return fmt.Sprintf("Captured %d/%d descriptor shares", len(s.decodedURShares), urxor2of3.RequiredShares)
+		total := s.decodedURSeqLen
+		if total <= 0 {
+			total = urxor2of3.MinShares
+		}
+		return fmt.Sprintf("Captured %d/%d descriptor shares", len(s.decodedURShares), total)
 	}
 	if len(s.decodedShares) == 0 {
 		return "Scan descriptor share"

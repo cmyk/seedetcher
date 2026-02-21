@@ -33,7 +33,7 @@ func TestDescriptorShardQRCodes2of3UseURXORAndRecover(t *testing.T) {
 	}
 	for i, q := range qrs {
 		typ, _, seqLen, ok := urxor2of3.ParseShare(q)
-		if !ok || typ != "crypto-output" || seqLen != urxor2of3.RequiredShares {
+		if !ok || typ != "crypto-output" || seqLen != desc.Threshold {
 			t.Fatalf("share %d has non ur/xor payload: %q", i+1, q)
 		}
 		got, err := urxor2of3.Combine([]string{qrs[i], qrs[(i+1)%len(qrs)]})

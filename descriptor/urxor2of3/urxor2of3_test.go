@@ -28,8 +28,8 @@ func TestSplitDescriptorProducesThreeURMultipartShares(t *testing.T) {
 	if err != nil {
 		t.Fatalf("split descriptor: %v", err)
 	}
-	if len(shares) != TotalShares {
-		t.Fatalf("got %d shares, want %d", len(shares), TotalShares)
+	if len(shares) != len(desc.Keys) {
+		t.Fatalf("got %d shares, want %d", len(shares), len(desc.Keys))
 	}
 	for i, s := range shares {
 		typ, _, seqLen, ok := ParseShare(s)
@@ -39,8 +39,8 @@ func TestSplitDescriptorProducesThreeURMultipartShares(t *testing.T) {
 		if typ != "crypto-output" {
 			t.Fatalf("share %d type=%q", i+1, typ)
 		}
-		if seqLen != RequiredShares {
-			t.Fatalf("share %d seqLen=%d", i+1, seqLen)
+		if seqLen != desc.Threshold {
+			t.Fatalf("share %d seqLen=%d want %d", i+1, seqLen, desc.Threshold)
 		}
 	}
 }
@@ -84,7 +84,7 @@ func TestSplitCanonicalizationStableAcrossReorderAndMissingChildren(t *testing.T
 	if err != nil {
 		t.Fatalf("split B: %v", err)
 	}
-	for i := 0; i < TotalShares; i++ {
+	for i := range len(desc.Keys) {
 		if a[i] != b[i] {
 			t.Fatalf("share %d mismatch", i+1)
 		}
@@ -99,6 +99,56 @@ func TestCombineRejectsSingleShare(t *testing.T) {
 	}
 	if _, err := Combine([]string{shares[0]}); err != ErrInsufficientShares {
 		t.Fatalf("got err=%v want ErrInsufficientShares", err)
+	}
+}
+
+func TestSplitDescriptorForShareProducesTwoFragmentsFor3of5(t *testing.T) {
+	cfg := testutils.WalletConfigs["multisig-3of5"]
+	_, desc, err := testutils.ParseWallet(cfg, "", "")
+	if err != nil {
+		t.Fatalf("parse wallet: %v", err)
+	}
+	if desc == nil {
+		t.Fatal("descriptor is nil")
+	}
+	for i := range desc.Keys {
+		frags, err := SplitDescriptorForShare(desc, i)
+		if err != nil {
+			t.Fatalf("split share %d: %v", i+1, err)
+		}
+		if len(frags) != 2 {
+			t.Fatalf("share %d: got %d fragments want 2", i+1, len(frags))
+		}
+	}
+}
+
+func TestCombineRecovers3of5FromThreeShares(t *testing.T) {
+	cfg := testutils.WalletConfigs["multisig-3of5"]
+	_, desc, err := testutils.ParseWallet(cfg, "", "")
+	if err != nil {
+		t.Fatalf("parse wallet: %v", err)
+	}
+	if desc == nil {
+		t.Fatal("descriptor is nil")
+	}
+	expected, err := canonicalURPayload(desc)
+	if err != nil {
+		t.Fatalf("canonical payload: %v", err)
+	}
+	var parts []string
+	for _, idx := range []int{0, 2, 4} {
+		frags, err := SplitDescriptorForShare(desc, idx)
+		if err != nil {
+			t.Fatalf("split share %d: %v", idx+1, err)
+		}
+		parts = append(parts, frags...)
+	}
+	got, err := Combine(parts)
+	if err != nil {
+		t.Fatalf("combine 3-of-5: %v", err)
+	}
+	if !bytes.Equal(got, expected) {
+		t.Fatal("combined payload mismatch")
 	}
 }
 
