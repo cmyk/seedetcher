@@ -165,7 +165,7 @@ go run cmd/cli/main.go -w multisig \
 - `-o` (default: `/home/cmyk/PDF`): output directory (PDF)
 - `-papersize` (default: `A4`): paper size (`A4` or `Letter`)
 - `-verbose` (default: `false`): verbose logging
-- `-w` (default: `multisig`): wallet fixture (`singlesig`, `multisig`, `multisig-mainnet-2of3`, `multisig-3of5`, `multisig-7of10`)
+- `-w` (default: `multisig`): wallet fixture (`seed-12`, `seed-15`, `seed-18`, `seed-21`, `singlesig`, `singlesig-longwords`, `multisig`, `multisig-mainnet-2of3`, `multisig-2of2`, `multisig-2of4`, `multisig-3of4`, `multisig-3of5`, `multisig-4of7`, `multisig-5of7`, `multisig-7of10`)
 - `-png-out` (default: empty): optional output directory for plate PNGs (mirrored/inverted if set)
 - `-dpi` (default: `600`): raster output DPI when using `-png-out`
 - `-mirror` (default: `false`): mirror raster output horizontally (toner transfer)

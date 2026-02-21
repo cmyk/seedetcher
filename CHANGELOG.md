@@ -1,7 +1,11 @@
 # Changelog
 
 ## Unreleased
-- UR/XOR 2-of-3 descriptor-share path is now the default backup/recovery path for `sortedmulti 2/3`.
+- Descriptor share mode is now interoperability-first:
+  - UR/XOR used for supported families (`2/2`, `2/3`, `2/4`, `3/5`, and generic `n-1/n`),
+  - unsupported families fall back to full descriptor `UR:CRYPTO-OUTPUT` per descriptor plate.
+- SE1 fallback removed from active backup output path.
+- Backup flow now shows a `Warning` (not `Error`) for XOR-unsupported multisig families, explaining full-descriptor fallback behavior.
 - Compact single-sided 2-of-3 layout is wired to UR/XOR shares (seed QR + descriptor-share QR on one plate).
 - Compact layout tuning:
   - 24-word split `10/7/7`, 12-word split `6/6`,
@@ -17,6 +21,8 @@
   - 7 entries per page,
   - pagination line shown only when there are multiple pages.
 - Print confirmation screen now shows `Compact 2/3` line only for eligible `sortedmulti 2/3` jobs.
+- Added table-driven descriptor-share matrix tests across script/network variants for representative families (`2/3`, `2/4`, `3/5`, `4/5`, fallback `7/10`).
+- Added CLI/test fixtures for additional families: `multisig-2of2`, `multisig-3of4`, `multisig-4of7`, `multisig-5of7`.
 - Optional etch stats page added to print output (`-etch-stats-page` in CLI; toggle in print options UI).
 - Etch stats now include two sections:
   - area/coverage table per plate (`TONER`, `EXPOSED90`, `EXPOSED+MARGIN`, `%MASKED`, `%UNMASKED`),

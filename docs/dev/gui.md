@@ -59,7 +59,8 @@ Notes:
   - `Seed input` -> `Fingerprints` -> `Wallet label` -> `Singlesig layout` -> `Paper size` -> print settings -> `Print`.
   - Back from `Fingerprints` opens `Restart Process?`; decline returns to `Fingerprints`.
 - `Fingerprints` uses page navigation (left/right arrows) and keeps back/check nav buttons (`7` entries/page).
-- In backup descriptor scan, UR/XOR 2-of-3 fragments show `x/2` capture progress (not `%`).
+- In backup descriptor scan, recognized UR/XOR fragments show deterministic `x/t` capture progress (not `%`).
+  - For unsupported UR/XOR families (fallback full descriptor UR), there is no share-fragment counter.
 - Print setup order is wallet-mode selector (if applicable) -> `Paper size` -> `DPI` -> `Invert` -> `Mirror` -> `Etch stats page`.
 - When `Etch stats page` is enabled, one additional stats page is appended after plate pages:
   - area/coverage table per printed plate side (`mm²` and `%`),
