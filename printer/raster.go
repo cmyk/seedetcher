@@ -143,22 +143,26 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 	if hasDesc {
 		descImgs = make([]*image.Paletted, totalShares)
 	}
-	var shardQRCodes []string
+	var shardQRPayloads [][]string
 	if hasDesc {
 		if isSinglesigDesc && includeSinglesigDescriptorSide {
 			qrPayload := createDescriptorQR(desc)
 			if qrPayload == "" {
 				return nil, nil, fmt.Errorf("empty descriptor QR content")
 			}
-			shardQRCodes = make([]string, totalShares)
-			for i := range shardQRCodes {
-				shardQRCodes[i] = qrPayload
+			shardQRPayloads = make([][]string, totalShares)
+			for i := range shardQRPayloads {
+				shardQRPayloads[i] = []string{qrPayload}
 			}
 		} else {
-			var err error
-			shardQRCodes, err = descriptorShardQRCodes(desc, totalShares)
-			if err != nil {
-				return nil, nil, err
+			shardQRPayloads = make([][]string, totalShares)
+			for i := 0; i < totalShares; i++ {
+				descKeyIdx := i % len(desc.Keys)
+				payloads, err := descriptorShardQRPayloadsForShare(desc, totalShares, descKeyIdx)
+				if err != nil {
+					return nil, nil, err
+				}
+				shardQRPayloads[i] = payloads
 			}
 		}
 	}
@@ -168,7 +172,7 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		desc.Threshold == 2 &&
 		len(desc.Keys) == 3 &&
 		totalShares == 3 &&
-		len(shardQRCodes) == 3
+		len(shardQRPayloads) == 3
 	if compactSingleSided {
 		descImgs = nil
 	}
@@ -179,23 +183,26 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		if err != nil {
 			return nil, nil, err
 		}
-		if compactSingleSided {
-			descKeyIdx := i % len(desc.Keys)
-			sharePayload := shardQRCodes[i]
-			seedImg, err = renderCompact2of3PlateBitmap(mnemonic, desc, descKeyIdx, opts, sharePayload)
-			if err != nil {
-				return nil, nil, err
+				if compactSingleSided {
+					descKeyIdx := i % len(desc.Keys)
+					sharePayload := ""
+					if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
+						sharePayload = shardQRPayloads[i][0]
+					}
+					seedImg, err = renderCompact2of3PlateBitmap(mnemonic, desc, descKeyIdx, opts, sharePayload)
+					if err != nil {
+						return nil, nil, err
 			}
 		}
 		seedImgs[i] = seedImg
 
 		if hasDesc && !compactSingleSided {
 			descKeyIdx := i % len(desc.Keys)
-			descQR := ""
-			if i < len(shardQRCodes) {
-				descQR = shardQRCodes[i]
+			var descQRs []string
+			if i < len(shardQRPayloads) {
+				descQRs = shardQRPayloads[i]
 			}
-			descImg, err := RenderDescriptorPlateBitmap(desc, descKeyIdx, i+1, totalShares, opts, descQR)
+			descImg, err := RenderDescriptorPlateBitmap(desc, descKeyIdx, i+1, totalShares, opts, descQRs)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -376,7 +383,7 @@ func renderSeedPlateBitmapWithLayout(mnemonic bip39.Mnemonic, shareNum, totalSha
 }
 
 // RenderDescriptorPlateBitmap mirrors the descriptor PDF layout at 600dpi as a 1-bit paletted image.
-func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNum, totalShares int, opts RasterOptions, qrPayload string) (*image.Paletted, error) {
+func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNum, totalShares int, opts RasterOptions, qrPayloads []string) (*image.Paletted, error) {
 	if desc == nil {
 		return nil, fmt.Errorf("descriptor is nil")
 	}
@@ -410,73 +417,134 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 			y += lineSpacing
 		}
 	}
-	qrContent := qrPayload
-	if qrContent == "" {
-		qrContent = createDescriptorQR(desc)
+	dualQRLayout := len(qrPayloads) == 2
+	// Keep PATH in the top text block only for dual-QR descriptor layouts.
+	if dualQRLayout {
+		y += lineSpacing
+		drawTrackedText(canvas, descriptorFace, dpi, margin, y, pathText, descTrackPx)
 	}
-	if len(qrContent) == 0 {
+	if len(qrPayloads) == 0 {
+		qrPayloads = []string{createDescriptorQR(desc)}
+	}
+	qrPayloads = trimNonEmpty(qrPayloads)
+	if len(qrPayloads) == 0 {
 		return nil, fmt.Errorf("empty descriptor QR content")
 	}
 	var shMeta *shard.Share
-	if strings.HasPrefix(strings.ToUpper(qrContent), shard.Prefix) {
-		if sh, err := shard.Decode(strings.ToUpper(qrContent)); err == nil {
+	if len(qrPayloads) == 1 && strings.HasPrefix(strings.ToUpper(qrPayloads[0]), shard.Prefix) {
+		if sh, err := shard.Decode(strings.ToUpper(qrPayloads[0])); err == nil {
 			shMeta = &sh
 		}
 	}
-	qrCode, err := qr.Encode(qrContent, descriptorQRECC)
-	if err != nil {
-		return nil, err
+	if dualQRLayout {
+		guide := fmt.Sprintf("RECOVER: SCAN BOTH QRS FROM >=%d PLATES", desc.Threshold)
+		guideLines := wrapTextTracked(descriptorFace, dpi, guide, plateSizeMM-2*margin, descTrackPx)
+		gy := y + lineSpacing + 1.5
+		for i, line := range guideLines {
+			drawTrackedText(canvas, descriptorFace, dpi, margin, gy, line, descTrackPx)
+			if i < len(guideLines)-1 {
+				gy += lineSpacing
+			}
+		}
 	}
-
-	// Descriptor QR placement is explicit for easier layout tuning.
-	// Coordinates are top-left in mm; size includes safe zones.
-	const (
-		descriptorQRXMM         = 10.0
-		descriptorQRYMM         = 10.0
-		descriptorQRDefaultSize = 80.0
-	)
-	qrSize := descriptorQRDefaultSize
-	if descriptorQRSizeMM > 0 {
-		qrSize = descriptorQRSizeMM
+	// Descriptor QR placement with explicit support for one or two payloads.
+	const descriptorQRTopMM = 24.0
+	if len(qrPayloads) == 1 {
+		qrCode, err := qr.Encode(qrPayloads[0], descriptorQRECC)
+		if err != nil {
+			return nil, err
+		}
+		const (
+			descriptorQRXMM = 10.0
+			descriptorQRYMM = 10.0
+		)
+		qrSize := descriptorQRSizeMM
+		if qrSize <= 0 {
+			qrSize = 80.0
+		}
+		if qrSize < 5.0 {
+			qrSize = 5.0
+		}
+		qrX := descriptorQRXMM
+		qrY := descriptorQRYMM
+		// Clamp to plate bounds while keeping fixed-anchor semantics.
+		if qrX < 0 {
+			qrX = 0
+		}
+		if qrY < 0 {
+			qrY = 0
+		}
+		if qrX+qrSize > plateSizeMM {
+			qrX = plateSizeMM - qrSize
+		}
+		if qrY+qrSize > plateSizeMM {
+			qrY = plateSizeMM - qrSize
+		}
+		drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
+			QuietModules:      4,
+			Shape:             plateQRCircle,
+			KeepIslandsSquare: true,
+		})
+	} else if len(qrPayloads) == 2 {
+		qrL, err := qr.Encode(qrPayloads[0], descriptorQRECC)
+		if err != nil {
+			return nil, err
+		}
+		qrR, err := qr.Encode(qrPayloads[1], descriptorQRECC)
+		if err != nil {
+			return nil, err
+		}
+		usableH := plateSizeMM - descriptorQRTopMM
+		qrSize := math.Min(plateSizeMM/2, usableH)
+		const quietModules = 4
+		// Collapse the inter-QR quiet-zone from two full bands to one shared band.
+		// This increases each QR size while keeping a clear separator.
+		for i := 0; i < 8; i++ {
+			overlap := math.Min(quietZoneMM(qrL, qrSize, quietModules), quietZoneMM(qrR, qrSize, quietModules))
+			maxByWidth := (plateSizeMM + overlap) / 2
+			next := math.Min(maxByWidth, usableH)
+			if math.Abs(next-qrSize) < 0.001 {
+				break
+			}
+			qrSize = next
+		}
+		if qrSize < 5.0 {
+			qrSize = 5.0
+		}
+		overlap := math.Min(quietZoneMM(qrL, qrSize, quietModules), quietZoneMM(qrR, qrSize, quietModules))
+		leftX := 0.0
+		rightX := leftX + qrSize - overlap
+		qrY := plateSizeMM - qrSize
+		drawPlateQR(canvas, qrL, dpi, leftX, qrY, qrSize, blackIdx, plateQROptions{
+			QuietModules:      quietModules,
+			Shape:             plateQRCircle,
+			KeepIslandsSquare: true,
+		})
+		drawPlateQR(canvas, qrR, dpi, rightX, qrY, qrSize, blackIdx, plateQROptions{
+			QuietModules:      quietModules,
+			Shape:             plateQRCircle,
+			KeepIslandsSquare: true,
+		})
+	} else {
+		return nil, fmt.Errorf("unsupported descriptor QR payload count: %d", len(qrPayloads))
 	}
-	if qrSize < 5.0 {
-		qrSize = 5.0
+	// Single-QR descriptor layout keeps the historical vertical PATH label.
+	if !dualQRLayout {
+		_, pathRotH := rotatedTextSizeMMTracked(descriptorFace, dpi, pathText, descTrackPx)
+		pathX := margin
+		pathY := plateSizeMM - margin - pathRotH
+		if pathY < margin {
+			pathY = margin
+		}
+		drawTextRotatedCCW90Tracked(canvas, descriptorFace, dpi, pathX, pathY, pathText, blackIdx, descTrackPx)
 	}
-	qrX := descriptorQRXMM
-	qrY := descriptorQRYMM
-	// Clamp to plate bounds.
-	if qrX < 0 {
-		qrX = 0
-	}
-	if qrY < 0 {
-		qrY = 0
-	}
-	if qrX+qrSize > plateSizeMM {
-		qrX = plateSizeMM - qrSize
-	}
-	if qrY+qrSize > plateSizeMM {
-		qrY = plateSizeMM - qrSize
-	}
-	drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
-		QuietModules:      4,
-		Shape:             plateQRCircle,
-		KeepIslandsSquare: true,
-	})
-	// Left-side vertical derivation path: 3mm from left and bottom edges.
-	_, pathRotH := rotatedTextSizeMMTracked(descriptorFace, dpi, pathText, descTrackPx)
-	pathX := margin
-	pathY := plateSizeMM - margin - pathRotH
-	if pathY < margin {
-		pathY = margin
-	}
-	drawTextRotatedCCW90Tracked(canvas, descriptorFace, dpi, pathX, pathY, pathText, blackIdx, descTrackPx)
 	if shMeta != nil {
 		wid := strings.ToUpper(hex.EncodeToString(shMeta.WalletID[:4]))
 		sid := strings.ToUpper(hex.EncodeToString(shMeta.SetID[:4]))
 		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, shMeta.Index, shMeta.Threshold)
 		// Vertical WID/SET line: 3mm right of the QR safe-zone edge.
 		metaRotW, metaRotH := rotatedInkSizeMMTracked(descriptorFace, dpi, meta, descTrackPx)
-		metaX := qrX + qrSize + margin
+		metaX := plateSizeMM - margin - metaRotW
 		if metaX+metaRotW > plateSizeMM-margin {
 			metaX = plateSizeMM - margin - metaRotW
 		}
@@ -538,12 +606,15 @@ func descriptorNetworkTag(net *chaincfg.Params) string {
 	return "TEST"
 }
 
-func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]string, error) {
+func descriptorShardQRPayloadsForShare(desc *urtypes.OutputDescriptor, totalShares, keyIdx int) ([]string, error) {
 	if desc == nil {
 		return nil, fmt.Errorf("descriptor is nil")
 	}
 	if totalShares <= 0 {
 		return nil, fmt.Errorf("invalid share count: %d", totalShares)
+	}
+	if keyIdx < 0 || keyIdx >= totalShares {
+		return nil, fmt.Errorf("invalid key index: %d", keyIdx)
 	}
 	threshold := desc.Threshold
 	if threshold == 1 && totalShares == 1 {
@@ -556,9 +627,9 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 	if threshold < 2 || threshold > totalShares {
 		return nil, fmt.Errorf("invalid descriptor threshold %d for %d shares", threshold, totalShares)
 	}
-	if desc.Type == urtypes.SortedMulti && threshold >= 2 {
-		if shares, err := urxor2of3.SplitDescriptor(desc); err == nil {
-			return shares, nil
+	if desc.Type == urtypes.SortedMulti && threshold >= 2 && supportsURXORScheme(threshold, totalShares) {
+		if payloads, err := urxor2of3.SplitDescriptorForShare(desc, keyIdx); err == nil {
+			return payloads, nil
 		}
 	}
 	if threshold > math.MaxUint8 {
@@ -584,21 +655,56 @@ func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 	if err != nil {
 		return nil, fmt.Errorf("split descriptor payload: %w", err)
 	}
-	out := make([]string, len(shares))
 	for i, sh := range shares {
-		enc, err := shard.Encode(sh)
-		if err != nil {
-			return nil, fmt.Errorf("encode share %d: %w", i+1, err)
+		if int(sh.Index) == keyIdx+1 {
+			enc, err := shard.Encode(sh)
+			if err != nil {
+				return nil, fmt.Errorf("encode share %d: %w", i+1, err)
+			}
+			return []string{enc}, nil
 		}
-		out[i] = enc
+	}
+	return nil, fmt.Errorf("share %d not found", keyIdx+1)
+}
+
+func descriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]string, error) {
+	out := make([]string, totalShares)
+	for i := 0; i < totalShares; i++ {
+		payloads, err := descriptorShardQRPayloadsForShare(desc, totalShares, i)
+		if err != nil {
+			return nil, err
+		}
+		if len(payloads) != 1 {
+			return nil, fmt.Errorf("share %d has %d fragments (expected 1)", i+1, len(payloads))
+		}
+		out[i] = payloads[0]
 	}
 	return out, nil
+}
+
+func supportsURXORScheme(threshold, totalShares int) bool {
+	switch {
+	case totalShares-threshold <= 1:
+		return true
+	case totalShares == 4 && threshold == 2:
+		return true
+	case totalShares == 5 && threshold == 3:
+		return true
+	default:
+		return false
+	}
 }
 
 // DescriptorShardQRCodes returns descriptor QR payloads (or shard payloads) for each share.
 // This is exported for batched host-mode printing paths that need deterministic per-share payloads.
 func DescriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]string, error) {
 	return descriptorShardQRCodes(desc, totalShares)
+}
+
+// DescriptorShardQRPayloadsForShare returns one or more descriptor QR payloads for a
+// given share index. UR/XOR families such as 3-of-5 return two payloads.
+func DescriptorShardQRPayloadsForShare(desc *urtypes.OutputDescriptor, totalShares, keyIdx int) ([]string, error) {
+	return descriptorShardQRPayloadsForShare(desc, totalShares, keyIdx)
 }
 
 // SetDescriptorShardSetID forces the descriptor shard set_id used during plate
@@ -700,6 +806,27 @@ func clamp(v, lo, hi int) int {
 		return hi
 	}
 	return v
+}
+
+func trimNonEmpty(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+func quietZoneMM(code *qr.Code, qrSizeMM float64, quietModules int) float64 {
+	if quietModules <= 0 || code == nil || code.Size <= 0 || qrSizeMM <= 0 {
+		return 0
+	}
+	totalModules := float64(code.Size + 2*quietModules)
+	moduleMM := qrSizeMM / totalModules
+	return moduleMM * float64(quietModules)
 }
 
 func drawTrackedText(img *image.Paletted, face font.Face, dpi, xMm, yMm float64, text string, trackingPx float64) {

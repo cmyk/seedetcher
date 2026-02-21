@@ -54,7 +54,7 @@ func TestDescriptorShardQRCodes2of3UseURXORAndRecover(t *testing.T) {
 }
 
 func TestDescriptorShardQRCodesRespectForcedSetID(t *testing.T) {
-	cfg := testutils.WalletConfigs["multisig-3of5"]
+	cfg := testutils.WalletConfigs["multisig-7of10"]
 	_, desc, err := testutils.ParseWallet(cfg, "", "")
 	if err != nil {
 		t.Fatalf("parse wallet: %v", err)

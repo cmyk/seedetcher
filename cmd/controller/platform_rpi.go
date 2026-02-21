@@ -342,7 +342,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			descForHost.Threshold == 2 &&
 			len(descForHost.Keys) == 3 &&
 			totalShares == 3
-		var shardQRCodes []string
+		var shardQRPayloads [][]string
 		var err error
 		if descForHost != nil && len(descForHost.Keys) > 0 {
 			if isSinglesigDesc && singlesigWithDescriptorSide {
@@ -350,14 +350,18 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				if qrPayload == "" {
 					return fmt.Errorf("render: empty singlesig descriptor qr payload")
 				}
-				shardQRCodes = make([]string, totalShares)
-				for i := range shardQRCodes {
-					shardQRCodes[i] = qrPayload
+				shardQRPayloads = make([][]string, totalShares)
+				for i := range shardQRPayloads {
+					shardQRPayloads[i] = []string{qrPayload}
 				}
 			} else {
-				shardQRCodes, err = printer.DescriptorShardQRCodes(descForHost, totalShares)
-				if err != nil {
-					return fmt.Errorf("render: descriptor shard qrs: %w", err)
+				shardQRPayloads = make([][]string, totalShares)
+				for i := 0; i < totalShares; i++ {
+					descKeyIdx := i % len(descForHost.Keys)
+					shardQRPayloads[i], err = printer.DescriptorShardQRPayloadsForShare(descForHost, totalShares, descKeyIdx)
+					if err != nil {
+						return fmt.Errorf("render: descriptor shard qrs: %w", err)
+					}
 				}
 			}
 		}
@@ -417,8 +421,8 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				if compactSingleSided {
 					descKeyIdx := i % len(descForHost.Keys)
 					descQR := ""
-					if i < len(shardQRCodes) {
-						descQR = shardQRCodes[i]
+					if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
+						descQR = shardQRPayloads[i][0]
 					}
 					seedImg, err = printer.RenderCompact2of3PlateBitmap(m, descForHost, descKeyIdx, opts, descQR)
 					if err != nil {
@@ -435,11 +439,11 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				}
 				if descForHost != nil && !compactSingleSided {
 					descKeyIdx := i % len(descForHost.Keys)
-					descQR := ""
-					if i < len(shardQRCodes) {
-						descQR = shardQRCodes[i]
+					var descQRs []string
+					if i < len(shardQRPayloads) {
+						descQRs = shardQRPayloads[i]
 					}
-					descImg, err := printer.RenderDescriptorPlateBitmap(descForHost, descKeyIdx, i+1, totalShares, opts, descQR)
+					descImg, err := printer.RenderDescriptorPlateBitmap(descForHost, descKeyIdx, i+1, totalShares, opts, descQRs)
 					if err != nil {
 						return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
 					}
