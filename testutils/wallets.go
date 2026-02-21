@@ -94,6 +94,24 @@ var WalletConfigs = map[string]WalletConfig{
 		},
 		Descriptor: "wsh(sortedmulti(2,[8de74615/48h/1h/0h/2h]tpubDEGTwBTu9vFk2BrjkFJwB6rJzrQv1Kx4Gh48XqvEs8brQYJiEwyk8cExRZxyt4yX2AktEda37tF6PuVG2qrBqJ9txpniBvbWQrh6FjUSNxj/<0;1>/*,[f8cb7260/48h/1h/0h/2h]tpubDEtiTPBLv4XbofTgWQSfJpe2sh7YY9nXC4smGTwsZMrYQqfVVYa9vhnCMPMH12xxyrH7L7A8NaQ1GLX5T2HLTGbVYwRGmR7cGF6nFHfBUUa/<0;1>/*,[cc5e307c/48h/1h/0h/2h]tpubDF2CFuGD3Tr9xjPJQqfARBY7ACFZyx5P84HBvw6bJdr4MjHrBjky2BzKFRarjbB6VENW7CZn3X92eyeHcHoNG75tjMWJAxVepveXuF3hNod/<0;1>/*,[11544443/48h/1h/0h/2h]tpubDDzFJfPfv9tz2nCLQ7gViGF8zbC9yiyFHoGCgWZywHv3GVrqDZnrk4C5MZoyQE1q2yHfozPqRc4HiQ7zBDhHGQPs1XmhRVEVSzDZKWTuQt6/<0;1>/*))",
 	},
+	"multisig-2of2": {
+		Name: "multisig-2of2",
+		Mnemonics: []string{
+			"truly mouse crystal game narrow tent exclude silver bench price sail various cereal deny wife manual dish also trick refuse trial salute harvest fat",
+			"output wife day wrap office depend reduce mention lemon always proof body unit arrow wisdom clock because bar first decorate novel elbow curve split",
+		},
+		Descriptor: "wsh(sortedmulti(2,[3a40e049/48h/1h/0h/2h]tpubDEjEpeK6KLHjAQ5cKbxZncFjR6jXUqQfiLpDyKtpNJrJCsqj2LeiMjRUjwduWPUnSngsTjEs58WJX5rnMkLCMdKb8Eed3z32g5d99Nfi6Wz/<0;1>/*,[9b36c8e8/48h/1h/0h/2h]tpubDEWg8TmjbEhCdj3zbYytQrPtS141uPxN2m3msBJokZCDawHFvWG78mmithyEN92jez6588ATkBE2pkPNAct9MmPx94GahYqEa8Xq7j2eoPw/<0;1>/*))",
+	},
+	"multisig-3of4": {
+		Name: "multisig-3of4",
+		Mnemonics: []string{
+			"cat prefer album ancient injury video detect since place evidence cement ice sign avoid behind snake enrich view lab comfort twist bless opera luggage",
+			"sight wise ski enough clinic salon rocket around also sleep garment venue rain float practice erosion property panel bright ridge patrol bind arrest decline",
+			"reject bronze turn sniff solar scorpion hunt spatial soda animal kit cart horror divide fan bargain sport chronic canvas height odor mass edit phrase",
+			"giraffe sort priority fluid glove session sadness dolphin hockey piece plug work public slim provide payment dragon toddler clinic lecture blue wheat flight resemble",
+		},
+		Descriptor: "wsh(sortedmulti(3,[8de74615/48h/1h/0h/2h]tpubDEGTwBTu9vFk2BrjkFJwB6rJzrQv1Kx4Gh48XqvEs8brQYJiEwyk8cExRZxyt4yX2AktEda37tF6PuVG2qrBqJ9txpniBvbWQrh6FjUSNxj/<0;1>/*,[f8cb7260/48h/1h/0h/2h]tpubDEtiTPBLv4XbofTgWQSfJpe2sh7YY9nXC4smGTwsZMrYQqfVVYa9vhnCMPMH12xxyrH7L7A8NaQ1GLX5T2HLTGbVYwRGmR7cGF6nFHfBUUa/<0;1>/*,[cc5e307c/48h/1h/0h/2h]tpubDF2CFuGD3Tr9xjPJQqfARBY7ACFZyx5P84HBvw6bJdr4MjHrBjky2BzKFRarjbB6VENW7CZn3X92eyeHcHoNG75tjMWJAxVepveXuF3hNod/<0;1>/*,[11544443/48h/1h/0h/2h]tpubDDzFJfPfv9tz2nCLQ7gViGF8zbC9yiyFHoGCgWZywHv3GVrqDZnrk4C5MZoyQE1q2yHfozPqRc4HiQ7zBDhHGQPs1XmhRVEVSzDZKWTuQt6/<0;1>/*))",
+	},
 	"multisig-7of10": {
 		Name: "multisig-7of10",
 		Mnemonics: []string{
