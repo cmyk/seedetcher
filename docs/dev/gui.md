@@ -13,18 +13,28 @@ flowchart TD
     D[Descriptor input<br>Scan or Skip or Reuse<br>Validate descriptor and duplicates] --> M{Descriptor present}
     B --> D
     M -->|No singlesig| F1[Seed input confirm<br>1 of 1]
-    M -->|Yes multisig| F2
+    M -->|Yes descriptor scanned| F2
     F2[Seeds loop<br>Scan or manual per key<br>Confirm and no duplicates] --> G1[Confirm wallet<br>choose key index]
     G1 --> FP[Fingerprints review<br>All cosigner fingerprints<br>7 per page]
-    FP --> S2[Descriptor shares review<br>t/n summary]
-    S2 --> H2[Add wallet label]
-    H2 --> PS[Select paper size]
-    PS --> PO[Select print options<br>DPI, Invert, Mirror, Etch stats page<br>Compact 2/3 when eligible]
+    FP --> S2{Descriptor shares exist?}
+    S2 -->|Yes| S3[Descriptor shares review<br>t/n summary]
+    S2 -->|No| H2
+    S3 --> H2[Add wallet label]
+    H2 --> MODE{Wallet mode selector}
+    MODE -->|Singlesig descriptor| SM[Singlesig layout<br>Seed Only / Seed + Info / Seed + Descr QR]
+    MODE -->|2 of 3 multisig| CM[Compact 2/3<br>Off or On]
+    MODE -->|Other wallets| PS
+    SM --> PS[Select paper size]
+    CM --> PS
+    PS --> PO[Print settings<br>DPI, Invert, Mirror, Etch stats page]
     PO --> P2[Print flow with descriptor shares per plate]
     P2 --> A
 
-    F1 --> H3[Add wallet label]
-    H3 --> PO1[Select print options<br>DPI, Invert, Mirror, Etch stats page]
+    F1 --> FP1[Fingerprints review<br>single seed fingerprint]
+    FP1 --> H3[Add wallet label]
+    H3 --> SM1[Singlesig layout<br>Seed Only / Seed + Info / Seed + Descr QR]
+    SM1 --> PS1[Select paper size]
+    PS1 --> PO1[Print settings<br>DPI, Invert, Mirror, Etch stats page]
     PO1 --> P3[Print flow singlesig]
     P3 --> A
 
@@ -44,9 +54,13 @@ Notes:
 - Multisig backup uses sharded descriptor mode only since since v0.2.0-beta.1.
 - Singlesig backup stays non-sharded.
 - Backup review sequence for multisig is:
-  - `Confirm wallet` -> `Fingerprints` -> `Descriptor shares` -> `Wallet label` -> `Paper size` -> `Print options` -> `Print`.
+  - `Confirm wallet` -> `Fingerprints` -> optional `Descriptor shares` -> `Wallet label` -> wallet-mode selector (`Compact 2/3` when eligible, `Singlesig layout` for singlesig descriptor) -> `Paper size` -> print settings -> `Print`.
+- Backup review sequence for singlesig (descriptor skipped) is:
+  - `Seed input` -> `Fingerprints` -> `Wallet label` -> `Singlesig layout` -> `Paper size` -> print settings -> `Print`.
+  - Back from `Fingerprints` opens `Restart Process?`; decline returns to `Fingerprints`.
 - `Fingerprints` uses page navigation (left/right arrows) and keeps back/check nav buttons (`7` entries/page).
-- Print options screen exposes `DPI`, `Invert`, `Mirror`, and `Etch stats page`; `Compact 2/3` appears only for eligible `sortedmulti 2-of-3`.
+- In backup descriptor scan, UR/XOR 2-of-3 fragments show `x/2` capture progress (not `%`).
+- Print setup order is wallet-mode selector (if applicable) -> `Paper size` -> `DPI` -> `Invert` -> `Mirror` -> `Etch stats page`.
 - When `Etch stats page` is enabled, one additional stats page is appended after plate pages:
   - area/coverage table per printed plate side (`mm²` and `%`),
   - per-plate PSU current guide (`Set A masked` / `Set A unmasked`) using bench defaults.
