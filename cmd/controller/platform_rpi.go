@@ -290,9 +290,11 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 
 	var mnemonics []bip39.Mnemonic
 	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
+	singlesigWithDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithDescriptorQR
+	singlesigWithInfo := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithInfo
 	isSinglesigJob := desc == nil || isSinglesigDesc
 	descForHost := desc
-	if isSinglesigDesc {
+	if isSinglesigDesc && !singlesigWithDescriptorSide {
 		// Singlesig descriptor is seed-side metadata only; no descriptor-side plates.
 		descForHost = nil
 	}
@@ -328,7 +330,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	if p.supportsPCL {
 		// Host-mode PCL path: render and send in page-sized batches to reduce peak RAM.
 		totalShares := len(mnemonics)
-		if descForHost != nil && len(descForHost.Keys) > 0 {
+		if descForHost != nil && len(descForHost.Keys) > 0 && !isSinglesigDesc {
 			totalShares = len(descForHost.Keys)
 		}
 		if totalShares <= 0 {
@@ -340,12 +342,27 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			descForHost.Threshold == 2 &&
 			len(descForHost.Keys) == 3 &&
 			totalShares == 3
-		var shardQRCodes []string
+		var shardQRPayloads [][]string
 		var err error
 		if descForHost != nil && len(descForHost.Keys) > 0 {
-			shardQRCodes, err = printer.DescriptorShardQRCodes(descForHost, totalShares)
-			if err != nil {
-				return fmt.Errorf("render: descriptor shard qrs: %w", err)
+			if isSinglesigDesc && singlesigWithDescriptorSide {
+				qrPayload := printer.DescriptorQRPayload(descForHost)
+				if qrPayload == "" {
+					return fmt.Errorf("render: empty singlesig descriptor qr payload")
+				}
+				shardQRPayloads = make([][]string, totalShares)
+				for i := range shardQRPayloads {
+					shardQRPayloads[i] = []string{qrPayload}
+				}
+			} else {
+				shardQRPayloads = make([][]string, totalShares)
+				for i := 0; i < totalShares; i++ {
+					descKeyIdx := i % len(descForHost.Keys)
+					shardQRPayloads[i], err = printer.DescriptorShardQRPayloadsForShare(descForHost, totalShares, descKeyIdx)
+					if err != nil {
+						return fmt.Errorf("render: descriptor shard qrs: %w", err)
+					}
+				}
 			}
 		}
 		sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
@@ -393,15 +410,19 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				if isSinglesigJob {
 					seedShareNum, seedShareTotal = 1, 1
 				}
-				seedImg, err := printer.RenderSeedPlateBitmap(m, seedShareNum, seedShareTotal, opts)
+				seedDesc := (*urtypes.OutputDescriptor)(nil)
+				if singlesigWithInfo {
+					seedDesc = desc
+				}
+				seedImg, err := printer.RenderSeedPlateBitmapWithDescriptor(m, seedShareNum, seedShareTotal, seedDesc, opts)
 				if err != nil {
 					return fmt.Errorf("render: seed plate %d: %w", i+1, err)
 				}
 				if compactSingleSided {
 					descKeyIdx := i % len(descForHost.Keys)
 					descQR := ""
-					if i < len(shardQRCodes) {
-						descQR = shardQRCodes[i]
+					if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
+						descQR = shardQRPayloads[i][0]
 					}
 					seedImg, err = printer.RenderCompact2of3PlateBitmap(m, descForHost, descKeyIdx, opts, descQR)
 					if err != nil {
@@ -418,11 +439,11 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				}
 				if descForHost != nil && !compactSingleSided {
 					descKeyIdx := i % len(descForHost.Keys)
-					descQR := ""
-					if i < len(shardQRCodes) {
-						descQR = shardQRCodes[i]
+					var descQRs []string
+					if i < len(shardQRPayloads) {
+						descQRs = shardQRPayloads[i]
 					}
-					descImg, err := printer.RenderDescriptorPlateBitmap(descForHost, descKeyIdx, i+1, totalShares, opts, descQR)
+					descImg, err := printer.RenderDescriptorPlateBitmap(descForHost, descKeyIdx, i+1, totalShares, opts, descQRs)
 					if err != nil {
 						return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
 					}

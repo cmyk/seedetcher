@@ -13,6 +13,67 @@ import (
 	"seedetcher.com/bc/fountain"
 )
 
+type Data struct {
+	Data      []byte
+	Threshold int
+	Shards    int
+}
+
+// Split implements SeedHammer-style fragment assignments over UR fountain
+// fragments for selected m-of-n schemes.
+func Split(data Data, keyIdx int) (urs []string) {
+	var shares [][]int
+	var seqLen int
+	n, m := data.Shards, data.Threshold
+	switch {
+	case n-m <= 1:
+		// Optimal: 1 part per share, seqLen m.
+		seqLen = m
+		if keyIdx < m {
+			shares = [][]int{{keyIdx}}
+		} else {
+			all := make([]int, 0, m)
+			for i := range m {
+				all = append(all, i)
+			}
+			shares = [][]int{all}
+		}
+	case n == 4 && m == 2:
+		// Optimal, but 2 parts per share.
+		seqLen = m * 2
+		switch keyIdx {
+		case 0:
+			shares = [][]int{{0}, {1}}
+		case 1:
+			shares = [][]int{{2}, {3}}
+		case 2:
+			shares = [][]int{{0, 2}, {1, 3}}
+		case 3:
+			shares = [][]int{{0, 2, 1}, {1, 3, 2}}
+		}
+	case n == 5 && m == 3:
+		// Optimal, but 2 parts per share.
+		seqLen = m * 2
+		second := []int{
+			n,
+			(keyIdx + n - 1) % n,
+			(keyIdx + 1) % n,
+		}
+		shares = [][]int{{keyIdx}, second}
+	default:
+		// Fallback: full data per share.
+		seqLen = 1
+		shares = [][]int{{0}}
+	}
+	check := fountain.Checksum(data.Data)
+	for _, frag := range shares {
+		seqNum := fountain.SeqNumFor(seqLen, check, frag)
+		qr := strings.ToUpper(Encode("crypto-output", data.Data, seqNum, seqLen))
+		urs = append(urs, qr)
+	}
+	return
+}
+
 func Encode(_type string, message []byte, seqNum, seqLen int) string {
 	if seqLen == 1 {
 		return fmt.Sprintf("ur:%s/%s", _type, bytewords.Encode(message))

@@ -45,14 +45,14 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 
 	fpText := strings.ToUpper(fmt.Sprintf("%08x", desc.Keys[keyIdx].MasterFingerprint))
 	topBaselineY := topMarginMM + capBaselineOffsetMM(metaFace, dpi)
-	drawTrackedText(canvas, metaFace, dpi, topLeftXMM, topBaselineY, fpText, metaTrackPx)
+	DrawMetaLine(canvas, dpi, topLeftXMM, topBaselineY, metaFace, metaTrackPx, fpText)
 	label := strings.ToUpper(walletLabel())
 	labelW := trackedTextWidthMM(metaFace, dpi, label, metaTrackPx)
-	drawTrackedText(canvas, metaFace, dpi, topRightRightMM-labelW, topBaselineY, label, metaTrackPx)
+	DrawMetaLine(canvas, dpi, topRightRightMM-labelW, topBaselineY, metaFace, metaTrackPx, label)
 
 	path := strings.ToUpper(derivationPathForKey(desc.Keys[keyIdx], desc.Script))
-	leftMeta := fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[keyIdx].Network))
-	drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, leftPathXMM, topMarginMM, leftMeta, blackIdx, metaTrackPx)
+	leftMeta := fmt.Sprintf("%s/%s/NET:%s", path, desc.Script.Tag(), descriptorNetworkTag(desc.Keys[keyIdx].Network))
+	DrawRotatedLabel(canvas, dpi, leftPathXMM, topMarginMM, metaFace, metaTrackPx, blackIdx, leftMeta)
 
 	nm := fmt.Sprintf("%d/%d(%d/%d)", keyIdx+1, len(desc.Keys), desc.Threshold, len(desc.Keys))
 	_, nmRotH := rotatedTextSizeMM(metaFace, dpi, nm)
@@ -60,7 +60,7 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	if nmY < topMarginMM {
 		nmY = topMarginMM
 	}
-	drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, leftPathXMM, nmY, nm, blackIdx, metaTrackPxNm)
+	DrawRotatedLabel(canvas, dpi, leftPathXMM, nmY, metaFace, metaTrackPxNm, blackIdx, nm)
 
 	descQRX := plateSizeMM - qrPairRightMarginMM - descQRSizeMM + 3
 	descQRY := plateSizeMM - descQRSizeMM
@@ -114,15 +114,19 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	warnLeadingMM := 9.7 * 25.4 / 72.0
 	descrX := 18.0
 	descrBaselineY := 47.0 + capBaselineOffsetMM(warnFace, dpi)
-	drawTrackedText(canvas, warnFace, dpi, descrX, descrBaselineY, "DESCR→", warnTrackPx)
+	DrawMetaLine(canvas, dpi, descrX, descrBaselineY, warnFace, warnTrackPx, "DESCR→")
 
 	warnX := 9.0
-	warnBaselineY := 50 + capBaselineOffsetMM(warnFace, dpi)
-	warnLines := []string{"↑", "NEVER SCAN", "WITH ONLINE", "DEVICE↓"}
-	for _, line := range warnLines {
-		drawTrackedText(canvas, warnFace, dpi, warnX, warnBaselineY, line, warnTrackPx)
-		warnBaselineY += warnLeadingMM
-	}
+	warnBaselineY := 50.0 + capBaselineOffsetMM(warnFace, dpi)
+	_ = DrawTextBlock(canvas, dpi, TextBlock{
+		Face:      warnFace,
+		Tracking:  warnTrackPx,
+		LeadingMM: warnLeadingMM,
+		WidthMM:   24.0,
+		Align:     TextAlignStart,
+		OriginXMM: warnX,
+		OriginYMM: warnBaselineY,
+	}, "↑\nNEVER SCAN\nWITH ONLINE\nDEVICE↓")
 
 	seedPayload := seedqr.QR(mnemonic)
 	if len(seedPayload) > 0 {

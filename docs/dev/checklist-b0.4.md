@@ -1,11 +1,12 @@
 # SeedEtcher b0.4 Checklist
 
 ## Goal
-- Deliver a standalone, cross-platform, offline recovery tool for descriptor shares (`SE1:`), suitable for inheritance and break-glass recovery without Pi hardware.
+- Deliver a standalone, cross-platform, offline recovery tool focused on descriptor-share compatibility and inheritance/break-glass workflows without Pi hardware.
 
 ## Scope
 - In scope:
-  - Host CLI to recover descriptor payload from `SE1:` shares.
+  - Host CLI to recover descriptor payload from legacy `SE1:` shares (migration support).
+  - Host CLI decode support for UR/XOR descriptor-share inputs used in b0.3 release flow.
   - Cross-platform builds (macOS, Linux, Windows).
   - Offline-first docs and reproducible release artifacts.
 - Out of scope:
@@ -50,7 +51,7 @@
   - [ ] offline usage workflow
   - [ ] sample commands
   - [ ] inheritance/break-glass instructions
-  - [ ] compatibility limits (`SE1:` is SeedEtcher-native)
+  - [ ] compatibility limits (legacy `SE1:` is SeedEtcher-native; UR/XOR follows interoperable wallet share formats)
 - [ ] Update top-level docs index to link b0.4 checklist and recovery CLI doc.
 
 ### 5) Stretch goals (if time allows)

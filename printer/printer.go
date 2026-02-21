@@ -286,6 +286,12 @@ func createDescriptorQR(desc *urtypes.OutputDescriptor) string {
 	return ur.Encode("crypto-output", normalized.Encode(), 1, 1)
 }
 
+// DescriptorQRPayload returns the canonical descriptor QR payload for a full
+// descriptor (single-part UR:crypto-output).
+func DescriptorQRPayload(desc *urtypes.OutputDescriptor) string {
+	return createDescriptorQR(desc)
+}
+
 func derivationPathForKey(key urtypes.KeyDescriptor, script urtypes.Script) string {
 	normalize := func(path string) string {
 		path = strings.ReplaceAll(path, "H", "'")

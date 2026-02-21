@@ -70,6 +70,7 @@ type BackupFlowScreen struct {
 	confirmKeyIdx int
 	printDesc     *urtypes.OutputDescriptor
 	label         string
+	printSeedMFP  uint32
 	shardSetID    [16]byte
 	shardShares   []shard.Share
 }
@@ -106,18 +107,19 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 				if desc == nil {
 					s.totalSeeds = 1
 					s.stage = stageSeeds
+				} else {
+					s.totalSeeds = len(desc.Keys)
+					if setID, ok := deriveShardSetID(desc); ok {
+						s.shardSetID = setID
 					} else {
-						s.totalSeeds = len(desc.Keys)
-						if setID, ok := deriveShardSetID(desc); ok {
-							s.shardSetID = setID
-						} else {
-							s.shardSetID = [16]byte{}
-						}
-						s.shardShares = buildShardShares(desc, s.shardSetID)
-						s.stage = stageSeeds
+						s.shardSetID = [16]byte{}
 					}
+					s.shardShares = buildShardShares(desc, s.shardSetID)
+					s.stage = stageSeeds
+				}
 				s.currentSeed = 1
 				s.printMnemonic = nil
+				s.printSeedMFP = 0
 				return s
 			},
 		}
@@ -146,8 +148,9 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 				ctx.Keystores[mfp] = mnemonic
 				if s.desc == nil {
 					s.printMnemonic = mnemonic
+					s.printSeedMFP = mfp
 					s.confirmKeyIdx = 0
-					s.stage = stageLabel
+					s.stage = stageFingerprints
 					return s
 				}
 				if len(ctx.Keystores) >= s.totalSeeds {
@@ -190,18 +193,49 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			},
 		}
 	case stageFingerprints:
-		if s.desc == nil {
+		var fpDesc *urtypes.OutputDescriptor
+		if s.desc != nil {
+			fpDesc = s.desc
+		} else if s.printSeedMFP != 0 {
+			tmp := &urtypes.OutputDescriptor{
+				Type:      urtypes.Singlesig,
+				Threshold: 1,
+				Keys: []urtypes.KeyDescriptor{
+					{MasterFingerprint: s.printSeedMFP},
+				},
+			}
+			fpDesc = tmp
+		}
+		if fpDesc == nil {
 			s.stage = stageLabel
 			return s
 		}
 		return &FingerprintsScreen{
 			Theme:      th,
-			Descriptor: s.desc,
+			Descriptor: fpDesc,
 			OnBack: func() Screen {
+				if s.desc == nil {
+					if maybeRestart(ctx, ops, th, func() {
+						ctx.LastDescriptor = nil
+						ctx.Keystores = make(map[uint32]bip39.Mnemonic)
+						s.desc = nil
+						s.label = printer.DefaultWalletLabel
+						s.printSeedMFP = 0
+						s.stage = stageDescriptor
+					}) {
+						return s
+					}
+					s.stage = stageFingerprints
+					return s
+				}
 				s.stage = stageConfirm
 				return s
 			},
 			OnContinue: func() Screen {
+				if s.desc == nil {
+					s.stage = stageLabel
+					return s
+				}
 				s.stage = stageShardInfo
 				return s
 			},
@@ -229,10 +263,10 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			Default: printer.DefaultWalletLabel,
 			Value:   s.label,
 			OnCancel: func() Screen {
-				if s.desc != nil {
+				if s.desc != nil && len(s.shardShares) > 0 {
 					s.stage = stageShardInfo
 				} else {
-					s.stage = stageSeeds
+					s.stage = stageFingerprints
 				}
 				return s
 			},
@@ -269,7 +303,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			},
 			OnRetry: func() Screen {
 				printer.SetDescriptorShardSetID(nil)
-				s.stage = stageConfirm
+				s.stage = stageLabel
 				return s
 			},
 		}
