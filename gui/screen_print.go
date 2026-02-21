@@ -28,21 +28,51 @@ type printOptions struct {
 	Singlesig   printer.SinglesigLayoutMode
 }
 
+type printSetupState struct {
+	PaperChoice     int
+	SinglesigChoice int
+	DPIChoice       int
+	InvertChoice    int
+	MirrorChoice    int
+	StatsChoice     int
+	CompactChoice   int
+}
+
+var lastPrintSetupState = printSetupState{
+	PaperChoice:     0,
+	SinglesigChoice: 1,
+	DPIChoice:       0,
+	InvertChoice:    0,
+	MirrorChoice:    0,
+	StatsChoice:     0,
+	CompactChoice:   0,
+}
+
+func loadPrintSetupState() printSetupState {
+	return lastPrintSetupState
+}
+
+func savePrintSetupState(s printSetupState) {
+	lastPrintSetupState = s
+}
+
 func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, label string) bool {
 	if label == "" {
 		label = printer.DefaultWalletLabel
 	}
 	printer.SetWalletLabel(label)
 	inp := &s.inp
-	paperChoice := &ChoiceScreen{
-		Title:   "Select Paper Size",
-		Lead:    "Choose paper size",
-		Choices: []string{"A4", "Letter"},
+	state := loadPrintSetupState()
+	setupSteps := make([]string, 0, 7)
+	if isSinglesigDescriptor(desc) {
+		setupSteps = append(setupSteps, "singlesig")
 	}
-	choice, ok := paperChoice.Choose(ctx, ops, th)
-	if !ok {
-		return false
+	if isCompact2of3Eligible(desc) {
+		setupSteps = append(setupSteps, "compact")
 	}
+	setupSteps = append(setupSteps, "paper", "dpi", "invert", "mirror", "stats")
+	stepIdx := 0
+
 	updatePrinterStatus := func() {
 		if ctx != nil {
 			connected, model := ctx.Platform.PrinterStatus()
@@ -52,15 +82,106 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			}
 		}
 	}
-	selectedPaper := printer.PaperA4
-	if choice == 1 {
-		selectedPaper = printer.PaperLetter
+	chooseWithInitial := func(title, lead string, choices []string, initial int) (int, bool) {
+		cs := &ChoiceScreen{
+			Title:   title,
+			Lead:    lead,
+			Choices: choices,
+			choice:  initial,
+		}
+		return cs.Choose(ctx, ops, th)
 	}
-	opts, ok := choosePrintOptions(ctx, ops, th, desc)
-	if !ok {
-		return false
-	}
+
+	inSetup := true
 	for {
+		if inSetup {
+			step := setupSteps[stepIdx]
+			var ok bool
+			switch step {
+			case "paper":
+				var next int
+				next, ok = chooseWithInitial("Select Paper Size", "Choose paper size", []string{"A4", "Letter"}, state.PaperChoice)
+				if ok {
+					state.PaperChoice = next
+				}
+			case "singlesig":
+				var next int
+				next, ok = chooseSinglesigLayoutOption(ctx, ops, th, state.SinglesigChoice)
+				if ok {
+					state.SinglesigChoice = next
+				}
+			case "dpi":
+				var next int
+				next, ok = chooseWithInitial("Print DPI", "Choose print resolution", []string{"1200", "600"}, state.DPIChoice)
+				if ok {
+					state.DPIChoice = next
+				}
+			case "invert":
+				var next int
+				next, ok = chooseWithInitial("Invert", "Invert plate output?", []string{"On", "Off"}, state.InvertChoice)
+				if ok {
+					state.InvertChoice = next
+				}
+			case "mirror":
+				var next int
+				next, ok = chooseWithInitial("Mirror", "Mirror plate output?", []string{"On", "Off"}, state.MirrorChoice)
+				if ok {
+					state.MirrorChoice = next
+				}
+			case "stats":
+				var next int
+				next, ok = chooseWithInitial("Etch Stats Page", "Append etch stats page?", []string{"Off", "On"}, state.StatsChoice)
+				if ok {
+					state.StatsChoice = next
+				}
+			case "compact":
+				var next int
+				next, ok = chooseWithInitial("Compact 2/3", "Use compact single-sided\n2-of-3 layout?", []string{"Off", "On"}, state.CompactChoice)
+				if ok {
+					state.CompactChoice = next
+				}
+			default:
+				ok = true
+			}
+			if !ok {
+				if stepIdx == 0 {
+					return false
+				}
+				stepIdx--
+				continue
+			}
+			if stepIdx < len(setupSteps)-1 {
+				savePrintSetupState(state)
+				stepIdx++
+				continue
+			}
+			savePrintSetupState(state)
+			inSetup = false
+			continue
+		}
+
+		selectedPaper := printer.PaperA4
+		if state.PaperChoice == 1 {
+			selectedPaper = printer.PaperLetter
+		}
+		opts := printOptions{
+			DPI:         1200,
+			Invert:      state.InvertChoice == 0,
+			Mirror:      state.MirrorChoice == 0,
+			EtchStats:   state.StatsChoice == 1,
+			Compact2of3: state.CompactChoice == 1,
+			Singlesig:   printer.SinglesigLayoutSeedWithInfo,
+		}
+		if state.DPIChoice == 1 {
+			opts.DPI = 600
+		}
+		switch state.SinglesigChoice {
+		case 0:
+			opts.Singlesig = printer.SinglesigLayoutSeedOnly
+		case 2:
+			opts.Singlesig = printer.SinglesigLayoutSeedWithDescriptorQR
+		}
+
 		updatePrinterStatus()
 		for {
 			e, ok := inp.Next(ctx, Button1, Button3)
@@ -70,7 +191,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			switch e.Button {
 			case Button1:
 				if inp.Clicked(e.Button) {
-					return false
+					inSetup = true
+					stepIdx = len(setupSteps) - 1
+					break
 				}
 			case Button3:
 				if inp.Clicked(e.Button) {
@@ -89,6 +212,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 					return true
 				}
 			}
+		}
+		if inSetup {
+			continue
 		}
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
@@ -114,37 +240,38 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		if showSinglesigLine {
 			lead += fmt.Sprintf("\nSinglesig layout: %s", singlesigLayoutLabel(opts.Singlesig))
 		}
+		walletShares := 1
 		if desc != nil {
-			lead = fmt.Sprintf("%s\nPaper:%s @%d dpi\nInvert: %s, Mirror: %s\nEtch stats page: %s", status, selectedPaper, opts.DPI, onOff(opts.Invert), onOff(opts.Mirror), onOff(opts.EtchStats))
-			if showCompactLine {
-				lead += fmt.Sprintf("\nCompact 2/3: %s", onOff(opts.Compact2of3))
-			}
-			if showSinglesigLine {
-				lead += fmt.Sprintf("\nSinglesig layout: %s", singlesigLayoutLabel(opts.Singlesig))
-			}
-			walletShares := len(desc.Keys)
-			maxSlotsPerPage := 6
-			if selectedPaper == printer.PaperLetter {
-				maxSlotsPerPage = 4
-			}
-			slotsPerShare := 2
-			if showCompactLine && opts.Compact2of3 {
-				slotsPerShare = 1
-			}
-			if showSinglesigLine && opts.Singlesig != printer.SinglesigLayoutSeedWithDescriptorQR {
-				slotsPerShare = 1
-			}
-			sharesPerPage := maxSlotsPerPage / slotsPerShare
-			if sharesPerPage < 1 {
-				sharesPerPage = 1
-			}
-			totalPages := (walletShares + sharesPerPage - 1) / sharesPerPage
-			statsSuffix := ""
-			if opts.EtchStats {
-				statsSuffix = " (+1)"
-			}
-			lead += fmt.Sprintf("\n\nPrinting %d wallet shares\nTotal pages: %d%s", walletShares, totalPages, statsSuffix)
+			walletShares = len(desc.Keys)
 		}
+		maxSlotsPerPage := 6
+		if selectedPaper == printer.PaperLetter {
+			maxSlotsPerPage = 4
+		}
+		slotsPerShare := 2
+		if desc == nil {
+			slotsPerShare = 1
+		}
+		if showCompactLine && opts.Compact2of3 {
+			slotsPerShare = 1
+		}
+		if showSinglesigLine && opts.Singlesig != printer.SinglesigLayoutSeedWithDescriptorQR {
+			slotsPerShare = 1
+		}
+		sharesPerPage := maxSlotsPerPage / slotsPerShare
+		if sharesPerPage < 1 {
+			sharesPerPage = 1
+		}
+		totalPages := (walletShares + sharesPerPage - 1) / sharesPerPage
+		statsSuffix := ""
+		if opts.EtchStats {
+			statsSuffix = " (+1)"
+		}
+		jobLabel := "seed shares"
+		if desc != nil {
+			jobLabel = "wallet shares"
+		}
+		lead += fmt.Sprintf("\n\nPrinting %d %s\nTotal pages: %d%s", walletShares, jobLabel, totalPages, statsSuffix)
 		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, lead)
 		layoutNavigation(ctx, inp, ops, th, dims, []NavButton{
 			{Button: Button1, Style: StyleSecondary, Icon: assets.IconBack},
@@ -154,89 +281,12 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	}
 }
 
-func choosePrintOptions(ctx *Context, ops op.Ctx, th *Colors, desc *urtypes.OutputDescriptor) (printOptions, bool) {
-	out := printOptions{
-		DPI:         1200,
-		Invert:      true,
-		Mirror:      true,
-		EtchStats:   false,
-		Compact2of3: false,
-		Singlesig:   printer.SinglesigLayoutSeedWithInfo,
-	}
-	if isSinglesigDescriptor(desc) {
-		choice, ok := chooseSinglesigLayoutOption(ctx, ops, th)
-		if !ok {
-			return out, false
-		}
-		switch choice {
-		case 0:
-			out.Singlesig = printer.SinglesigLayoutSeedOnly
-		case 1:
-			out.Singlesig = printer.SinglesigLayoutSeedWithInfo
-		case 2:
-			out.Singlesig = printer.SinglesigLayoutSeedWithDescriptorQR
-		}
-	}
-	dpiChoice := &ChoiceScreen{
-		Title:   "Print DPI",
-		Lead:    "Choose print resolution",
-		Choices: []string{"1200", "600"},
-	}
-	choice, ok := dpiChoice.Choose(ctx, ops, th)
-	if !ok {
-		return out, false
-	}
-	if choice == 1 {
-		out.DPI = 600
-	}
-	invertChoice := &ChoiceScreen{
-		Title:   "Invert",
-		Lead:    "Invert plate output?",
-		Choices: []string{"On", "Off"},
-	}
-	choice, ok = invertChoice.Choose(ctx, ops, th)
-	if !ok {
-		return out, false
-	}
-	out.Invert = choice == 0
-	mirrorChoice := &ChoiceScreen{
-		Title:   "Mirror",
-		Lead:    "Mirror plate output?",
-		Choices: []string{"On", "Off"},
-	}
-	choice, ok = mirrorChoice.Choose(ctx, ops, th)
-	if !ok {
-		return out, false
-	}
-	out.Mirror = choice == 0
-	statsChoice := &ChoiceScreen{
-		Title:   "Etch Stats Page",
-		Lead:    "Append etch stats page?",
-		Choices: []string{"Off", "On"},
-	}
-	choice, ok = statsChoice.Choose(ctx, ops, th)
-	if !ok {
-		return out, false
-	}
-	out.EtchStats = choice == 1
-	if isCompact2of3Eligible(desc) {
-		compactChoice := &ChoiceScreen{
-			Title:   "Compact 2/3",
-			Lead:    "Use compact single-sided\n2-of-3 layout?",
-			Choices: []string{"Off", "On"},
-		}
-		choice, ok = compactChoice.Choose(ctx, ops, th)
-		if !ok {
-			return out, false
-		}
-		out.Compact2of3 = choice == 1
-	}
-	return out, true
-}
-
-func chooseSinglesigLayoutOption(ctx *Context, ops op.Ctx, th *Colors) (int, bool) {
+func chooseSinglesigLayoutOption(ctx *Context, ops op.Ctx, th *Colors, initialChoice int) (int, bool) {
 	inp := new(InputTracker)
-	choice := 1
+	choice := initialChoice
+	if choice < 0 || choice > 2 {
+		choice = 1
+	}
 	labels := []string{
 		"Seed Only",
 		"Seed + Info",
