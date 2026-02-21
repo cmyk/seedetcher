@@ -51,6 +51,9 @@ type plateQROptions struct {
 	QuietModules      int
 	Shape             plateQRShape
 	KeepIslandsSquare bool
+	// PatternCornerRadiusRatio rounds structural QR modules (finder/alignment)
+	// as a fraction of module size. 0 keeps sharp corners; max useful is 0.5.
+	PatternCornerRadiusRatio float64
 }
 
 const (
@@ -59,6 +62,9 @@ const (
 	// Relative circle diameter for non-island QR modules on plate render.
 	// 1.0 fills the whole module cell, smaller values leave more white margin.
 	plateQRDotScale = 0.7
+	// Default structural-module corner radius ratio (code-only switch).
+	// Keep at 0.0 for current sharp-corner behavior.
+	plateQRPatternCornerRadiusRatio = 0.5
 )
 
 var (
