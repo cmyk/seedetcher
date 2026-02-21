@@ -1,7 +1,6 @@
 package printer
 
 import (
-	"encoding/hex"
 	"fmt"
 	"image"
 	"image/color"
@@ -21,7 +20,6 @@ import (
 	"golang.org/x/image/math/fixed"
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/bip39"
-	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/seedqr"
 	"seedetcher.com/version"
 )
@@ -374,193 +372,6 @@ func renderSeedPlateBitmapWithLayout(mnemonic bip39.Mnemonic, shareNum, totalSha
 		drawTextRotatedCCW90Tracked(canvas, metaFace, dpi, metaX, metaY, meta, blackIdx, metaTrackPx)
 	}
 
-	if opts.Invert {
-		invertInterior(canvas, border)
-	}
-	applyPostProcess(canvas, opts)
-	return canvas, nil
-}
-
-// RenderDescriptorPlateBitmap mirrors the descriptor PDF layout at 600dpi as a 1-bit paletted image.
-func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNum, totalShares int, opts RasterOptions, qrPayloads []string) (*image.Paletted, error) {
-	if desc == nil {
-		return nil, fmt.Errorf("descriptor is nil")
-	}
-	dpi := opts.dpi()
-	canvas := newPlateCanvas(dpi)
-	blackIdx := uint8(1)
-
-	border := mmToPx(borderWidthMM, dpi)
-	if border < 1 {
-		border = 1
-	}
-	strokeRect(canvas, 0, 0, canvas.Bounds().Dx(), canvas.Bounds().Dy(), border, blackIdx)
-
-	descriptorFace := loadFace(11, dpi)
-	pathStr := derivationPathForKey(desc.Keys[keyIdx], desc.Script)
-	pathText := fmt.Sprintf("PATH:%s", pathStr)
-	descTrackPx := 0.04 * 11.0 * dpi / 72.0 // Affinity tracking as percent of em
-
-	key := desc.Keys[keyIdx]
-	allText := fmt.Sprintf("TYPE:%s/SCRIPT:%s/NET:%s/THRESHOLD:%d/KEYS:%d/KEY:%d",
-		descriptorTypeTag(desc.Type), descriptorScriptTag(desc.Script), descriptorNetworkTag(key.Network), desc.Threshold, len(desc.Keys), keyIdx+1)
-
-	margin := descriptorSingleQRLayout.MarginMM
-	ascentMM := capBaselineOffsetMM(descriptorFace, dpi)
-	lines := wrapTextTracked(descriptorFace, dpi, allText, plateSizeMM-2*margin, descTrackPx)
-	lineSpacing := descriptorSingleQRLayout.LineGapMM
-	y := margin + ascentMM
-	tb := TextBlock{
-		Face:      descriptorFace,
-		Tracking:  descTrackPx,
-		LeadingMM: lineSpacing,
-		WidthMM:   plateSizeMM - 2*margin,
-		Align:     TextAlignStart,
-		OriginXMM: margin,
-		OriginYMM: y,
-	}
-	res := DrawTextBlock(canvas, dpi, tb, strings.Join(lines, "\n"))
-	y = res.NextBaselineYMM - lineSpacing
-	dualQRLayout := len(qrPayloads) == 2
-	// Keep PATH in the top text block only for dual-QR descriptor layouts.
-	if dualQRLayout {
-		y += descriptorSingleQRLayout.PathGapMM
-		DrawMetaLine(canvas, dpi, margin, y, descriptorFace, descTrackPx, pathText)
-	}
-	if len(qrPayloads) == 0 {
-		qrPayloads = []string{createDescriptorQR(desc)}
-	}
-	qrPayloads = trimNonEmpty(qrPayloads)
-	if len(qrPayloads) == 0 {
-		return nil, fmt.Errorf("empty descriptor QR content")
-	}
-	var shMeta *shard.Share
-	if len(qrPayloads) == 1 && strings.HasPrefix(strings.ToUpper(qrPayloads[0]), shard.Prefix) {
-		if sh, err := shard.Decode(strings.ToUpper(qrPayloads[0])); err == nil {
-			shMeta = &sh
-		}
-	}
-	if dualQRLayout {
-		guide := fmt.Sprintf("RECOVER: SCAN BOTH QRS FROM >=%d PLATES", desc.Threshold)
-		gy := y + lineSpacing + descriptorDualQRLayout.GuideGapMM
-		_ = DrawTextBlock(canvas, dpi, TextBlock{
-			Face:      descriptorFace,
-			Tracking:  descTrackPx,
-			LeadingMM: descriptorDualQRLayout.LineGapMM,
-			WidthMM:   plateSizeMM - 2*margin,
-			Align:     TextAlignStart,
-			OriginXMM: margin,
-			OriginYMM: gy,
-		}, guide)
-	}
-	// Descriptor QR placement with explicit support for one or two payloads.
-	if len(qrPayloads) == 1 {
-		qrCode, err := qr.Encode(qrPayloads[0], descriptorQRECC)
-		if err != nil {
-			return nil, err
-		}
-		qrSize := descriptorQRSizeMM
-		if qrSize <= 0 {
-			qrSize = descriptorSingleQRLayout.DefaultSize
-		}
-		if qrSize < 5.0 {
-			qrSize = 5.0
-		}
-		qrX := descriptorSingleQRLayout.QRXMM
-		qrY := descriptorSingleQRLayout.QRYMM
-		// Clamp to plate bounds while keeping fixed-anchor semantics.
-		if qrX < 0 {
-			qrX = 0
-		}
-		if qrY < 0 {
-			qrY = 0
-		}
-		if qrX+qrSize > plateSizeMM {
-			qrX = plateSizeMM - qrSize
-		}
-		if qrY+qrSize > plateSizeMM {
-			qrY = plateSizeMM - qrSize
-		}
-		drawPlateQR(canvas, qrCode, dpi, qrX, qrY, qrSize, blackIdx, plateQROptions{
-			QuietModules:      4,
-			Shape:             plateQRCircle,
-			KeepIslandsSquare: true,
-		})
-	} else if len(qrPayloads) == 2 {
-		qrL, err := qr.Encode(qrPayloads[0], descriptorQRECC)
-		if err != nil {
-			return nil, err
-		}
-		qrR, err := qr.Encode(qrPayloads[1], descriptorQRECC)
-		if err != nil {
-			return nil, err
-		}
-		usableH := plateSizeMM - descriptorDualQRLayout.QRTopLimitMM
-		qrSize := math.Min(plateSizeMM/2, usableH)
-		quietModules := descriptorDualQRLayout.QuietModules
-		// Collapse the inter-QR quiet-zone from two full bands to one shared band.
-		// This increases each QR size while keeping a clear separator.
-		for i := 0; i < descriptorDualQRLayout.OverlapIters; i++ {
-			overlap := math.Min(quietZoneMM(qrL, qrSize, quietModules), quietZoneMM(qrR, qrSize, quietModules))
-			maxByWidth := (plateSizeMM + overlap) / 2
-			next := math.Min(maxByWidth, usableH)
-			if math.Abs(next-qrSize) < descriptorDualQRLayout.OverlapEpsilon {
-				break
-			}
-			qrSize = next
-		}
-		if qrSize < 5.0 {
-			qrSize = 5.0
-		}
-		overlap := math.Min(quietZoneMM(qrL, qrSize, quietModules), quietZoneMM(qrR, qrSize, quietModules))
-		leftX := 0.0
-		rightX := leftX + qrSize - overlap
-		qrY := plateSizeMM - qrSize
-		drawPlateQR(canvas, qrL, dpi, leftX, qrY, qrSize, blackIdx, plateQROptions{
-			QuietModules:      quietModules,
-			Shape:             plateQRCircle,
-			KeepIslandsSquare: true,
-		})
-		drawPlateQR(canvas, qrR, dpi, rightX, qrY, qrSize, blackIdx, plateQROptions{
-			QuietModules:      quietModules,
-			Shape:             plateQRCircle,
-			KeepIslandsSquare: true,
-		})
-	} else {
-		return nil, fmt.Errorf("unsupported descriptor QR payload count: %d", len(qrPayloads))
-	}
-	// Single-QR descriptor layout keeps the historical vertical PATH label.
-	if !dualQRLayout {
-		_, pathRotH := rotatedTextSizeMMTracked(descriptorFace, dpi, pathText, descTrackPx)
-		pathX := margin
-		pathY := plateSizeMM - margin - pathRotH
-		if pathY < margin {
-			pathY = margin
-		}
-		DrawRotatedLabel(canvas, dpi, pathX, pathY, descriptorFace, descTrackPx, blackIdx, pathText)
-	}
-	if shMeta != nil {
-		wid := strings.ToUpper(hex.EncodeToString(shMeta.WalletID[:4]))
-		sid := strings.ToUpper(hex.EncodeToString(shMeta.SetID[:4]))
-		meta := fmt.Sprintf("WID:%s SET:%s %d/%d", wid, sid, shMeta.Index, shMeta.Threshold)
-		// Vertical WID/SET line: 3mm right of the QR safe-zone edge.
-		metaRotW, metaRotH := rotatedInkSizeMMTracked(descriptorFace, dpi, meta, descTrackPx)
-		metaX := plateSizeMM - margin - metaRotW
-		if metaX+metaRotW > plateSizeMM-margin {
-			metaX = plateSizeMM - margin - metaRotW
-		}
-		if metaX < margin {
-			metaX = margin
-		}
-		metaY := plateSizeMM - margin - metaRotH
-		if metaY < margin {
-			metaY = margin
-		}
-		if metaY+metaRotH > plateSizeMM-margin {
-			metaY = plateSizeMM - margin - metaRotH
-		}
-		DrawRotatedLabel(canvas, dpi, metaX, metaY, descriptorFace, descTrackPx, blackIdx, meta)
-	}
 	if opts.Invert {
 		invertInterior(canvas, border)
 	}
