@@ -51,7 +51,7 @@ func renderCompact2of3PlateBitmap(mnemonic bip39.Mnemonic, desc *urtypes.OutputD
 	DrawMetaLine(canvas, dpi, topRightRightMM-labelW, topBaselineY, metaFace, metaTrackPx, label)
 
 	path := strings.ToUpper(derivationPathForKey(desc.Keys[keyIdx], desc.Script))
-	leftMeta := fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[keyIdx].Network))
+	leftMeta := fmt.Sprintf("%s/%s/NET:%s", path, desc.Script.Tag(), descriptorNetworkTag(desc.Keys[keyIdx].Network))
 	DrawRotatedLabel(canvas, dpi, leftPathXMM, topMarginMM, metaFace, metaTrackPx, blackIdx, leftMeta)
 
 	nm := fmt.Sprintf("%d/%d(%d/%d)", keyIdx+1, len(desc.Keys), desc.Threshold, len(desc.Keys))

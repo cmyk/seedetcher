@@ -131,7 +131,7 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 	}
 	if includeSinglesigInfo {
 		path := strings.ToUpper(derivationPathForKey(desc.Keys[0], desc.Script))
-		seedLayout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[0].Network))
+		seedLayout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, desc.Script.Tag(), descriptorNetworkTag(desc.Keys[0].Network))
 	}
 
 	seedImgs := make([]*image.Paletted, totalShares)
@@ -226,7 +226,7 @@ func RenderSeedPlateBitmapWithDescriptor(mnemonic bip39.Mnemonic, shareNum, tota
 	layout := defaultSeedPlateLayout(totalShares, isSinglesigDesc)
 	if isSinglesigDesc {
 		path := strings.ToUpper(derivationPathForKey(desc.Keys[0], desc.Script))
-		layout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, descriptorScriptTag(desc.Script), descriptorNetworkTag(desc.Keys[0].Network))
+		layout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, desc.Script.Tag(), descriptorNetworkTag(desc.Keys[0].Network))
 		// Marker is wallet-key pagination, not physical copy count.
 		layout.ShareNum = 1
 		layout.ShareTotal = 1
@@ -377,38 +377,6 @@ func renderSeedPlateBitmapWithLayout(mnemonic bip39.Mnemonic, shareNum, totalSha
 	}
 	applyPostProcess(canvas, opts)
 	return canvas, nil
-}
-
-func descriptorTypeTag(t urtypes.MultisigType) string {
-	switch t {
-	case urtypes.Singlesig:
-		return "SINGLESIG"
-	case urtypes.SortedMulti:
-		return "SORTEDMULTI"
-	default:
-		return fmt.Sprintf("TYPE%d", int(t))
-	}
-}
-
-func descriptorScriptTag(s urtypes.Script) string {
-	switch s {
-	case urtypes.P2SH:
-		return "P2SH"
-	case urtypes.P2SH_P2WSH:
-		return "P2SH-P2WSH"
-	case urtypes.P2SH_P2WPKH:
-		return "P2SH-P2WPKH"
-	case urtypes.P2PKH:
-		return "P2PKH"
-	case urtypes.P2WSH:
-		return "P2WSH"
-	case urtypes.P2WPKH:
-		return "P2WPKH"
-	case urtypes.P2TR:
-		return "P2TR"
-	default:
-		return "UNKNOWN"
-	}
 }
 
 func descriptorNetworkTag(net *chaincfg.Params) string {

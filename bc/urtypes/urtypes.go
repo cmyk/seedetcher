@@ -87,6 +87,28 @@ func (s Script) String() string {
 	}
 }
 
+// Tag returns the canonical short script identifier used in compact metadata.
+func (s Script) Tag() string {
+	switch s {
+	case P2SH:
+		return "P2SH"
+	case P2SH_P2WSH:
+		return "P2SH-P2WSH"
+	case P2SH_P2WPKH:
+		return "P2SH-P2WPKH"
+	case P2PKH:
+		return "P2PKH"
+	case P2WSH:
+		return "P2WSH"
+	case P2WPKH:
+		return "P2WPKH"
+	case P2TR:
+		return "P2TR"
+	default:
+		return "UNKNOWN"
+	}
+}
+
 type MultisigType int
 
 const (
@@ -102,6 +124,18 @@ func (m MultisigType) String() string {
 		return "SortedMulti"
 	default:
 		return fmt.Sprintf("Unknown(%d)", int(m))
+	}
+}
+
+// Tag returns the canonical short descriptor type identifier used in compact metadata.
+func (m MultisigType) Tag() string {
+	switch m {
+	case Singlesig:
+		return "SINGLESIG"
+	case SortedMulti:
+		return "SORTEDMULTI"
+	default:
+		return fmt.Sprintf("TYPE%d", int(m))
 	}
 }
 

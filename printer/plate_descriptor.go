@@ -34,7 +34,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 
 	key := desc.Keys[keyIdx]
 	allText := fmt.Sprintf("TYPE:%s/SCRIPT:%s/NET:%s/THRESHOLD:%d/KEYS:%d/KEY:%d",
-		descriptorTypeTag(desc.Type), descriptorScriptTag(desc.Script), descriptorNetworkTag(key.Network), desc.Threshold, len(desc.Keys), keyIdx+1)
+		desc.Type.Tag(), desc.Script.Tag(), descriptorNetworkTag(key.Network), desc.Threshold, len(desc.Keys), keyIdx+1)
 
 	margin := descriptorSingleQRLayout.MarginMM
 	ascentMM := capBaselineOffsetMM(descriptorFace, dpi)
