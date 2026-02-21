@@ -17,8 +17,6 @@ var WalletConfigs = map[string]WalletConfig{
 		Name: "singlesig",
 		Mnemonics: []string{
 			"cash zoo picture text skill steel dragon remove imitate fatal close train recipe april extra void obey sell train chaos noble rice typical below",
-			"cash zoo picture text skill steel dragon remove imitate fatal close train recipe april extra void obey sell train chaos noble rice typical below",
-			"cash zoo picture text skill steel dragon remove imitate fatal close train recipe april extra void obey sell train chaos noble rice typical below",
 		},
 		Descriptor: "wpkh([7d10e19c/84h/1h/0h]tpubDDc8Aqia8wM4wePyxmwGsHaeVy3o5a1eazxyii8B2YceajqRtuVDvDUL3BCQXqM5pXbFkUozTX3SXFc8Sc3RdGEjfPcJRe6NgVREYvVztuX/<0;1>/*)#crv0xrff",
 	},
