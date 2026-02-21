@@ -411,17 +411,22 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	lines := wrapTextTracked(descriptorFace, dpi, allText, plateSizeMM-2*margin, descTrackPx)
 	lineSpacing := 4.2
 	y := margin + ascentMM
-	for i, line := range lines {
-		drawTrackedText(canvas, descriptorFace, dpi, margin, y, line, descTrackPx)
-		if i < len(lines)-1 {
-			y += lineSpacing
-		}
+	tb := TextBlock{
+		Face:      descriptorFace,
+		Tracking:  descTrackPx,
+		LeadingMM: lineSpacing,
+		WidthMM:   plateSizeMM - 2*margin,
+		Align:     TextAlignStart,
+		OriginXMM: margin,
+		OriginYMM: y,
 	}
+	res := DrawTextBlock(canvas, dpi, tb, strings.Join(lines, "\n"))
+	y = res.NextBaselineYMM - lineSpacing
 	dualQRLayout := len(qrPayloads) == 2
 	// Keep PATH in the top text block only for dual-QR descriptor layouts.
 	if dualQRLayout {
 		y += lineSpacing
-		drawTrackedText(canvas, descriptorFace, dpi, margin, y, pathText, descTrackPx)
+		DrawMetaLine(canvas, dpi, margin, y, descriptorFace, descTrackPx, pathText)
 	}
 	if len(qrPayloads) == 0 {
 		qrPayloads = []string{createDescriptorQR(desc)}
@@ -438,14 +443,16 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	}
 	if dualQRLayout {
 		guide := fmt.Sprintf("RECOVER: SCAN BOTH QRS FROM >=%d PLATES", desc.Threshold)
-		guideLines := wrapTextTracked(descriptorFace, dpi, guide, plateSizeMM-2*margin, descTrackPx)
 		gy := y + lineSpacing + 1.5
-		for i, line := range guideLines {
-			drawTrackedText(canvas, descriptorFace, dpi, margin, gy, line, descTrackPx)
-			if i < len(guideLines)-1 {
-				gy += lineSpacing
-			}
-		}
+		_ = DrawTextBlock(canvas, dpi, TextBlock{
+			Face:      descriptorFace,
+			Tracking:  descTrackPx,
+			LeadingMM: lineSpacing,
+			WidthMM:   plateSizeMM - 2*margin,
+			Align:     TextAlignStart,
+			OriginXMM: margin,
+			OriginYMM: gy,
+		}, guide)
 	}
 	// Descriptor QR placement with explicit support for one or two payloads.
 	const descriptorQRTopMM = 24.0
@@ -536,7 +543,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		if pathY < margin {
 			pathY = margin
 		}
-		drawTextRotatedCCW90Tracked(canvas, descriptorFace, dpi, pathX, pathY, pathText, blackIdx, descTrackPx)
+		DrawRotatedLabel(canvas, dpi, pathX, pathY, descriptorFace, descTrackPx, blackIdx, pathText)
 	}
 	if shMeta != nil {
 		wid := strings.ToUpper(hex.EncodeToString(shMeta.WalletID[:4]))
@@ -558,7 +565,7 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 		if metaY+metaRotH > plateSizeMM-margin {
 			metaY = plateSizeMM - margin - metaRotH
 		}
-		drawTextRotatedCCW90Tracked(canvas, descriptorFace, dpi, metaX, metaY, meta, blackIdx, descTrackPx)
+		DrawRotatedLabel(canvas, dpi, metaX, metaY, descriptorFace, descTrackPx, blackIdx, meta)
 	}
 	if opts.Invert {
 		invertInterior(canvas, border)
