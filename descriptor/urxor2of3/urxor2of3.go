@@ -19,6 +19,21 @@ const (
 	MinShares = 2
 )
 
+// SupportsScheme reports whether the SeedHammer-compatible UR/XOR fragment
+// assignment is supported for this threshold/share count.
+func SupportsScheme(threshold, totalShares int) bool {
+	switch {
+	case totalShares-threshold <= 1:
+		return true
+	case totalShares == 4 && threshold == 2:
+		return true
+	case totalShares == 5 && threshold == 3:
+		return true
+	default:
+		return false
+	}
+}
+
 // SplitDescriptor returns one UR share per key for canonical sortedmulti
 // descriptors when the selected UR/XOR scheme encodes one fragment per share.
 // For schemes that require multiple fragments per share (for example 3-of-5),

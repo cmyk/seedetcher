@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"seedetcher.com/bc/urtypes"
-	"seedetcher.com/descriptor/shard"
 	"seedetcher.com/descriptor/urxor2of3"
 	"seedetcher.com/testutils"
 )
@@ -53,7 +52,7 @@ func TestDescriptorShardQRCodes2of3UseURXORAndRecover(t *testing.T) {
 	}
 }
 
-func TestDescriptorShardQRCodesRespectForcedSetID(t *testing.T) {
+func TestDescriptorShardQRCodesUnsupportedFallbacksToFullDescriptorUR(t *testing.T) {
 	cfg := testutils.WalletConfigs["multisig-7of10"]
 	_, desc, err := testutils.ParseWallet(cfg, "", "")
 	if err != nil {
@@ -62,21 +61,21 @@ func TestDescriptorShardQRCodesRespectForcedSetID(t *testing.T) {
 	if desc == nil {
 		t.Fatal("missing descriptor")
 	}
-	set := [16]byte{1, 2, 3, 4}
-	SetDescriptorShardSetID(&set)
-	defer SetDescriptorShardSetID(nil)
 
 	qrs, err := descriptorShardQRCodes(desc, len(desc.Keys))
 	if err != nil {
 		t.Fatalf("descriptorShardQRCodes: %v", err)
 	}
 	for i, q := range qrs {
-		sh, err := shard.Decode(strings.ToUpper(q))
-		if err != nil {
-			t.Fatalf("decode share %d: %v", i+1, err)
+		if strings.HasPrefix(strings.ToUpper(q), "SE1:") {
+			t.Fatalf("share %d unexpectedly used SE1 fallback: %q", i+1, q)
 		}
-		if sh.SetID != set {
-			t.Fatalf("share %d set_id mismatch", i+1)
+		typ, _, _, ok := urxor2of3.ParseShare(q)
+		if ok && typ == "crypto-output" {
+			t.Fatalf("share %d unexpectedly looks like multipart UR/XOR: %q", i+1, q)
+		}
+		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(q)), "ur:crypto-output/") {
+			t.Fatalf("share %d missing full descriptor UR prefix: %q", i+1, q)
 		}
 	}
 }
@@ -101,7 +100,7 @@ func TestDescriptorShardQRCodesSinglesigUsesDescriptorQR(t *testing.T) {
 	if len(qrs) != 1 {
 		t.Fatalf("got %d qrs, want 1", len(qrs))
 	}
-	if strings.HasPrefix(strings.ToUpper(qrs[0]), shard.Prefix) {
+	if strings.HasPrefix(strings.ToUpper(qrs[0]), "SE1:") {
 		t.Fatalf("singlesig descriptor QR unexpectedly sharded: %q", qrs[0])
 	}
 }

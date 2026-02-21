@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/descriptor/urxor2of3"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/logutil"
 )
@@ -67,6 +68,19 @@ func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors) (*urtypes.OutputD
 			}
 			desc.Title = sanitizeTitle(desc.Title)
 			logutil.DebugLog("inputDescriptorFlow: Returning desc with %d keys", len(desc.Keys))
+			if desc.Type == urtypes.SortedMulti && desc.Threshold >= 2 && !urxor2of3.SupportsScheme(desc.Threshold, len(desc.Keys)) {
+				scr := &ErrorScreen{
+					Title: "Warning",
+					Body:  "Descriptor sharding not supported for this m-of-n.\nFull descriptor QR will be printed on each descriptor plate.",
+				}
+				for {
+					dims := ctx.Platform.DisplaySize()
+					if scr.Layout(ctx, ops, th, dims) {
+						break
+					}
+					ctx.Frame()
+				}
+			}
 			ctx.LastDescriptor = &desc
 			return &desc, true
 		case 1: // Skip
