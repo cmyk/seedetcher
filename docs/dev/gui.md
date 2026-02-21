@@ -65,11 +65,6 @@ Notes:
   - area/coverage table per printed plate side (`mm²` and `%`),
   - per-plate PSU current guide (`Set A masked` / `Set A unmasked`) using bench defaults.
 - Recovery mode is descriptor-share recovery; plain descriptor QR input is rejected with an explicit message.
-- Recovery QR screen copy:
-  - Title: `Recovered Descriptor QR`
-  - Body: `Scan with your coordinator, then choose:`
-  - `Back = show QR again`
-  - `Trash = delete and restart`
 
 Implementation note:
 - Active flow uses explicit `Screen` structs (`MainMenuScreen` -> `BackupFlowScreen` stages).
