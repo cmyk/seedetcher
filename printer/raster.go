@@ -183,15 +183,15 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		if err != nil {
 			return nil, nil, err
 		}
-				if compactSingleSided {
-					descKeyIdx := i % len(desc.Keys)
-					sharePayload := ""
-					if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
-						sharePayload = shardQRPayloads[i][0]
-					}
-					seedImg, err = renderCompact2of3PlateBitmap(mnemonic, desc, descKeyIdx, opts, sharePayload)
-					if err != nil {
-						return nil, nil, err
+		if compactSingleSided {
+			descKeyIdx := i % len(desc.Keys)
+			sharePayload := ""
+			if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
+				sharePayload = shardQRPayloads[i][0]
+			}
+			seedImg, err = renderCompact2of3PlateBitmap(mnemonic, desc, descKeyIdx, opts, sharePayload)
+			if err != nil {
+				return nil, nil, err
 			}
 		}
 		seedImgs[i] = seedImg
@@ -455,8 +455,8 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 			return nil, err
 		}
 		const (
-			descriptorQRXMM = 10.0
-			descriptorQRYMM = 10.0
+			descriptorQRXMM = 12.0
+			descriptorQRYMM = 12.0
 		)
 		qrSize := descriptorQRSizeMM
 		if qrSize <= 0 {
