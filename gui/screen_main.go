@@ -263,7 +263,7 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			Default: printer.DefaultWalletLabel,
 			Value:   s.label,
 			OnCancel: func() Screen {
-				if s.desc != nil {
+				if s.desc != nil && len(s.shardShares) > 0 {
 					s.stage = stageShardInfo
 				} else {
 					s.stage = stageFingerprints

@@ -129,6 +129,7 @@ type ScanScreen struct {
 	Title            string
 	Lead             string
 	RawURXOR2of3Only bool
+	ShowURXOR2of3    bool
 }
 
 func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
@@ -181,7 +182,7 @@ func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
 				scaleRot(feed, gray, ctx.RotateCamera)
 				results, _ := ctx.Platform.ScanQR(gray)
 				for _, res := range results {
-					if s.RawURXOR2of3Only {
+					if s.RawURXOR2of3Only || s.ShowURXOR2of3 {
 						raw := strings.ToUpper(strings.TrimSpace(string(res)))
 						if typ, seqNum, seqLen, ok := urxor2of3.ParseShare(raw); ok && typ == "crypto-output" && seqLen == urxor2of3.RequiredShares {
 							if seenURXOR2of3Fragments == nil {
@@ -189,6 +190,9 @@ func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
 							}
 							seenURXOR2of3Fragments[seqNum] = struct{}{}
 						}
+					}
+					if s.RawURXOR2of3Only {
+						raw := strings.ToUpper(strings.TrimSpace(string(res)))
 						if typ, _, seqLen, ok := urxor2of3.ParseShare(raw); ok && typ == "crypto-output" && seqLen == urxor2of3.RequiredShares {
 							return []byte(raw), true
 						}
@@ -234,7 +238,7 @@ func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
 		background(ops, ops.End(), image.Rectangle{Min: pos, Max: pos.Add(sz)}, pos)
 
 		// Progress
-		if s.RawURXOR2of3Only && len(seenURXOR2of3Fragments) > 0 {
+		if (s.RawURXOR2of3Only || s.ShowURXOR2of3) && len(seenURXOR2of3Fragments) > 0 {
 			captured := len(seenURXOR2of3Fragments)
 			if captured > urxor2of3.RequiredShares {
 				captured = urxor2of3.RequiredShares

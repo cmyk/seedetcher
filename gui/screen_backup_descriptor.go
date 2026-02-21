@@ -50,8 +50,9 @@ func inputDescriptorFlow(ctx *Context, ops op.Ctx, th *Colors) (*urtypes.OutputD
 		switch choice {
 		case 0: // Scan
 			res, ok := (&ScanScreen{
-				Title: "Scan",
-				Lead:  "Descriptor",
+				Title:         "Scan",
+				Lead:          "Descriptor",
+				ShowURXOR2of3: true,
 			}).Scan(ctx, ops)
 			if !ok {
 				logutil.DebugLog("inputDescriptorFlow: Scan returned false")
