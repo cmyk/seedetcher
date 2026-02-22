@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -327,6 +328,9 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		// Gadget fallback path is heavier (raster->PDF); keep it conservative.
 		opts.DPI = 600
 	}
+	if p.supportsPCL && opts.PrinterLang == printer.PrinterLangPS {
+		return p.createPlatesPostScript(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
+	}
 	if p.supportsPCL {
 		// Host-mode PCL path: render and send in page-sized batches to reduce peak RAM.
 		totalShares := len(mnemonics)
@@ -576,6 +580,134 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		progress(printer.StageSend, written, total)
 	}
 	time.Sleep(2 * time.Second)
+	return nil
+}
+
+func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
+	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
+	if err != nil {
+		return fmt.Errorf("render: plate bitmaps: %w", err)
+	}
+
+	pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, progress)
+	if err != nil {
+		return fmt.Errorf("render: compose pages: %w", err)
+	}
+	if opts.EtchStatsPage {
+		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, paper)
+		if err != nil {
+			return fmt.Errorf("stats: build report: %w", err)
+		}
+		statsPage, err := printer.RenderEtchStatsPage(report, paper, opts.DPI)
+		if err != nil {
+			return fmt.Errorf("stats: render page: %w", err)
+		}
+		pages = append(pages, statsPage)
+	}
+
+	var pdf bytes.Buffer
+	if err := printer.WritePDFRaster(&pdf, pages, paper); err != nil {
+		return fmt.Errorf("pdf: write: %w", err)
+	}
+	psData, err := convertPDFToPS(pdf.Bytes())
+	if err != nil {
+		return fmt.Errorf("ps: convert from pdf failed: %w", err)
+	}
+	printerDev := p.Printer()
+	if printerDev == nil {
+		return fmt.Errorf("no printer available")
+	}
+	return sendPostScriptJob(printerDev, psData, progress)
+}
+
+func convertPDFToPS(pdf []byte) ([]byte, error) {
+	tmpDir, err := os.MkdirTemp("", "seedetcher-ps-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	inPDF := filepath.Join(tmpDir, "in.pdf")
+	outPS := filepath.Join(tmpDir, "out.ps")
+	if err := os.WriteFile(inPDF, pdf, 0o600); err != nil {
+		return nil, err
+	}
+
+	run := func(name string, args ...string) error {
+		cmd := exec.Command(name, args...)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("%s %v: %w (%s)", name, args, err, strings.TrimSpace(string(out)))
+		}
+		return nil
+	}
+
+	switch {
+	case hasExecutable("gs"):
+		err = run("gs", "-q", "-dSAFER", "-dNOPAUSE", "-dBATCH", "-sDEVICE=ps2write", "-sOutputFile="+outPS, inPDF)
+	case hasExecutable("pdftops"):
+		err = run("pdftops", inPDF, outPS)
+	default:
+		return nil, fmt.Errorf("missing PDF->PS converter (need gs or pdftops)")
+	}
+	if err != nil {
+		return nil, err
+	}
+	psData, err := os.ReadFile(outPS)
+	if err != nil {
+		return nil, err
+	}
+	if len(psData) == 0 {
+		return nil, fmt.Errorf("empty PostScript output")
+	}
+	return psData, nil
+}
+
+func hasExecutable(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+func sendPostScriptJob(w io.Writer, psData []byte, progress func(stage printer.PrintStage, current, total int64)) error {
+	const (
+		chunkSize = 16 * 1024
+	)
+	header := []byte("\033%-12345X@PJL JOB NAME=\"SE-PS\"\r\n@PJL SET PERSONALITY=POSTSCRIPT\r\n@PJL ENTER LANGUAGE=POSTSCRIPT\r\n")
+	footer := []byte("\n\033%-12345X@PJL EOJ NAME=\"SE-PS\"\r\n\033%-12345X")
+	total := int64(len(header) + len(psData) + len(footer))
+	written := int64(0)
+	if progress != nil && total > 0 {
+		progress(printer.StageSend, 0, total)
+	}
+	writeChunked := func(b []byte) error {
+		for i := 0; i < len(b); i += chunkSize {
+			end := i + chunkSize
+			if end > len(b) {
+				end = len(b)
+			}
+			n, err := w.Write(b[i:end])
+			written += int64(n)
+			if progress != nil && total > 0 {
+				if written > total {
+					written = total
+				}
+				progress(printer.StageSend, written, total)
+			}
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := writeChunked(header); err != nil {
+		return err
+	}
+	if err := writeChunked(psData); err != nil {
+		return err
+	}
+	if err := writeChunked(footer); err != nil {
+		return err
+	}
 	return nil
 }
 

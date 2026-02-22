@@ -26,6 +26,7 @@ type printOptions struct {
 	EtchStats   bool
 	Compact2of3 bool
 	Singlesig   printer.SinglesigLayoutMode
+	PrinterLang printer.PrinterLanguage
 }
 
 type printSetupState struct {
@@ -36,6 +37,7 @@ type printSetupState struct {
 	MirrorChoice    int
 	StatsChoice     int
 	CompactChoice   int
+	PrinterLang     int
 }
 
 var lastPrintSetupState = printSetupState{
@@ -46,6 +48,7 @@ var lastPrintSetupState = printSetupState{
 	MirrorChoice:    0,
 	StatsChoice:     0,
 	CompactChoice:   0,
+	PrinterLang:     0,
 }
 
 func loadPrintSetupState() printSetupState {
@@ -63,14 +66,14 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	printer.SetWalletLabel(label)
 	inp := &s.inp
 	state := loadPrintSetupState()
-	setupSteps := make([]string, 0, 7)
+	setupSteps := make([]string, 0, 8)
 	if isSinglesigDescriptor(desc) {
 		setupSteps = append(setupSteps, "singlesig")
 	}
 	if isCompact2of3Eligible(desc) {
 		setupSteps = append(setupSteps, "compact")
 	}
-	setupSteps = append(setupSteps, "paper", "dpi", "invert", "mirror", "stats")
+	setupSteps = append(setupSteps, "paper", "dpi", "invert", "mirror", "stats", "printerlang")
 	stepIdx := 0
 
 	updatePrinterStatus := func() {
@@ -140,6 +143,12 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				if ok {
 					state.CompactChoice = next
 				}
+			case "printerlang":
+				var next int
+				next, ok = chooseWithInitial("Printer Language", "If PCL prints blank pages,\ntry PS.", []string{"PCL", "PS"}, state.PrinterLang)
+				if ok {
+					state.PrinterLang = next
+				}
 			default:
 				ok = true
 			}
@@ -171,6 +180,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			EtchStats:   state.StatsChoice == 1,
 			Compact2of3: state.CompactChoice == 1,
 			Singlesig:   printer.SinglesigLayoutSeedWithInfo,
+			PrinterLang: printer.PrinterLangPCL,
 		}
 		if state.DPIChoice == 1 {
 			opts.DPI = 600
@@ -180,6 +190,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			opts.Singlesig = printer.SinglesigLayoutSeedOnly
 		case 2:
 			opts.Singlesig = printer.SinglesigLayoutSeedWithDescriptorQR
+		}
+		if state.PrinterLang == 1 {
+			opts.PrinterLang = printer.PrinterLangPS
 		}
 
 		updatePrinterStatus()
@@ -233,7 +246,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		}
 		showCompactLine := isCompact2of3Eligible(desc)
 		showSinglesigLine := isSinglesigDescriptor(desc)
-		lead := fmt.Sprintf("%s\nPaper:%s @%d dpi\nInvert: %s, Mirror: %s\nEtch stats page: %s", status, selectedPaper, opts.DPI, onOff(opts.Invert), onOff(opts.Mirror), onOff(opts.EtchStats))
+		lead := fmt.Sprintf("%s\nPaper:%s @%d dpi\nInvert: %s, Mirror: %s\nEtch stats page: %s\nPrinter lang: %s", status, selectedPaper, opts.DPI, onOff(opts.Invert), onOff(opts.Mirror), onOff(opts.EtchStats), printerLangLabel(opts.PrinterLang))
 		if showCompactLine {
 			lead += fmt.Sprintf("\nCompact 2/3: %s", onOff(opts.Compact2of3))
 		}
@@ -423,6 +436,13 @@ func onOff(v bool) string {
 	return "Off"
 }
 
+func printerLangLabel(lang printer.PrinterLanguage) string {
+	if lang == printer.PrinterLangPS {
+		return "PS"
+	}
+	return "PCL"
+}
+
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
 	logutil.DebugLog("showError called with error: %v", err)
 	errScr := NewErrorScreen(err)
@@ -513,6 +533,7 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 			DPI:             float64(printOpts.DPI),
 			Mirror:          printOpts.Mirror,
 			Invert:          printOpts.Invert,
+			PrinterLang:     printOpts.PrinterLang,
 			SinglesigLayout: printOpts.Singlesig,
 			EtchStatsPage:   printOpts.EtchStats,
 		}
