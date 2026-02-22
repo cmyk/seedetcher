@@ -1,6 +1,8 @@
 package printer
 
 import (
+	"bufio"
+	"encoding/hex"
 	"fmt"
 	"image"
 	"io"
@@ -24,21 +26,21 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 	if progress != nil && totalBytes > 0 {
 		progress(StageSend, 0, totalBytes)
 	}
+	bw := bufio.NewWriterSize(pw, 128*1024)
+	defer bw.Flush()
 
-	uel := []byte{0x1b, '%', '-', '1', '2', '3', '4', '5', 'X'}
-	if _, err := pw.Write(uel); err != nil {
+	pjlHeader := []byte("\x1b%-12345X@PJL JOB NAME=\"SE-PS\"\r\n@PJL SET PERSONALITY=POSTSCRIPT\r\n@PJL ENTER LANGUAGE=POSTSCRIPT\r\n")
+	pjlFooter := []byte("\n\x1b%-12345X@PJL EOJ NAME=\"SE-PS\"\r\n\x1b%-12345X")
+	if _, err := bw.Write(pjlHeader); err != nil {
 		return err
 	}
-	if _, err := pw.Write([]byte("@PJL ENTER LANGUAGE = POSTSCRIPT\r\n")); err != nil {
+	if _, err := fmt.Fprintf(bw, "%%!PS-Adobe-3.0\n"); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(pw, "%%!PS-Adobe-3.0\n"); err != nil {
+	if _, err := fmt.Fprintf(bw, "%%%%Pages: %d\n", len(pages)); err != nil {
 		return err
 	}
-	if _, err := fmt.Fprintf(pw, "%%%%Pages: %d\n", len(pages)); err != nil {
-		return err
-	}
-	if _, err := fmt.Fprintf(pw, "%%%%EndComments\n"); err != nil {
+	if _, err := fmt.Fprintf(bw, "%%%%EndComments\n"); err != nil {
 		return err
 	}
 
@@ -56,52 +58,53 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 		}
 		rowBytes := (width + 7) / 8
 		buf := make([]byte, rowBytes)
-		if _, err := fmt.Fprintf(pw, "%%%%Page: %d %d\n", i+1, i+1); err != nil {
+		if _, err := fmt.Fprintf(bw, "%%%%Page: %d %d\n", i+1, i+1); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(pw, "<< /PageSize [%.2f %.2f] >> setpagedevice\n", pageWpt, pageHpt); err != nil {
+		if _, err := fmt.Fprintf(bw, "<< /PageSize [%.2f %.2f] >> setpagedevice\n", pageWpt, pageHpt); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(pw, "gsave\n"); err != nil {
+		if _, err := fmt.Fprintf(bw, "gsave\n"); err != nil {
 			return err
 		}
-		// Render full-page image mask in pixel space.
-		if _, err := fmt.Fprintf(pw, "%d %d scale\n", width, height); err != nil {
+		if _, err := fmt.Fprintf(bw, "0 setgray\n"); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(pw, "%d %d true\n", width, height); err != nil {
+		// Render full-page image mask directly in page user space (points).
+		if _, err := fmt.Fprintf(bw, "%.4f %.4f scale\n", pageWpt, pageHpt); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(pw, "[%d 0 0 -%d 0 %d]\n", width, height, height); err != nil {
+		if _, err := fmt.Fprintf(bw, "/picstr %d string def\n", rowBytes); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintf(pw, "{ currentfile /ASCIIHexDecode filter } imagemask\n"); err != nil {
+		if _, err := fmt.Fprintf(bw, "%d %d true\n", width, height); err != nil {
 			return err
 		}
+		if _, err := fmt.Fprintf(bw, "[%d 0 0 -%d 0 %d]\n", width, height, height); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(bw, "{ currentfile picstr readhexstring pop } imagemask\n"); err != nil {
+			return err
+		}
+		hexRow := make([]byte, rowBytes*2+1)
 		for y := 0; y < height; y++ {
 			pix := page.Pix[y*page.Stride : y*page.Stride+width]
 			packBits(buf, pix)
-			for _, v := range buf {
-				if _, err := fmt.Fprintf(pw, "%02X", v); err != nil {
-					return err
-				}
-			}
-			if _, err := fmt.Fprintf(pw, "\n"); err != nil {
+			hex.Encode(hexRow[:rowBytes*2], buf)
+			hexRow[rowBytes*2] = '\n'
+			if _, err := bw.Write(hexRow); err != nil {
 				return err
 			}
 		}
-		if _, err := fmt.Fprintf(pw, ">\n"); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(pw, "grestore\nshowpage\n"); err != nil {
+		if _, err := fmt.Fprintf(bw, "grestore\nshowpage\n"); err != nil {
 			return err
 		}
 	}
 
-	if _, err := fmt.Fprintf(pw, "%%%%EOF\n"); err != nil {
+	if _, err := fmt.Fprintf(bw, "%%%%EOF\n"); err != nil {
 		return err
 	}
-	if _, err := pw.Write(uel); err != nil {
+	if _, err := bw.Write(pjlFooter); err != nil {
 		return err
 	}
 	return nil
@@ -109,9 +112,9 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 
 func estimatePSBytes(pages []*image.Paletted, pageWmm, pageHmm float64) (int64, error) {
 	total := int64(0)
-	uel := []byte{0x1b, '%', '-', '1', '2', '3', '4', '5', 'X'}
-	total += int64(len(uel))
-	total += int64(len("@PJL ENTER LANGUAGE = POSTSCRIPT\r\n"))
+	pjlHeader := []byte("\x1b%-12345X@PJL JOB NAME=\"SE-PS\"\r\n@PJL SET PERSONALITY=POSTSCRIPT\r\n@PJL ENTER LANGUAGE=POSTSCRIPT\r\n")
+	pjlFooter := []byte("\n\x1b%-12345X@PJL EOJ NAME=\"SE-PS\"\r\n\x1b%-12345X")
+	total += int64(len(pjlHeader))
 	total += int64(len("%!PS-Adobe-3.0\n"))
 	total += int64(len(fmt.Sprintf("%%%%Pages: %d\n", len(pages))))
 	total += int64(len("%%EndComments\n"))
@@ -134,12 +137,12 @@ func estimatePSBytes(pages []*image.Paletted, pageWmm, pageHmm float64) (int64, 
 		total += int64(len(fmt.Sprintf("%d %d scale\n", width, height)))
 		total += int64(len(fmt.Sprintf("%d %d true\n", width, height)))
 		total += int64(len(fmt.Sprintf("[%d 0 0 -%d 0 %d]\n", width, height, height)))
-		total += int64(len("{ currentfile /ASCIIHexDecode filter } imagemask\n"))
+		total += int64(len(fmt.Sprintf("/picstr %d string def\n", rowBytes)))
+		total += int64(len("{ currentfile picstr readhexstring pop } imagemask\n"))
 		total += int64(height * (rowBytes*2 + 1)) // hex + newline
-		total += int64(len(">\n"))
 		total += int64(len("grestore\nshowpage\n"))
 	}
 	total += int64(len("%%EOF\n"))
-	total += int64(len(uel))
+	total += int64(len(pjlFooter))
 	return total, nil
 }

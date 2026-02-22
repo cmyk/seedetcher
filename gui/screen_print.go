@@ -239,7 +239,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		status := "Printer: Not connected"
 		if ctx.PrinterConnected {
 			if ctx.PrinterModel != "" {
-				status = fmt.Sprintf("Printer: Connected (%s)", ctx.PrinterModel)
+				status = fmt.Sprintf("Printer: %s", ctx.PrinterModel)
 			} else {
 				status = "Printer: Connected"
 			}
