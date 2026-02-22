@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -605,110 +604,11 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		pages = append(pages, statsPage)
 	}
 
-	var pdf bytes.Buffer
-	if err := printer.WritePDFRaster(&pdf, pages, paper); err != nil {
-		return fmt.Errorf("pdf: write: %w", err)
-	}
-	psData, err := convertPDFToPS(pdf.Bytes())
-	if err != nil {
-		return fmt.Errorf("ps: convert from pdf failed: %w", err)
-	}
 	printerDev := p.Printer()
 	if printerDev == nil {
 		return fmt.Errorf("no printer available")
 	}
-	return sendPostScriptJob(printerDev, psData, progress)
-}
-
-func convertPDFToPS(pdf []byte) ([]byte, error) {
-	tmpDir, err := os.MkdirTemp("", "seedetcher-ps-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(tmpDir)
-
-	inPDF := filepath.Join(tmpDir, "in.pdf")
-	outPS := filepath.Join(tmpDir, "out.ps")
-	if err := os.WriteFile(inPDF, pdf, 0o600); err != nil {
-		return nil, err
-	}
-
-	run := func(name string, args ...string) error {
-		cmd := exec.Command(name, args...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("%s %v: %w (%s)", name, args, err, strings.TrimSpace(string(out)))
-		}
-		return nil
-	}
-
-	switch {
-	case hasExecutable("gs"):
-		err = run("gs", "-q", "-dSAFER", "-dNOPAUSE", "-dBATCH", "-sDEVICE=ps2write", "-sOutputFile="+outPS, inPDF)
-	case hasExecutable("pdftops"):
-		err = run("pdftops", inPDF, outPS)
-	default:
-		return nil, fmt.Errorf("missing PDF->PS converter (need gs or pdftops)")
-	}
-	if err != nil {
-		return nil, err
-	}
-	psData, err := os.ReadFile(outPS)
-	if err != nil {
-		return nil, err
-	}
-	if len(psData) == 0 {
-		return nil, fmt.Errorf("empty PostScript output")
-	}
-	return psData, nil
-}
-
-func hasExecutable(name string) bool {
-	_, err := exec.LookPath(name)
-	return err == nil
-}
-
-func sendPostScriptJob(w io.Writer, psData []byte, progress func(stage printer.PrintStage, current, total int64)) error {
-	const (
-		chunkSize = 16 * 1024
-	)
-	header := []byte("\033%-12345X@PJL JOB NAME=\"SE-PS\"\r\n@PJL SET PERSONALITY=POSTSCRIPT\r\n@PJL ENTER LANGUAGE=POSTSCRIPT\r\n")
-	footer := []byte("\n\033%-12345X@PJL EOJ NAME=\"SE-PS\"\r\n\033%-12345X")
-	total := int64(len(header) + len(psData) + len(footer))
-	written := int64(0)
-	if progress != nil && total > 0 {
-		progress(printer.StageSend, 0, total)
-	}
-	writeChunked := func(b []byte) error {
-		for i := 0; i < len(b); i += chunkSize {
-			end := i + chunkSize
-			if end > len(b) {
-				end = len(b)
-			}
-			n, err := w.Write(b[i:end])
-			written += int64(n)
-			if progress != nil && total > 0 {
-				if written > total {
-					written = total
-				}
-				progress(printer.StageSend, written, total)
-			}
-			if err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-	if err := writeChunked(header); err != nil {
-		return err
-	}
-	if err := writeChunked(psData); err != nil {
-		return err
-	}
-	if err := writeChunked(footer); err != nil {
-		return err
-	}
-	return nil
+	return printer.WritePS(printerDev, pages, paper, progress)
 }
 
 func (p *Platform) initSDCardNotifier() error {
