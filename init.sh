@@ -156,7 +156,8 @@ EOF
         cp -a "${CUPS_BIN_ROOT}/lib/cups" /var/cups-serverbin/lib/
     fi
     # Overlay optional filters/drivers from brlaser/cups-filters.
-    for EXTRA_ROOT in "${BRLASER_ROOT:-}" "$BRLASER_DROPIN_ROOT" "${CUPS_FILTERS_ROOT:-}"; do
+    # Precedence: in-image BRLASER_ROOT (known ABI) should override drop-in fallback.
+    for EXTRA_ROOT in "$BRLASER_DROPIN_ROOT" "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
         [ -n "$EXTRA_ROOT" ] || continue
         if [ -d "$EXTRA_ROOT/lib/cups" ]; then
             cp -a "$EXTRA_ROOT/lib/cups/." /var/cups-serverbin/lib/cups/ 2>/dev/null || true
@@ -182,7 +183,7 @@ EOF
     if [ -d "${CUPS_DATA_ROOT}/share/cups" ]; then
         cp -a "${CUPS_DATA_ROOT}/share/cups/." "$CUPS_RUNTIME_DATA/" 2>/dev/null || true
     fi
-    for EXTRA_ROOT in "${BRLASER_ROOT:-}" "$BRLASER_DROPIN_ROOT" "${CUPS_FILTERS_ROOT:-}"; do
+    for EXTRA_ROOT in "$BRLASER_DROPIN_ROOT" "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
         [ -n "$EXTRA_ROOT" ] || continue
         if [ -d "$EXTRA_ROOT/share/cups/drv" ]; then
             mkdir -p "$CUPS_RUNTIME_DATA/drv"
