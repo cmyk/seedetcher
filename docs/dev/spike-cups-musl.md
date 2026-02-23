@@ -245,3 +245,44 @@ HBP is currently blocked by `brlaser` ABI mismatch on this image. The architectu
 - Remaining caveat:
   - `cupsfilter` PDF -> CUPS raster chain is still missing (`No filter to convert from application/pdf to application/vnd.cups-raster`).
   - Use `/bin/print-hbp-pdf` workaround path in the spike image.
+
+## Pi Validation Checklist (Current Image)
+
+Run these checks on Pi for each new `image-cups-spike-debug` build:
+
+1. Boot timing
+- Measure boot until:
+  - `DEBUG: Init finished. Starting shell...`
+- Note any prolonged delay around queue provisioning.
+
+2. Queue provisioning
+- Verify queue presence:
+  - `lpstat -h /var/run/cups/cups.sock -p -v`
+- Expected:
+  - `test` (raw)
+  - `test-hbp` (brlaser path)
+
+3. Raw print path
+- Create/send raw test:
+  - `printf '\033Eraw test\r\n\f\033%%-12345X' > /tmp/raw.pcl`
+  - `lp -h /var/run/cups/cups.sock -d test -o raw /tmp/raw.pcl`
+- Confirm physical page.
+
+4. Real SeedEtcher page via HBP
+- Generate test output:
+  - `./controller -test-createPageLayout -w singlesig -dpi 600 -papersize A4`
+- Print using known-good helper:
+  - `print-hbp-pdf /tmp/test_output.pdf`
+- Confirm:
+  - correct page scale/placement
+  - QR/text readability.
+
+5. Repetition/stability
+- Repeat HBP print (step 4) three times consecutively.
+- Reboot and run step 4 once more.
+
+6. Log sanity
+- Check:
+  - `tail -n 200 /log/init_debug.log`
+  - `tail -n 200 /var/log/cups/error_log`
+- No relocation/shared-lib loader errors from `rastertobrlaser`.
