@@ -200,6 +200,11 @@ HBP is currently blocked by `brlaser` ABI mismatch on this image. The architectu
 - Output either:
   - a fully static filter, or
   - a dynamic filter plus the exact required shared libraries.
+- Helper template:
+  - `spike/build-brlaser-artifact.sh` packages:
+    - `lib/cups/filter/rastertobrlaser`
+    - `share/cups/drv/brlaser.drv`
+    - optional needed `.so*` libs into `spike/brlaser-root.tar.gz`.
 
 ### 2. Make runtime self-contained
 - Package filter + libs into a fixed runtime layout (example: `/var/cups-extra/brlaser-runtime`).
