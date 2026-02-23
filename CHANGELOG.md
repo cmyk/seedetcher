@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- Printing now supports explicit host-mode printer language selection:
+  - `PCL` (default) or `PS` (PostScript) from print settings UI.
+  - guidance shown in UI: if `PCL` prints blank pages, try `PS`.
+- Added native PostScript writer path for host mode (`/dev/usb/lp0`) with no external `gs`/`pdftops` dependency on device.
+- PostScript pipeline fixes and performance improvements:
+  - corrected PS `imagemask` geometry/polarity behavior to match canonical page layout,
+  - optimized PS streaming on Pi Zero (buffered writes + fast row hex encoding),
+  - PS mode now honors selected DPI (600/1200) in print settings.
 - Descriptor share mode is now interoperability-first:
   - UR/XOR used for supported families (`2/2`, `2/3`, `2/4`, `3/5`, and generic `n-1/n`),
   - unsupported families fall back to full descriptor `UR:CRYPTO-OUTPUT` per descriptor plate.
