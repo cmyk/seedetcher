@@ -183,6 +183,18 @@ EOF
             cp -a "$EXTRA_ROOT/share/ppd/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
         fi
     done
+    # If we have .drv but no exposed model entries yet, generate/update PPDs.
+    if [ -x /bin/cups-genppdupdate ] && [ -d "$CUPS_RUNTIME_DATA/drv" ]; then
+        /bin/cups-genppdupdate \
+            -d "$CUPS_RUNTIME_DATA/drv" \
+            -m "$CUPS_RUNTIME_DATA/model" \
+            >/dev/null 2>&1 || true
+    elif [ -x /bin/cups-genppd ] && [ -d "$CUPS_RUNTIME_DATA/drv" ] && [ -d "$CUPS_RUNTIME_DATA/model" ]; then
+        for drv in "$CUPS_RUNTIME_DATA"/drv/*.drv; do
+            [ -f "$drv" ] || continue
+            /bin/cups-genppd "$drv" >/dev/null 2>&1 || true
+        done
+    fi
 
     # Force a minimal, valid cups-files.conf for this spike.
     cat > /etc/cups/cups-files.conf <<EOF
