@@ -108,6 +108,10 @@ echo "Identifying SD card..."
 if [[ -n "$DISK_OVERRIDE" ]]; then
     DISK_DEVICE="$DISK_OVERRIDE"
     CANDIDATES=("$DISK_DEVICE")
+elif [[ -n "${SD_CARD:-}" ]]; then
+    # Reuse already-detected disk from step 0; avoid brittle re-detection.
+    DISK_DEVICE="$SD_CARD"
+    CANDIDATES=("$DISK_DEVICE")
 else
     CANDIDATES=("${(@f)$(list_disks_external_physical || true)}")
     if [[ "${#CANDIDATES[@]}" -eq 0 ]]; then
@@ -168,11 +172,26 @@ fi
 # Step 4: Flash the image
 echo "Flashing the image to /dev/$RAW_DISK_DEVICE..."
 if [[ "$FLASH_ENGINE" == "auto" ]]; then
-    if [[ -x /usr/sbin/asr ]]; then
-        FLASH_ENGINE="asr"
-    else
+    # asr does not support our raw .img reliably; default to dd for .img.
+    case "$LOCAL_PATH" in
+      *.img) FLASH_ENGINE="dd" ;;
+      *)
+        if [[ -x /usr/sbin/asr ]]; then
+            FLASH_ENGINE="asr"
+        else
+            FLASH_ENGINE="dd"
+        fi
+        ;;
+    esac
+fi
+
+if [[ "$FLASH_ENGINE" == "asr" ]]; then
+    case "$LOCAL_PATH" in
+      *.img)
+        echo "asr does not support raw .img here; falling back to dd."
         FLASH_ENGINE="dd"
-    fi
+        ;;
+    esac
 fi
 
 if [[ "$FLASH_ENGINE" == "asr" ]]; then
@@ -186,7 +205,7 @@ if [[ "$FLASH_ENGINE" == "asr" ]]; then
       --noverify
 else
     echo "Using dd with block size: ${DD_BS}"
-    sudo dd if="$LOCAL_PATH" of="/dev/$RAW_DISK_DEVICE" bs="$DD_BS" status=progress
+    sudo dd if="$LOCAL_PATH" of="/dev/$RAW_DISK_DEVICE" bs="$DD_BS" iflag=fullblock status=progress
     sync
 fi
 
