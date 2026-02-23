@@ -134,9 +134,10 @@
 
                 ./scripts/config --set-str EXTRA_FIRMWARE panel.bin
                 ./scripts/config --set-str EXTRA_FIRMWARE_DIR ${panel-firmware}
-                # Disable networking (including bluetooth).
-                ./scripts/config --disable NET
-                ./scripts/config --disable INET
+                # Enable minimal networking/socket support (needed for CUPS spike).
+                ./scripts/config --enable NET
+                ./scripts/config --enable INET
+                ./scripts/config --enable UNIX
                 ./scripts/config --disable NETFILTER
                 ./scripts/config --disable PROC_SYSCTL
                 ./scripts/config --disable FSCACHE
@@ -145,8 +146,8 @@
                 ./scripts/config --disable SECURITY
                 # Disable sound support.
                 ./scripts/config --disable SOUND
-                # Disable features we don't need.
-                ./scripts/config --disable EXT4_FS
+                # Keep ext4 enabled (used by experimental SD-rootfs spikes).
+                ./scripts/config --enable EXT4_FS
                 ./scripts/config --disable F2FS_FS
                 ./scripts/config --disable PSTORE
                 ./scripts/config --disable INPUT_TOUCHSCREEN
@@ -282,9 +283,6 @@
               cupsPkg = crossPkgs.cups;
               ghostscriptPkg = crossPkgs.ghostscript;
               popplerUtilsPkg = crossPkgs.poppler_utils;
-              cupsSpikeClosure = pkgs.closureInfo {
-                rootPaths = [ cupsPkg ghostscriptPkg popplerUtilsPkg ];
-              };
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
               seedEtcherFontFile = ./font/seedetcher/SeedEtcher-Regular.ttf;
@@ -370,14 +368,10 @@
                 # Optional CUPS/Ghostscript tooling for experimental spike images.
                 ${if cupsSpike then ''
                 mkdir -p initramfs/etc/cups initramfs/var/spool/cups initramfs/var/run/cups initramfs/nix/store
-                while IFS= read -r p; do
-                  mkdir -p "initramfs$(dirname "$p")"
-                  cp -a "$p" "initramfs$p"
-                done < ${cupsSpikeClosure}/store-paths
                 if [ -d ${cupsPkg}/etc/cups ]; then
                   cp -a ${cupsPkg}/etc/cups/* initramfs/etc/cups/
                 fi
-                for f in cupsd lp lpstat lpadmin cupsfilter; do
+                for f in cupsd lp lpstat lpadmin lpinfo cupsfilter; do
                   if [ -x ${cupsPkg}/bin/$f ]; then
                     ln -sf ${cupsPkg}/bin/$f initramfs/bin/$f
                   fi
@@ -437,13 +431,16 @@
                   self.packages.${system}.kernel;
 
               initramfs = self.lib.${system}.mkinitramfs { inherit debug cupsSpike; };
+              cupsSpikeStoreClosure = pkgs.closureInfo {
+                rootPaths = [ crossPkgs.cups crossPkgs.ghostscript crossPkgs.poppler_utils ];
+              };
               img-name =
                 let
                   modeBase = if usbMode == "host" then "seedetcher" else "seedetcher-gadget";
                   base = if cupsSpike then "${modeBase}-cups-spike" else modeBase;
                 in
                 if debug then "${base}-debug.img" else "${base}.img";
-              imageSizeMB = if cupsSpike then 128 else 64;
+              imageSizeMB = if cupsSpike then 1600 else 64;
 
               cmdlinetxt =
                 let
@@ -497,18 +494,31 @@
 
                 # Create disk image.
                 dd if=/dev/zero of=disk.img bs=1M count=${toString imageSizeMB}
+                ${if cupsSpike then ''
+                ${pkgs.util-linux}/bin/sfdisk disk.img <<EOF
+                  label: dos
+                  label-id: 0xceedb0ad
+
+                  disk.img1 : size=114688, type=c, bootable
+                  disk.img2 : type=83
+                EOF
+                '' else ''
                 ${pkgs.util-linux}/bin/sfdisk disk.img <<EOF
                   label: dos
                   label-id: 0xceedb0ad
 
                   disk.img1 : type=c, bootable
                 EOF
+                ''}
 
                 # Create boot partition.
-                START=$(${pkgs.util-linux}/bin/fdisk -l -o Start disk.img|tail -n 1)
-                SECTORS=$(${pkgs.util-linux}/bin/fdisk -l -o Sectors disk.img|tail -n 1)
-                ${pkgs.dosfstools}/bin/mkfs.vfat --invariant -i deadbeef -n seedetcher disk.img --offset $START $(sectorsToBlocks $SECTORS)
-                OFFSET=$(sectorsToBytes $START)
+                PART_INFO="$(${pkgs.util-linux}/bin/fdisk -l -o Device,Start,Sectors disk.img)"
+                START1=$(echo "$PART_INFO" | awk '$1=="disk.img1"{print $2}')
+                SECTORS1=$(echo "$PART_INFO" | awk '$1=="disk.img1"{print $3}')
+                BOOT_BYTES=$((SECTORS1 * 512))
+                dd if=/dev/zero of=boot.vfat bs=1 count=0 seek="$BOOT_BYTES"
+                ${pkgs.dosfstools}/bin/mkfs.vfat --invariant -i deadbeef -n seedetcher boot.vfat
+                OFFSET=0
 
                 # Copy boot files.
                 mkdir -p boot/overlays overlays
@@ -522,10 +532,29 @@
 
                 chmod 0755 `find boot overlays`
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' `find boot overlays`
-                ${pkgs.mtools}/bin/mcopy -bpm -i "disk.img@@$OFFSET" boot/* ::
+                ${pkgs.mtools}/bin/mcopy -bpm -i "boot.vfat@@$OFFSET" boot/* ::
                 # mcopy doesn't copy directories deterministically, so rely on sorted shell globbing
                 # instead.
-                ${pkgs.mtools}/bin/mcopy -bpm -i "disk.img@@$OFFSET" overlays/* ::overlays
+                ${pkgs.mtools}/bin/mcopy -bpm -i "boot.vfat@@$OFFSET" overlays/* ::overlays
+                dd if=boot.vfat of=disk.img bs=512 seek="$START1" conv=notrunc status=none
+
+                ${if cupsSpike then ''
+                START2=$(echo "$PART_INFO" | awk '$1=="disk.img2"{print $2}')
+                SECTORS2=$(echo "$PART_INFO" | awk '$1=="disk.img2"{print $3}')
+                mkdir -p rootfsdir/store rootfsdir/etc/cups rootfsdir/var/run/cups rootfsdir/var/spool/cups rootfsdir/var/log/cups
+                while IFS= read -r p; do
+                  rel="''${p#/nix}"
+                  mkdir -p "rootfsdir$(dirname "$rel")"
+                  cp -a "$p" "rootfsdir$rel"
+                done < ${cupsSpikeStoreClosure}/store-paths
+                if [ -d ${crossPkgs.cups}/etc/cups ]; then
+                  cp -a ${crossPkgs.cups}/etc/cups/* rootfsdir/etc/cups/
+                fi
+                ROOTFS_BYTES=$((SECTORS2 * 512))
+                dd if=/dev/zero of=rootfs.ext4 bs=1 count=0 seek="$ROOTFS_BYTES"
+                ${pkgs.e2fsprogs}/sbin/mke2fs -q -F -t ext4 -d rootfsdir rootfs.ext4 "$(sectorsToBlocks "$SECTORS2")"
+                dd if=rootfs.ext4 of=disk.img bs=512 seek="$START2" conv=notrunc status=none
+                '' else ""}
               '';
 
               installPhase = ''
@@ -533,7 +562,7 @@
                 cp disk.img $out/${img-name}
               '';
 
-              allowedReferences = [ ];
+              allowedReferences = if cupsSpike then null else [ ];
             };
           mkcontroller = debug:
             let

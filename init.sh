@@ -70,8 +70,75 @@ wait_for "$CTRL_TTY" 30
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
 
 # Optional CUPS spike bootstrap (manual start by default).
+if [ -f /cups-spike.env ]; then
+    mkdir -p /nix /etc/cups /var/run/cups /var/spool/cups /var/log/cups
+    tries=10
+    while [ "$tries" -gt 0 ] && [ ! -b /dev/mmcblk0p2 ]; do
+        sleep 1
+        tries=$((tries - 1))
+    done
+    if [ -b /dev/mmcblk0p2 ]; then
+        mount -t ext4 /dev/mmcblk0p2 /nix >> /log/cups.log 2>&1 || debug_echo "CUPS spike: failed to mount /dev/mmcblk0p2 on /nix"
+    else
+        debug_echo "CUPS spike: /dev/mmcblk0p2 not found after wait"
+    fi
+fi
 if [ -f /cups-spike.env ] && [ -x /bin/cupsd ]; then
-    mkdir -p /etc/cups /var/run/cups /var/spool/cups /var/log/cups
+    # Minimal identity DB for CUPS on initramfs-only userspace.
+    if [ ! -f /etc/group ]; then
+        cat > /etc/group <<'EOF'
+root:x:0:
+sys:x:3:
+lp:x:7:
+lpadmin:x:19:
+EOF
+    fi
+    if [ ! -f /etc/passwd ]; then
+        cat > /etc/passwd <<'EOF'
+root:x:0:0:root:/root:/bin/sh
+lp:x:7:7:CUPS:/var/spool/cups:/bin/false
+EOF
+    fi
+    # Ensure expected groups exist.
+    grep -q '^lpadmin:' /etc/group || echo 'lpadmin:x:19:' >> /etc/group
+    grep -q '^lp:' /etc/group || echo 'lp:x:7:' >> /etc/group
+    grep -q '^sys:' /etc/group || echo 'sys:x:3:' >> /etc/group
+    grep -q '^root:' /etc/group || echo 'root:x:0:' >> /etc/group
+    grep -q '^lp:' /etc/passwd || echo 'lp:x:7:7:CUPS:/var/spool/cups:/bin/false' >> /etc/passwd
+
+    mkdir -p /var/cache/cups /var/spool/cups/tmp /run/cups /var/run/cups /var/log/cups
+    chmod 1777 /var/spool/cups/tmp
+
+    # Resolve CUPS roots from actual cupsd binary target.
+    CUPS_BIN_ROOT="$(readlink /bin/cupsd 2>/dev/null | sed 's#/bin/cupsd$##')"
+    [ -z "$CUPS_BIN_ROOT" ] && CUPS_BIN_ROOT="/nix/store"
+    CUPS_DATA_ROOT="$CUPS_BIN_ROOT"
+    if [ ! -d "${CUPS_DATA_ROOT}/share/cups" ] && [ -d "${CUPS_BIN_ROOT}-lib/share/cups" ]; then
+        CUPS_DATA_ROOT="${CUPS_BIN_ROOT}-lib"
+    fi
+
+    # Copy CUPS serverbin to writable storage and enforce backend perms expected by cupsd.
+    mkdir -p /var/cups-serverbin/lib
+    rm -rf /var/cups-serverbin/lib/cups
+    if [ -d "${CUPS_BIN_ROOT}/lib/cups" ]; then
+        cp -a "${CUPS_BIN_ROOT}/lib/cups" /var/cups-serverbin/lib/
+    fi
+    if [ -d /var/cups-serverbin/lib/cups/backend ]; then
+        chown -R root:root /var/cups-serverbin/lib/cups/backend || true
+        chmod 700 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
+    fi
+
+    # Force a minimal, valid cups-files.conf for this spike.
+    cat > /etc/cups/cups-files.conf <<EOF
+SystemGroup root lpadmin
+FileDevice Yes
+RequestRoot /var/spool/cups
+ServerRoot /etc/cups
+CacheDir /var/cache/cups
+DataDir ${CUPS_DATA_ROOT}/share/cups
+ServerBin /var/cups-serverbin/lib/cups
+EOF
+
     if [ ! -f /etc/cups/cupsd.conf ]; then
         cat > /etc/cups/cupsd.conf <<'EOF'
 LogLevel warn
@@ -85,7 +152,24 @@ WebInterface No
 </Location>
 EOF
     fi
-    debug_echo "CUPS spike: installed (manual start). Run: /bin/cupsd -f >> /log/cups.log 2>&1 &"
+    # Start CUPS and provision a raw queue over /dev/usb/lp0 for zero-interaction testing.
+    if /bin/cupsd >> /log/cups.log 2>&1; then
+        if [ -x /bin/lpadmin ]; then
+            tries=10
+            while [ "$tries" -gt 0 ]; do
+                if [ -S /var/run/cups/cups.sock ]; then
+                    /bin/lpadmin -h /var/run/cups/cups.sock -x test >/dev/null 2>&1 || true
+                    /bin/lpadmin -h /var/run/cups/cups.sock -p test -E -v file:/dev/usb/lp0 -m raw >> /log/cups.log 2>&1 || true
+                    break
+                fi
+                sleep 1
+                tries=$((tries - 1))
+            done
+        fi
+        debug_echo "CUPS spike: scheduler started; raw queue 'test' configured on file:/dev/usb/lp0"
+    else
+        debug_echo "CUPS spike: failed to start cupsd"
+    fi
 fi
 
 # Fix DRM framebuffer permissions
