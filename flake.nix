@@ -281,6 +281,7 @@
               binutilsStatic = crossPkgs.pkgsStatic.binutils; #for readelf
               mupdfHeadlessStatic = self.packages.${system}.mupdf_headless;
               cupsPkg = crossPkgs.cups;
+              cupsFiltersPkg = crossPkgs.cups-filters;
               ghostscriptPkg = crossPkgs.ghostscript;
               popplerUtilsPkg = crossPkgs.poppler_utils;
 
@@ -383,6 +384,7 @@
                   ln -sf ${popplerUtilsPkg}/bin/pdftops initramfs/bin/pdftops
                 fi
                 echo "CUPS_SPIKE=1" > initramfs/cups-spike.env
+                echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-spike.env
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
                 '' else ""}
 
@@ -432,7 +434,7 @@
 
               initramfs = self.lib.${system}.mkinitramfs { inherit debug cupsSpike; };
               cupsSpikeStoreClosure = pkgs.closureInfo {
-                rootPaths = [ crossPkgs.cups crossPkgs.ghostscript crossPkgs.poppler_utils ];
+                rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils ];
               };
               img-name =
                 let

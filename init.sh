@@ -84,6 +84,9 @@ if [ -f /cups-spike.env ]; then
     fi
 fi
 if [ -f /cups-spike.env ] && [ -x /bin/cupsd ]; then
+    # shellcheck source=/dev/null
+    . /cups-spike.env
+
     # Minimal identity DB for CUPS on initramfs-only userspace.
     if [ ! -f /etc/group ]; then
         cat > /etc/group <<'EOF'
@@ -117,12 +120,19 @@ EOF
         CUPS_DATA_ROOT="${CUPS_BIN_ROOT}-lib"
     fi
 
-    # Copy CUPS serverbin to writable storage and enforce ownership/perms expected by cupsd.
+    # Copy CUPS serverbin to writable storage.
     mkdir -p /var/cups-serverbin/lib
     rm -rf /var/cups-serverbin/lib/cups
     if [ -d "${CUPS_BIN_ROOT}/lib/cups" ]; then
         cp -a "${CUPS_BIN_ROOT}/lib/cups" /var/cups-serverbin/lib/
     fi
+    # Overlay optional filters/drivers from brlaser/cups-filters.
+    for EXTRA_ROOT in "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
+        [ -n "$EXTRA_ROOT" ] || continue
+        if [ -d "$EXTRA_ROOT/lib/cups" ]; then
+            cp -a "$EXTRA_ROOT/lib/cups/." /var/cups-serverbin/lib/cups/ 2>/dev/null || true
+        fi
+    done
     if [ -d /var/cups-serverbin/lib/cups ]; then
         chown -R root:root /var/cups-serverbin/lib/cups || true
         find /var/cups-serverbin/lib/cups -type d -exec chmod 755 {} \; 2>/dev/null || true
@@ -132,6 +142,25 @@ EOF
         chmod 700 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
     fi
 
+    # Build writable CUPS data dir and merge optional models/PPDs.
+    CUPS_RUNTIME_DATA=/var/cups-data
+    rm -rf "$CUPS_RUNTIME_DATA"
+    mkdir -p "$CUPS_RUNTIME_DATA"
+    if [ -d "${CUPS_DATA_ROOT}/share/cups" ]; then
+        cp -a "${CUPS_DATA_ROOT}/share/cups/." "$CUPS_RUNTIME_DATA/" 2>/dev/null || true
+    fi
+    for EXTRA_ROOT in "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
+        [ -n "$EXTRA_ROOT" ] || continue
+        if [ -d "$EXTRA_ROOT/share/cups/model" ]; then
+            mkdir -p "$CUPS_RUNTIME_DATA/model"
+            cp -a "$EXTRA_ROOT/share/cups/model/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
+        fi
+        if [ -d "$EXTRA_ROOT/share/ppd" ]; then
+            mkdir -p "$CUPS_RUNTIME_DATA/model"
+            cp -a "$EXTRA_ROOT/share/ppd/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
+        fi
+    done
+
     # Force a minimal, valid cups-files.conf for this spike.
     cat > /etc/cups/cups-files.conf <<EOF
 SystemGroup root lpadmin
@@ -139,7 +168,7 @@ FileDevice Yes
 RequestRoot /var/spool/cups
 ServerRoot /etc/cups
 CacheDir /var/cache/cups
-DataDir ${CUPS_DATA_ROOT}/share/cups
+DataDir ${CUPS_RUNTIME_DATA}
 ServerBin /var/cups-serverbin/lib/cups
 EOF
 
@@ -173,7 +202,23 @@ EOF
 
         /bin/lpadmin -h /var/run/cups/cups.sock -x test >/dev/null 2>&1 || true
         /bin/lpadmin -h /var/run/cups/cups.sock -p test -E -v "$QUEUE_URI" -m raw >> /log/cups.log 2>&1 || return 1
-        debug_echo "CUPS spike: queue test configured uri=$QUEUE_URI"
+        debug_echo "CUPS spike: queue test configured uri=$QUEUE_URI (raw)"
+
+        # Optional non-raw queue via brlaser model, if available.
+        MODEL=""
+        if [ -x /bin/lpinfo ]; then
+            MODEL="$(/bin/lpinfo -h /var/run/cups/cups.sock -m 2>/dev/null | awk '/brlaser/ && /HL-L5000D/ {print $1; exit}')"
+            if [ -z "$MODEL" ]; then
+                MODEL="$(/bin/lpinfo -h /var/run/cups/cups.sock -m 2>/dev/null | awk '/brlaser/ {print $1; exit}')"
+            fi
+        fi
+        if [ -n "$MODEL" ]; then
+            /bin/lpadmin -h /var/run/cups/cups.sock -x test-hbp >/dev/null 2>&1 || true
+            /bin/lpadmin -h /var/run/cups/cups.sock -p test-hbp -E -v "$QUEUE_URI" -m "$MODEL" >> /log/cups.log 2>&1 || true
+            debug_echo "CUPS spike: queue test-hbp configured model=$MODEL"
+        else
+            debug_echo "CUPS spike: no brlaser model found for non-raw queue"
+        fi
         return 0
     }
 
