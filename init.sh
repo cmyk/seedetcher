@@ -423,10 +423,22 @@ ensure_hbp_queue() {
   fi
   [ -n "$URI" ] || return 1
 
+  model_from_uri() {
+    # usb://Brother/HL-L5000D%20series?serial=... -> HL-L5000D series
+    printf '%s' "$1" | sed -n 's@^usb://Brother/\([^?]*\).*$@\1@p' | sed 's/%20/ /g'
+  }
+  find_brlaser_ppd() {
+    model="$1"
+    if [ -n "$model" ]; then
+      find /var/cups-data/model -type f \( -iname "*${model}*.ppd" -o -iname "*${model}*.ppd.gz" \) | head -n 1
+    fi
+  }
+
   # Prefer PPD path to avoid cups-driverd/dvr:/// dependency.
   PPD=""
   if [ -d /var/cups-data/model ]; then
-    PPD="$(find /var/cups-data/model -type f \( -iname '*HL-L5000D*.ppd' -o -iname '*HL-L5000D*.ppd.gz' \) | head -n 1)"
+    MODEL_NAME="$(model_from_uri "$URI")"
+    PPD="$(find_brlaser_ppd "$MODEL_NAME")"
     if [ -z "$PPD" ]; then
       PPD="$(find /var/cups-data/model -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
     fi
@@ -434,7 +446,8 @@ ensure_hbp_queue() {
   if [ -z "$PPD" ] && [ -x /bin/ppdc ] && [ -f /var/cups-data/drv/brlaser.drv ]; then
     mkdir -p /var/cups-data/model
     /bin/timeout 60 /bin/ppdc -d /var/cups-data/model /var/cups-data/drv/brlaser.drv >/tmp/ppdc-hbp.out 2>/tmp/ppdc-hbp.err || true
-    PPD="$(find /var/cups-data/model -type f \( -iname '*HL-L5000D*.ppd' -o -iname '*HL-L5000D*.ppd.gz' \) | head -n 1)"
+    MODEL_NAME="$(model_from_uri "$URI")"
+    PPD="$(find_brlaser_ppd "$MODEL_NAME")"
     if [ -z "$PPD" ]; then
       PPD="$(find /var/cups-data/model -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
     fi
@@ -560,8 +573,11 @@ EOF
         fi
 
         PPD=""
+        MODEL_NAME="$(printf '%s' "$QUEUE_URI" | sed -n 's@^usb://Brother/\([^?]*\).*$@\1@p' | sed 's/%20/ /g')"
         if [ -d "$CUPS_RUNTIME_DATA/model" ]; then
-            PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname '*HL-L5000D*.ppd' -o -iname '*HL-L5000D*.ppd.gz' \) | head -n 1)"
+            if [ -n "$MODEL_NAME" ]; then
+                PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname "*${MODEL_NAME}*.ppd" -o -iname "*${MODEL_NAME}*.ppd.gz" \) | head -n 1)"
+            fi
             if [ -z "$PPD" ]; then
                 PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
             fi
@@ -569,7 +585,9 @@ EOF
         if [ -z "$PPD" ] && [ -x /bin/ppdc ] && [ -f "$CUPS_RUNTIME_DATA/drv/brlaser.drv" ]; then
             mkdir -p "$CUPS_RUNTIME_DATA/model"
             /bin/timeout 10 /bin/ppdc -d "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv/brlaser.drv" >/dev/null 2>&1 || true
-            PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname '*HL-L5000D*.ppd' -o -iname '*HL-L5000D*.ppd.gz' \) | head -n 1)"
+            if [ -n "$MODEL_NAME" ]; then
+                PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname "*${MODEL_NAME}*.ppd" -o -iname "*${MODEL_NAME}*.ppd.gz" \) | head -n 1)"
+            fi
             if [ -z "$PPD" ]; then
                 PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
             fi
