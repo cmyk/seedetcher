@@ -271,7 +271,7 @@
                 ${pkgs.python3}/bin/python3 ${firmware-converter} $out/panel.bin ${firmware}
               '';
             };
-          mkinitramfs = debug:
+          mkinitramfs = { debug, cupsSpike ? false }:
             let
               pkgs = hostPkgs;
               busyboxStatic = crossPkgs.pkgsStatic.busybox;
@@ -279,6 +279,12 @@
               straceStatic = crossPkgs.pkgsStatic.strace;
               binutilsStatic = crossPkgs.pkgsStatic.binutils; #for readelf
               mupdfHeadlessStatic = self.packages.${system}.mupdf_headless;
+              cupsPkg = crossPkgs.cups;
+              ghostscriptPkg = crossPkgs.ghostscript;
+              popplerUtilsPkg = crossPkgs.poppler_utils;
+              cupsSpikeClosure = pkgs.closureInfo {
+                rootPaths = [ cupsPkg ghostscriptPkg popplerUtilsPkg ];
+              };
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
               seedEtcherFontFile = ./font/seedetcher/SeedEtcher-Regular.ttf;
@@ -361,6 +367,31 @@
                 cp -a ${mupdfHeadlessStatic}/bin/mutool initramfs/bin/ || echo "Failed to copy mutool from ${mupdfHeadlessStatic}/bin/"
                 chmod +x initramfs/bin/mutool || echo "chmod failed, listing dir: $(ls -alh initramfs/bin/)"
 
+                # Optional CUPS/Ghostscript tooling for experimental spike images.
+                ${if cupsSpike then ''
+                mkdir -p initramfs/etc/cups initramfs/var/spool/cups initramfs/var/run/cups initramfs/nix/store
+                while IFS= read -r p; do
+                  mkdir -p "initramfs$(dirname "$p")"
+                  cp -a "$p" "initramfs$p"
+                done < ${cupsSpikeClosure}/store-paths
+                if [ -d ${cupsPkg}/etc/cups ]; then
+                  cp -a ${cupsPkg}/etc/cups/* initramfs/etc/cups/
+                fi
+                for f in cupsd lp lpstat lpadmin cupsfilter; do
+                  if [ -x ${cupsPkg}/bin/$f ]; then
+                    ln -sf ${cupsPkg}/bin/$f initramfs/bin/$f
+                  fi
+                done
+                if [ -x ${ghostscriptPkg}/bin/gs ]; then
+                  ln -sf ${ghostscriptPkg}/bin/gs initramfs/bin/gs
+                fi
+                if [ -x ${popplerUtilsPkg}/bin/pdftops ]; then
+                  ln -sf ${popplerUtilsPkg}/bin/pdftops initramfs/bin/pdftops
+                fi
+                echo "CUPS_SPIKE=1" > initramfs/cups-spike.env
+                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
+                '' else ""}
+
 
                 # Only create symlinks if they do not already exist
                 for cmd in ls cat echo sh rm mkdir rmdir cp mv touch; do
@@ -395,7 +426,7 @@
 
               allowedReferences = [ ];
             };
-          mkimage = { debug, usbMode ? "gadget" }:
+          mkimage = { debug, usbMode ? "gadget", cupsSpike ? false }:
             let
               pkgs = hostPkgs;
               firmware = self.packages.${system}.firmware;
@@ -405,12 +436,14 @@
                 else
                   self.packages.${system}.kernel;
 
-              initramfs = self.lib.${system}.mkinitramfs debug;
+              initramfs = self.lib.${system}.mkinitramfs { inherit debug cupsSpike; };
               img-name =
                 let
-                  base = if usbMode == "host" then "seedetcher" else "seedetcher-gadget";
+                  modeBase = if usbMode == "host" then "seedetcher" else "seedetcher-gadget";
+                  base = if cupsSpike then "${modeBase}-cups-spike" else modeBase;
                 in
                 if debug then "${base}-debug.img" else "${base}.img";
+              imageSizeMB = if cupsSpike then 128 else 64;
 
               cmdlinetxt =
                 let
@@ -463,7 +496,7 @@
                 }
 
                 # Create disk image.
-                dd if=/dev/zero of=disk.img bs=1M count=64
+                dd if=/dev/zero of=disk.img bs=1M count=${toString imageSizeMB}
                 ${pkgs.util-linux}/bin/sfdisk disk.img <<EOF
                   label: dos
                   label-id: 0xceedb0ad
@@ -701,12 +734,16 @@
               sparseCheckout = [ "boot" ];
               hash = "sha256-rSZ3sUnSmBcsIqc+K91GDs5qlqiP+j9zf9gM2lqzr8w=";
             };
-            initramfs = self.lib.${system}.mkinitramfs false;
-            initramfs-debug = self.lib.${system}.mkinitramfs true;
+            initramfs = self.lib.${system}.mkinitramfs { debug = false; };
+            initramfs-debug = self.lib.${system}.mkinitramfs { debug = true; };
+            initramfs-cups-spike = self.lib.${system}.mkinitramfs { debug = false; cupsSpike = true; };
+            initramfs-cups-spike-debug = self.lib.${system}.mkinitramfs { debug = true; cupsSpike = true; };
             image = self.lib.${system}.mkimage { debug = false; usbMode = "host"; };
             image-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; };
             image-gadget = self.lib.${system}.mkimage { debug = false; usbMode = "gadget"; };
             image-gadget-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; };
+            image-cups-spike = self.lib.${system}.mkimage { debug = false; usbMode = "host"; cupsSpike = true; };
+            image-cups-spike-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; cupsSpike = true; };
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "reload" ''
               #!/bin/sh
