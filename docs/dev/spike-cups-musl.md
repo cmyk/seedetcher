@@ -245,6 +245,10 @@ HBP is currently blocked by `brlaser` ABI mismatch on this image. The architectu
 - Remaining caveat:
   - `cupsfilter` PDF -> CUPS raster chain is still missing (`No filter to convert from application/pdf to application/vnd.cups-raster`).
   - Use `/bin/print-hbp-pdf` workaround path in the spike image.
+- Boot optimization:
+  - `ppdc` model generation is disabled by default to reduce startup delay.
+  - Re-enable only for debugging with:
+    - `CUPS_SPIKE_ENABLE_PPDC=1`
 
 ## Pi Validation Checklist (Current Image)
 

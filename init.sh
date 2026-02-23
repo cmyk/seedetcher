@@ -288,7 +288,9 @@ EOF
         done
     fi
     install_brlaser_wrapper
-    # brlaser drop-in ships .drv; expose concrete models by generating PPDs at boot.
+    # brlaser drop-in ships .drv. PPD generation via ppdc is optional and disabled
+    # by default to keep boot latency low. Enable only for debugging:
+    #   CUPS_SPIKE_ENABLE_PPDC=1
     BRLASER_DRV="$CUPS_RUNTIME_DATA/drv/brlaser.drv"
     if [ -x /bin/ppdc ]; then
         debug_echo "CUPS spike: ppdc available"
@@ -300,7 +302,7 @@ EOF
     else
         debug_echo "CUPS spike: brlaser drv missing at $BRLASER_DRV"
     fi
-    if [ -f "$BRLASER_DRV" ] && [ -x /bin/ppdc ]; then
+    if [ "${CUPS_SPIKE_ENABLE_PPDC:-0}" = "1" ] && [ -f "$BRLASER_DRV" ] && [ -x /bin/ppdc ]; then
         mkdir -p "$CUPS_RUNTIME_DATA/model"
         # Keep this bounded; if generation fails/hangs, continue with raw queue path.
         /bin/timeout 10 /bin/ppdc -d "$CUPS_RUNTIME_DATA/model" "$BRLASER_DRV" >/dev/null 2>&1 || \
@@ -309,6 +311,8 @@ EOF
         debug_echo "CUPS spike: model file count after ppdc=$MODEL_COUNT"
         FIRST_MODELS="$(find "$CUPS_RUNTIME_DATA/model" -type f 2>/dev/null | head -n 3 | tr '\n' ';')"
         [ -n "$FIRST_MODELS" ] && debug_echo "CUPS spike: model sample=$FIRST_MODELS"
+    elif [ "${CUPS_SPIKE_ENABLE_PPDC:-0}" != "1" ]; then
+        debug_echo "CUPS spike: ppdc disabled (set CUPS_SPIKE_ENABLE_PPDC=1 to enable)"
     fi
 
     # Force a minimal, valid cups-files.conf for this spike.
