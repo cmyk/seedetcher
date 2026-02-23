@@ -433,7 +433,7 @@ ensure_hbp_queue() {
   fi
   if [ -z "$PPD" ] && [ -x /bin/ppdc ] && [ -f /var/cups-data/drv/brlaser.drv ]; then
     mkdir -p /var/cups-data/model
-    /bin/timeout 10 /bin/ppdc -d /var/cups-data/model /var/cups-data/drv/brlaser.drv >/dev/null 2>&1 || true
+    /bin/timeout 60 /bin/ppdc -d /var/cups-data/model /var/cups-data/drv/brlaser.drv >/tmp/ppdc-hbp.out 2>/tmp/ppdc-hbp.err || true
     PPD="$(find /var/cups-data/model -type f \( -iname '*HL-L5000D*.ppd' -o -iname '*HL-L5000D*.ppd.gz' \) | head -n 1)"
     if [ -z "$PPD" ]; then
       PPD="$(find /var/cups-data/model -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
@@ -444,7 +444,8 @@ ensure_hbp_queue() {
   if [ -n "$PPD" ]; then
     lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -P "$PPD" >/dev/null 2>&1 || return 1
   else
-    lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -m "drv:///brlaser.drv/brl5000d.ppd" >/dev/null 2>&1 || return 1
+    echo "no usable PPD for '$QUEUE' (ppdc may have failed; see /tmp/ppdc-hbp.err)" >&2
+    return 1
   fi
   lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1
 }
@@ -573,23 +574,12 @@ EOF
                 PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
             fi
         fi
-        MODEL=""
-        if [ -z "$PPD" ] && [ -x /bin/lpinfo ]; then
-            MODEL="$(/bin/lpinfo -h /var/run/cups/cups.sock -m 2>/dev/null | awk 'toupper($0) ~ /HL-L5000D/ {print $1; exit}')"
-            if [ -z "$MODEL" ]; then
-                MODEL="$(/bin/lpinfo -h /var/run/cups/cups.sock -m 2>/dev/null | awk '/Brother/ && /HL-/ {print $1; exit}')"
-            fi
-        fi
         if [ -n "$PPD" ]; then
             /bin/lpadmin -h /var/run/cups/cups.sock -x test-hbp >/dev/null 2>&1 || true
             /bin/lpadmin -h /var/run/cups/cups.sock -p test-hbp -E -v "$QUEUE_URI" -P "$PPD" >> /log/cups.log 2>&1 || true
             debug_echo "CUPS spike: queue test-hbp configured ppd=$PPD"
-        elif [ -n "$MODEL" ]; then
-            /bin/lpadmin -h /var/run/cups/cups.sock -x test-hbp >/dev/null 2>&1 || true
-            /bin/lpadmin -h /var/run/cups/cups.sock -p test-hbp -E -v "$QUEUE_URI" -m "$MODEL" >> /log/cups.log 2>&1 || true
-            debug_echo "CUPS spike: queue test-hbp configured model=$MODEL"
         else
-            debug_echo "CUPS spike: no brlaser model found for non-raw queue"
+            debug_echo "CUPS spike: no brlaser PPD found for non-raw queue"
         fi
         return 0
     }
