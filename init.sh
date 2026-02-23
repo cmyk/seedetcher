@@ -69,7 +69,7 @@ wait_for "$CTRL_TTY" 30
 
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
 
-# Optional CUPS spike bootstrap (manual start by default).
+# Optional CUPS spike bootstrap.
 if [ -f /cups-spike.env ]; then
     mkdir -p /nix /etc/cups /var/run/cups /var/spool/cups /var/log/cups
     tries=10
@@ -117,14 +117,18 @@ EOF
         CUPS_DATA_ROOT="${CUPS_BIN_ROOT}-lib"
     fi
 
-    # Copy CUPS serverbin to writable storage and enforce backend perms expected by cupsd.
+    # Copy CUPS serverbin to writable storage and enforce ownership/perms expected by cupsd.
     mkdir -p /var/cups-serverbin/lib
     rm -rf /var/cups-serverbin/lib/cups
     if [ -d "${CUPS_BIN_ROOT}/lib/cups" ]; then
         cp -a "${CUPS_BIN_ROOT}/lib/cups" /var/cups-serverbin/lib/
     fi
+    if [ -d /var/cups-serverbin/lib/cups ]; then
+        chown -R root:root /var/cups-serverbin/lib/cups || true
+        find /var/cups-serverbin/lib/cups -type d -exec chmod 755 {} \; 2>/dev/null || true
+        find /var/cups-serverbin/lib/cups -type f -exec chmod 555 {} \; 2>/dev/null || true
+    fi
     if [ -d /var/cups-serverbin/lib/cups/backend ]; then
-        chown -R root:root /var/cups-serverbin/lib/cups/backend || true
         chmod 700 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
     fi
 
@@ -152,21 +156,34 @@ WebInterface No
 </Location>
 EOF
     fi
-    # Start CUPS and provision a raw queue over /dev/usb/lp0 for zero-interaction testing.
+    # Start CUPS and provision a raw queue. Prefer usb:// backend discovery, then fallback.
     if /bin/cupsd >> /log/cups.log 2>&1; then
         if [ -x /bin/lpadmin ]; then
             tries=10
             while [ "$tries" -gt 0 ]; do
                 if [ -S /var/run/cups/cups.sock ]; then
+                    QUEUE_URI=""
+                    USB_BACKEND="/var/cups-serverbin/lib/cups/backend/usb"
+                    if [ -x "$USB_BACKEND" ]; then
+                        QUEUE_URI="$("$USB_BACKEND" 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
+                    fi
+                    if [ -z "$QUEUE_URI" ] && [ -c /dev/usb/lp0 ]; then
+                        QUEUE_URI="file:///dev/usb/lp0"
+                    fi
                     /bin/lpadmin -h /var/run/cups/cups.sock -x test >/dev/null 2>&1 || true
-                    /bin/lpadmin -h /var/run/cups/cups.sock -p test -E -v file:/dev/usb/lp0 -m raw >> /log/cups.log 2>&1 || true
+                    if [ -n "$QUEUE_URI" ]; then
+                        /bin/lpadmin -h /var/run/cups/cups.sock -p test -E -v "$QUEUE_URI" -m raw >> /log/cups.log 2>&1 || true
+                        debug_echo "CUPS spike: queue test configured uri=$QUEUE_URI"
+                    else
+                        debug_echo "CUPS spike: no printer URI discovered (usb backend + /dev/usb/lp0 fallback failed)"
+                    fi
                     break
                 fi
                 sleep 1
                 tries=$((tries - 1))
             done
         fi
-        debug_echo "CUPS spike: scheduler started; raw queue 'test' configured on file:/dev/usb/lp0"
+        debug_echo "CUPS spike: scheduler started"
     else
         debug_echo "CUPS spike: failed to start cupsd"
     fi
@@ -188,7 +205,7 @@ fi
 
 debug_echo "Checking /controller existence and permissions..."
 ls -l /controller >> /log/init_debug.log 2>&1
-file /controller >> /log/init_debug.log 2>&1
+[ -x /bin/file ] && file /controller >> /log/init_debug.log 2>&1
 debug_echo "Starting controller..."
 # Ensure controller’s stdout/stderr go to log; stdin from controller TTY if present
 /controller < "$CTRL_TTY" >> /log/debug.log 2>> /log/debug.log &
