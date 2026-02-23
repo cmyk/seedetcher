@@ -69,7 +69,7 @@ wait_for "$CTRL_TTY" 30
 
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
 
-# Optional CUPS spike bootstrap.
+# Optional CUPS spike bootstrap (manual start by default).
 if [ -f /cups-spike.env ] && [ -x /bin/cupsd ]; then
     mkdir -p /etc/cups /var/run/cups /var/spool/cups /var/log/cups
     if [ ! -f /etc/cups/cupsd.conf ]; then
@@ -85,8 +85,7 @@ WebInterface No
 </Location>
 EOF
     fi
-    /bin/cupsd -f >> /log/cups.log 2>&1 &
-    debug_echo "CUPS spike: started cupsd (pid $(pidof cupsd 2>/dev/null || echo n/a))"
+    debug_echo "CUPS spike: installed (manual start). Run: /bin/cupsd -f >> /log/cups.log 2>&1 &"
 fi
 
 # Fix DRM framebuffer permissions
