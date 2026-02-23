@@ -48,5 +48,18 @@ nix build .#image-cups-spike-debug --impure
   - peak RSS during run: ~1.8 GB
 - Interpretation: feasible to attempt, but expect long first-build latency and large dependency closure.
 
+## Runtime Finding (Pi Zero, initramfs-only image)
+- Result: **no-go for CUPS+GS inside current initramfs design**.
+- Symptom on UART boot log:
+  - `rootfs image is not initramfs (write error); looks like an initrd`
+  - `/initrd.image: incomplete write (-28 != ...)`
+- `-28` (`ENOSPC`) indicates initrd/initramfs payload is too large for this boot path.
+- Practical outcome:
+  - boot degrades (repeating `/proc` errors / unstable startup),
+  - shell/controller behavior is unreliable.
+- Conclusion:
+  - Do not pursue "full CUPS+GS in initramfs" further on this architecture.
+  - If CUPS is still desired, test it only in an SD-card rootfs image model (persistent root filesystem), not ram-only initramfs.
+
 ## Exit Criteria
 - If build/runtime complexity is too high or print path remains unreliable, mark as no-go and keep raw PCL/PS-only strategy.
