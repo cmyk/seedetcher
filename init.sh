@@ -194,9 +194,15 @@ EOF
         chmod 755 /var/cups-serverbin/lib/cups/backend 2>/dev/null || true
         chmod 755 /var/cups-serverbin/lib/cups/filter 2>/dev/null || true
         chmod 755 /var/cups-serverbin/lib/cups/driver 2>/dev/null || true
+        chmod 755 /var/cups-serverbin/lib/cups/daemon 2>/dev/null || true
+        chown root:root /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
+        chown root:root /var/cups-serverbin/lib/cups/filter/* 2>/dev/null || true
+        chown root:root /var/cups-serverbin/lib/cups/driver/* 2>/dev/null || true
+        chown root:root /var/cups-serverbin/lib/cups/daemon/* 2>/dev/null || true
         chmod 555 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
         chmod 555 /var/cups-serverbin/lib/cups/filter/* 2>/dev/null || true
         chmod 555 /var/cups-serverbin/lib/cups/driver/* 2>/dev/null || true
+        chmod 555 /var/cups-serverbin/lib/cups/daemon/* 2>/dev/null || true
     fi
     if [ -d /var/cups-serverbin/lib/cups/backend ]; then
         chmod 700 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
