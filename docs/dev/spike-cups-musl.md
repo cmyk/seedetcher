@@ -96,3 +96,90 @@ nix build .#image-cups-spike-debug --impure
 
 ## Exit Criteria
 - If build/runtime complexity is too high or print path remains unreliable, mark as no-go and keep raw PCL/PS-only strategy.
+
+## HBP USB Backend Follow-up (`experimental/hbp-usb-backend`)
+
+### Why this follow-up exists
+- HBP support remains high-value for end users because low-cost laser printers often lack native PCL/PS support.
+- The previous spike proved that:
+  - direct `/dev/usb/lp0` writes work,
+  - CUPS stack can run,
+  - but `raw + file:///dev/usb/lp0` did not yield physical prints.
+- This branch focuses specifically on CUPS USB/backend-driven paths rather than `file:///` raw fallback.
+
+### Scope (branch-local)
+- Keep all work isolated to experimental branch.
+- Do not change release behavior unless a complete end-to-end HBP print path is proven stable.
+- Continue preserving direct PCL/PS production path.
+
+### Working hypotheses to test
+1. `usb://` backend path can be made reliable with correct runtime permissions/config.
+2. A non-raw filter/driver chain is required for real HBP output.
+3. If backend+filter path is viable, one model-specific proof (HL-L2400D or equivalent) is enough to decide whether to productize.
+
+### Test checklist
+- [x] Confirm backend discovery/URI provisioning works on target image.
+- [x] Submit one controlled job via `usb://...` queue and verify physical page output.
+- [ ] Confirm repeated jobs (>=3) print without scheduler/backend stalls.
+- [ ] Replace timed queue-provision retry with proper hot-plug event handling (no fixed 3-minute window).
+- [ ] Capture logs for successful path (`/var/log/cups/error_log`) and record required config.
+- [ ] Measure overhead:
+  - [ ] boot-to-ready delta vs non-spike image
+  - [ ] idle RAM delta
+  - [ ] first-page latency
+- [ ] Decide go/no-go for integrating HBP path into release branch.
+
+### Acceptance criteria for "Go"
+- At least one HBP printer prints SeedEtcher-generated content from Pi host mode with no manual shell setup.
+- Config is reproducible after reboot.
+- Resource overhead is documented and acceptable for Pi Zero constraints.
+
+### Milestone: USB backend queue prints on HL-L5000D
+- On `experimental/hbp-usb-backend`, boot logs show:
+  - `queue test configured uri=usb://Brother/HL-L5000D%20series?...`
+- Queue state confirms `device for test: usb://...`.
+- A raw PCL test job submitted through CUPS (`lp ... -o raw /tmp/test.pcl`) produced physical output.
+- Observed caveat:
+  - after print, Brother panel can remain in a "Data remaining" state briefly.
+  - status clears after a short delay; if needed, send a reset trailer:
+    - `printf '\033E\f\033%%-12345X' > /dev/usb/lp0`
+- Interpretation:
+  - this branch has crossed the core hurdle from non-printing CUPS jobs to actual physical print via `usb://` backend.
+  - current queue provisioning still relies on a bounded retry loop; production path should be event-driven for printer hot-plug support.
+
+### Optional brlaser drop-in (no flake dependency)
+- This branch supports an optional runtime archive on SD boot partition:
+  - `/brlaser-root.tar.gz` (or `.tgz` / `.tar`)
+- Archive layout should include:
+  - `lib/cups/...`
+  - optionally `share/cups/model/...` and/or `share/ppd/...`
+- On boot, init extracts it to `/var/cups-extra/brlaser-root`, overlays CUPS serverbin/data, and attempts creating:
+  - raw queue: `test` (always)
+  - non-raw queue: `test-hbp` (only when a `brlaser` model is discoverable via `lpinfo -m`)
+- If no model is found, raw flow remains unchanged.
+
+### Current brlaser status (important)
+- `test-hbp` queue creation can succeed (`drv:///brlaser.drv/...`) when `brlaser.drv` is present.
+- Some prebuilt drop-ins may still fail at runtime with:
+  - `execv failed: No such file or directory`
+  - filter path shown as `/var/cups-serverbin/lib/cups/filter/rastertobrlaser`
+- Root cause:
+  - prebuilt ELF interpreter/RUNPATH points at foreign Nix store hashes.
+- Mitigation now in `init.sh`:
+  - accepts both archive layouts:
+    - `lib/...` at root
+    - `brlaser-root/lib/...` nested root
+  - auto-repairs missing ELF interpreter path for drop-in filters.
+  - auto-repairs missing RUNPATH directories by linking to current image libs.
+- Branch currently relies on the drop-in path for `brlaser` (`brlaser-root.tar.gz`); flake-built `brlaser` is still unresolved on this toolchain.
+- `test-hbp` queue is now gated by a filter exec smoke-check; if `rastertobrlaser` is not runnable, queue creation is skipped with a debug log line.
+
+### UART-friendly self-test
+- Spike images now install:
+  - `/bin/cups-spike-selftest`
+- It performs:
+  1. queue listing,
+  2. raw queue test (`test`),
+  3. HBP queue test (`test-hbp`) if present,
+  4. recent job listing,
+  5. last CUPS log lines.

@@ -281,8 +281,10 @@
               binutilsStatic = crossPkgs.pkgsStatic.binutils; #for readelf
               mupdfHeadlessStatic = self.packages.${system}.mupdf_headless;
               cupsPkg = crossPkgs.cups;
+              cupsFiltersPkg = crossPkgs.cups-filters;
               ghostscriptPkg = crossPkgs.ghostscript;
               popplerUtilsPkg = crossPkgs.poppler_utils;
+              brlaserDropin = ./spike/brlaser-root.tar.gz;
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
               seedEtcherFontFile = ./font/seedetcher/SeedEtcher-Regular.ttf;
@@ -371,7 +373,7 @@
                 if [ -d ${cupsPkg}/etc/cups ]; then
                   cp -a ${cupsPkg}/etc/cups/* initramfs/etc/cups/
                 fi
-                for f in cupsd lp lpstat lpadmin lpinfo cupsfilter; do
+                for f in cupsd lp lpstat lpadmin lpinfo cupsfilter ppdc; do
                   if [ -x ${cupsPkg}/bin/$f ]; then
                     ln -sf ${cupsPkg}/bin/$f initramfs/bin/$f
                   fi
@@ -383,6 +385,7 @@
                   ln -sf ${popplerUtilsPkg}/bin/pdftops initramfs/bin/pdftops
                 fi
                 echo "CUPS_SPIKE=1" > initramfs/cups-spike.env
+                echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-spike.env
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
                 '' else ""}
 
@@ -423,6 +426,7 @@
           mkimage = { debug, usbMode ? "gadget", cupsSpike ? false }:
             let
               pkgs = hostPkgs;
+              brlaserDropin = ./spike/brlaser-root.tar.gz;
               firmware = self.packages.${system}.firmware;
               kernel =
                 if debug then
@@ -432,7 +436,7 @@
 
               initramfs = self.lib.${system}.mkinitramfs { inherit debug cupsSpike; };
               cupsSpikeStoreClosure = pkgs.closureInfo {
-                rootPaths = [ crossPkgs.cups crossPkgs.ghostscript crossPkgs.poppler_utils ];
+                rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils ];
               };
               img-name =
                 let
@@ -536,6 +540,10 @@
                 # mcopy doesn't copy directories deterministically, so rely on sorted shell globbing
                 # instead.
                 ${pkgs.mtools}/bin/mcopy -bpm -i "boot.vfat@@$OFFSET" overlays/* ::overlays
+                ${if cupsSpike then ''
+                # Experimental: prebuilt brlaser drop-in for init.sh runtime loader.
+                ${pkgs.mtools}/bin/mcopy -bpm -i "boot.vfat@@$OFFSET" ${brlaserDropin} ::brlaser-root.tar.gz
+                '' else ""}
                 dd if=boot.vfat of=disk.img bs=512 seek="$START1" conv=notrunc status=none
 
                 ${if cupsSpike then ''
