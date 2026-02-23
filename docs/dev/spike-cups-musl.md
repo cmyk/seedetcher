@@ -96,3 +96,39 @@ nix build .#image-cups-spike-debug --impure
 
 ## Exit Criteria
 - If build/runtime complexity is too high or print path remains unreliable, mark as no-go and keep raw PCL/PS-only strategy.
+
+## HBP USB Backend Follow-up (`experimental/hbp-usb-backend`)
+
+### Why this follow-up exists
+- HBP support remains high-value for end users because low-cost laser printers often lack native PCL/PS support.
+- The previous spike proved that:
+  - direct `/dev/usb/lp0` writes work,
+  - CUPS stack can run,
+  - but `raw + file:///dev/usb/lp0` did not yield physical prints.
+- This branch focuses specifically on CUPS USB/backend-driven paths rather than `file:///` raw fallback.
+
+### Scope (branch-local)
+- Keep all work isolated to experimental branch.
+- Do not change release behavior unless a complete end-to-end HBP print path is proven stable.
+- Continue preserving direct PCL/PS production path.
+
+### Working hypotheses to test
+1. `usb://` backend path can be made reliable with correct runtime permissions/config.
+2. A non-raw filter/driver chain is required for real HBP output.
+3. If backend+filter path is viable, one model-specific proof (HL-L2400D or equivalent) is enough to decide whether to productize.
+
+### Test checklist
+- [ ] Confirm backend discovery works (`lpinfo -v`) on target image.
+- [ ] Submit one controlled job via `usb://...` queue and verify physical page output.
+- [ ] Confirm repeated jobs (>=3) print without scheduler/backend stalls.
+- [ ] Capture logs for successful path (`/var/log/cups/error_log`) and record required config.
+- [ ] Measure overhead:
+  - [ ] boot-to-ready delta vs non-spike image
+  - [ ] idle RAM delta
+  - [ ] first-page latency
+- [ ] Decide go/no-go for integrating HBP path into release branch.
+
+### Acceptance criteria for "Go"
+- At least one HBP printer prints SeedEtcher-generated content from Pi host mode with no manual shell setup.
+- Config is reproducible after reboot.
+- Resource overhead is documented and acceptable for Pi Zero constraints.
