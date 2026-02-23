@@ -446,7 +446,7 @@
                   base = if cupsSpike then "${modeBase}-cups-spike" else modeBase;
                 in
                 if debug then "${base}-debug.img" else "${base}.img";
-              imageSizeMB = if cupsSpike then 1600 else 64;
+              imageSizeMB = 64;
 
               cmdlinetxt =
                 let
@@ -499,16 +499,41 @@
                 }
 
                 # Create disk image.
-                dd if=/dev/zero of=disk.img bs=1M count=${toString imageSizeMB}
                 ${if cupsSpike then ''
+                # Auto-size rootfs partition from closure size to avoid huge sparse images.
+                CLOSURE_BYTES=0
+                while IFS= read -r p; do
+                  [ -e "$p" ] || continue
+                  sz="$(${pkgs.coreutils}/bin/du -sb "$p" | ${pkgs.coreutils}/bin/cut -f1)"
+                  CLOSURE_BYTES=$((CLOSURE_BYTES + sz))
+                done < ${cupsSpikeStoreClosure}/store-paths
+
+                # Add overhead for filesystem metadata + runtime writable paths.
+                ROOTFS_BYTES_EST=$(( (CLOSURE_BYTES * 130) / 100 + 128 * 1024 * 1024 ))
+                MIN_ROOTFS_BYTES=$((256 * 1024 * 1024))
+                if [ "$ROOTFS_BYTES_EST" -lt "$MIN_ROOTFS_BYTES" ]; then
+                  ROOTFS_BYTES_EST=$MIN_ROOTFS_BYTES
+                fi
+                ROOTFS_SECTORS=$(( (ROOTFS_BYTES_EST + 511) / 512 ))
+
+                BOOT_SECTORS=114688
+                START1=2048
+                START2=$((START1 + BOOT_SECTORS))
+                ALIGN_SECTORS=2048
+                TOTAL_SECTORS=$((START2 + ROOTFS_SECTORS + ALIGN_SECTORS))
+                IMAGE_BYTES=$((TOTAL_SECTORS * 512))
+                IMAGE_MB=$(( (IMAGE_BYTES + 1024*1024 - 1) / (1024*1024) ))
+
+                dd if=/dev/zero of=disk.img bs=1M count="$IMAGE_MB"
                 ${pkgs.util-linux}/bin/sfdisk disk.img <<EOF
                   label: dos
                   label-id: 0xceedb0ad
 
-                  disk.img1 : size=114688, type=c, bootable
-                  disk.img2 : type=83
+                  disk.img1 : size=$BOOT_SECTORS, type=c, bootable
+                  disk.img2 : size=$ROOTFS_SECTORS, type=83
                 EOF
                 '' else ''
+                dd if=/dev/zero of=disk.img bs=1M count=${toString imageSizeMB}
                 ${pkgs.util-linux}/bin/sfdisk disk.img <<EOF
                   label: dos
                   label-id: 0xceedb0ad
