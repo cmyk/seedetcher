@@ -76,6 +76,8 @@ elif [[ $DISK_NUMBER -lt 4 ]]; then
 fi
 
 echo "SD card identified as: /dev/$DISK_DEVICE"
+RAW_DISK_DEVICE="r${DISK_DEVICE}"
+echo "Using raw device for faster flashing: /dev/${RAW_DISK_DEVICE}"
 
 # Step 3: Unmount the SD card
 echo "Unmounting /dev/$DISK_DEVICE..."
@@ -87,8 +89,8 @@ if [[ $? -ne 0 ]]; then
 fi
 
 # Step 4: Flash the image
-echo "Flashing the image to /dev/$DISK_DEVICE..."
-sudo dd if=$LOCAL_PATH of=/dev/$DISK_DEVICE bs=4M status=progress
+echo "Flashing the image to /dev/$RAW_DISK_DEVICE..."
+sudo dd if=$LOCAL_PATH of=/dev/$RAW_DISK_DEVICE bs=4m status=progress
 
 if [[ $? -ne 0 ]]; then
     echo "Error: Flashing failed."
