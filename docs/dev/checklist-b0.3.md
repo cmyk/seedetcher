@@ -104,3 +104,11 @@
   - [x] Nunchuk
   - [x] BlueWallet
 - [x] Docs/changelog updates for expanded UR/XOR family support.
+
+### 8) Printer language selector (host mode)
+- [x] Add explicit printer-language choice in print flow: `PCL` (default) / `PS`.
+- [x] Add user guidance text: if `PCL` prints blank pages, try `PS`.
+- [x] Implement host-mode `PS` path: render canonical pages -> native PostScript -> raw USB send (no external converters).
+- [x] Optimize PS send path on Pi Zero (buffered writes + fast hex encoding).
+- [x] Validate physical PS printing on Brother HL-L5000D (600 and 1200 DPI).
+- [ ] Validate on additional physical models (beyond HL-L5000D).

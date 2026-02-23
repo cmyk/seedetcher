@@ -327,6 +327,9 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		// Gadget fallback path is heavier (raster->PDF); keep it conservative.
 		opts.DPI = 600
 	}
+	if p.supportsPCL && opts.PrinterLang == printer.PrinterLangPS {
+		return p.createPlatesPostScript(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
+	}
 	if p.supportsPCL {
 		// Host-mode PCL path: render and send in page-sized batches to reduce peak RAM.
 		totalShares := len(mnemonics)
@@ -577,6 +580,35 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	}
 	time.Sleep(2 * time.Second)
 	return nil
+}
+
+func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
+	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
+	if err != nil {
+		return fmt.Errorf("render: plate bitmaps: %w", err)
+	}
+
+	pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, progress)
+	if err != nil {
+		return fmt.Errorf("render: compose pages: %w", err)
+	}
+	if opts.EtchStatsPage {
+		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, paper)
+		if err != nil {
+			return fmt.Errorf("stats: build report: %w", err)
+		}
+		statsPage, err := printer.RenderEtchStatsPage(report, paper, opts.DPI)
+		if err != nil {
+			return fmt.Errorf("stats: render page: %w", err)
+		}
+		pages = append(pages, statsPage)
+	}
+
+	printerDev := p.Printer()
+	if printerDev == nil {
+		return fmt.Errorf("no printer available")
+	}
+	return printer.WritePS(printerDev, pages, paper, progress)
 }
 
 func (p *Platform) initSDCardNotifier() error {

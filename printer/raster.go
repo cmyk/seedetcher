@@ -24,12 +24,22 @@ type RasterOptions struct {
 	DPI    float64 // target resolution; defaults to 600 if unset
 	Mirror bool    // mirror horizontally (for toner transfer)
 	Invert bool    // swap black/white for negative output
+	// PrinterLang selects the host printer language path.
+	// Default zero value is PCL.
+	PrinterLang PrinterLanguage
 	// SinglesigLayout controls singlesig plate rendering strategy.
 	// Zero value keeps the current default: seed + descriptor info (single-sided).
 	SinglesigLayout SinglesigLayoutMode
 	// EtchStatsPage appends an additional page with per-plate coverage metrics.
 	EtchStatsPage bool
 }
+
+type PrinterLanguage uint8
+
+const (
+	PrinterLangPCL PrinterLanguage = iota
+	PrinterLangPS
+)
 
 type SinglesigLayoutMode uint8
 
