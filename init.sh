@@ -156,32 +156,44 @@ WebInterface No
 </Location>
 EOF
     fi
+    provision_spike_queue() {
+        # Return 0 when queue is configured, 1 otherwise.
+        [ -x /bin/lpadmin ] || return 1
+        [ -S /var/run/cups/cups.sock ] || return 1
+
+        QUEUE_URI=""
+        USB_BACKEND="/var/cups-serverbin/lib/cups/backend/usb"
+        if [ -x "$USB_BACKEND" ]; then
+            QUEUE_URI="$("$USB_BACKEND" 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
+        fi
+        if [ -z "$QUEUE_URI" ] && [ -c /dev/usb/lp0 ]; then
+            QUEUE_URI="file:///dev/usb/lp0"
+        fi
+        [ -n "$QUEUE_URI" ] || return 1
+
+        /bin/lpadmin -h /var/run/cups/cups.sock -x test >/dev/null 2>&1 || true
+        /bin/lpadmin -h /var/run/cups/cups.sock -p test -E -v "$QUEUE_URI" -m raw >> /log/cups.log 2>&1 || return 1
+        debug_echo "CUPS spike: queue test configured uri=$QUEUE_URI"
+        return 0
+    }
+
     # Start CUPS and provision a raw queue. Prefer usb:// backend discovery, then fallback.
     if /bin/cupsd >> /log/cups.log 2>&1; then
-        if [ -x /bin/lpadmin ]; then
-            tries=10
-            while [ "$tries" -gt 0 ]; do
-                if [ -S /var/run/cups/cups.sock ]; then
-                    QUEUE_URI=""
-                    USB_BACKEND="/var/cups-serverbin/lib/cups/backend/usb"
-                    if [ -x "$USB_BACKEND" ]; then
-                        QUEUE_URI="$("$USB_BACKEND" 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
+        # Try immediate provisioning first.
+        if ! provision_spike_queue; then
+            debug_echo "CUPS spike: no printer URI discovered at boot; starting retry loop"
+            # Printer can enumerate after boot; retry for up to 3 minutes in background.
+            (
+                retries=90
+                while [ "$retries" -gt 0 ]; do
+                    sleep 2
+                    if provision_spike_queue; then
+                        exit 0
                     fi
-                    if [ -z "$QUEUE_URI" ] && [ -c /dev/usb/lp0 ]; then
-                        QUEUE_URI="file:///dev/usb/lp0"
-                    fi
-                    /bin/lpadmin -h /var/run/cups/cups.sock -x test >/dev/null 2>&1 || true
-                    if [ -n "$QUEUE_URI" ]; then
-                        /bin/lpadmin -h /var/run/cups/cups.sock -p test -E -v "$QUEUE_URI" -m raw >> /log/cups.log 2>&1 || true
-                        debug_echo "CUPS spike: queue test configured uri=$QUEUE_URI"
-                    else
-                        debug_echo "CUPS spike: no printer URI discovered (usb backend + /dev/usb/lp0 fallback failed)"
-                    fi
-                    break
-                fi
-                sleep 1
-                tries=$((tries - 1))
-            done
+                    retries=$((retries - 1))
+                done
+                debug_echo "CUPS spike: queue provisioning timed out (no URI discovered)"
+            ) &
         fi
         debug_echo "CUPS spike: scheduler started"
     else
