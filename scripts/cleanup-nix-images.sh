@@ -10,6 +10,7 @@ Defaults to dry-run.
 
 Options:
   --apply            Actually delete paths (default: dry-run)
+  --gc               Run nix garbage collection after delete attempt
   --no-keep-result   Do not automatically keep the current ./result target
   --keep PATH        Keep an extra /nix/store path (repeatable)
   -h, --help         Show this help
@@ -21,6 +22,7 @@ EOF
 }
 
 APPLY=0
+RUN_GC=0
 KEEP_RESULT=1
 declare -a KEEP_PATHS=()
 
@@ -28,6 +30,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --apply)
       APPLY=1
+      shift
+      ;;
+    --gc)
+      RUN_GC=1
       shift
       ;;
     --no-keep-result)
@@ -120,8 +126,29 @@ fi
 
 echo
 echo "Deleting..."
+FAILED=0
 for path in "${DELETABLE[@]}"; do
-  nix store delete "$path" || echo "warn: failed to delete $path"
+  if ! nix store delete "$path"; then
+    FAILED=$((FAILED + 1))
+    echo "warn: failed to delete $path"
+  fi
 done
+
+if [[ $RUN_GC -eq 1 ]]; then
+  echo
+  echo "Running garbage collection..."
+  nix-collect-garbage -d || true
+fi
+
+if [[ $FAILED -gt 0 ]]; then
+  echo
+  echo "Some paths could not be deleted because they are still alive via GC roots."
+  echo "Inspect one path with:"
+  echo "  nix-store --query --roots <path>"
+  echo "  nix-store --query --referrers <path>"
+  echo
+  echo "If outputs still refuse deletion, run as root to include daemon-owned roots:"
+  echo "  sudo nix-collect-garbage -d"
+fi
 
 echo "Done."
