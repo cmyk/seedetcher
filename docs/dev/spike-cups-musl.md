@@ -157,3 +157,27 @@ nix build .#image-cups-spike-debug --impure
   - raw queue: `test` (always)
   - non-raw queue: `test-hbp` (only when a `brlaser` model is discoverable via `lpinfo -m`)
 - If no model is found, raw flow remains unchanged.
+
+### Current brlaser status (important)
+- `test-hbp` queue creation can succeed (`drv:///brlaser.drv/...`) when `brlaser.drv` is present.
+- Some prebuilt drop-ins may still fail at runtime with:
+  - `execv failed: No such file or directory`
+  - filter path shown as `/var/cups-serverbin/lib/cups/filter/rastertobrlaser`
+- Root cause:
+  - prebuilt ELF interpreter/RUNPATH points at foreign Nix store hashes.
+- Mitigation now in `init.sh`:
+  - accepts both archive layouts:
+    - `lib/...` at root
+    - `brlaser-root/lib/...` nested root
+  - auto-repairs missing ELF interpreter path for drop-in filters.
+  - auto-repairs missing RUNPATH directories by linking to current image libs.
+
+### UART-friendly self-test
+- Spike images now install:
+  - `/bin/cups-spike-selftest`
+- It performs:
+  1. queue listing,
+  2. raw queue test (`test`),
+  3. HBP queue test (`test-hbp`) if present,
+  4. recent job listing,
+  5. last CUPS log lines.

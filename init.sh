@@ -100,6 +100,10 @@ if [ -f /cups-spike.env ] && [ -x /bin/cupsd ]; then
                 mkdir -p /var/cups-extra/brlaser-root
                 if tar -xf "$CAND" -C /var/cups-extra/brlaser-root >/dev/null 2>&1; then
                     BRLASER_DROPIN_ROOT=/var/cups-extra/brlaser-root
+                    # Support archives that include an extra top-level directory.
+                    if [ -d /var/cups-extra/brlaser-root/brlaser-root ]; then
+                        BRLASER_DROPIN_ROOT=/var/cups-extra/brlaser-root/brlaser-root
+                    fi
                     debug_echo "CUPS spike: loaded brlaser drop-in from $(basename "$CAND")"
                 else
                     debug_echo "CUPS spike: failed to extract brlaser drop-in $(basename "$CAND")"
@@ -187,6 +191,68 @@ EOF
             cp -a "$EXTRA_ROOT/share/ppd/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
         fi
     done
+
+    # Prebuilt drop-ins can carry Nix store paths from a different build host.
+    # If so, make compatibility symlinks so execv does not fail with ENOENT.
+    repair_elf_runtime() {
+        ELF_BIN="$1"
+        [ -x "$ELF_BIN" ] || return 0
+        [ -x /bin/readelf ] || return 0
+
+        # Repair missing program interpreter (musl loader).
+        INTERP_PATH="$(/bin/readelf -l "$ELF_BIN" 2>/dev/null | sed -n 's@.*Requesting program interpreter: \(.*\)]@\1@p' | head -n 1)"
+        if [ -n "$INTERP_PATH" ] && [ ! -e "$INTERP_PATH" ] && [ -e /lib/ld-musl-armhf.so.1 ]; then
+            mkdir -p "$(dirname "$INTERP_PATH")"
+            ln -snf /lib/ld-musl-armhf.so.1 "$INTERP_PATH" 2>/dev/null || true
+            debug_echo "CUPS spike: repaired interp for $(basename "$ELF_BIN") -> $INTERP_PATH"
+        fi
+
+        # Repair missing RUNPATH directories (cups/libstdc++/musl).
+        RUNPATHS="$(/bin/readelf -d "$ELF_BIN" 2>/dev/null | sed -n 's@.*Library runpath: \[\(.*\)\]@\1@p' | head -n 1)"
+        [ -n "$RUNPATHS" ] || return 0
+
+        GCC_LIB_PATH="$(find /nix/store -path '*gcc*lib*/armv6l-unknown-linux-musleabihf/lib' 2>/dev/null | head -n 1)"
+        CUPS_LIB_PATH=""
+        if [ -d "${CUPS_BIN_ROOT}/lib" ]; then
+            CUPS_LIB_PATH="${CUPS_BIN_ROOT}/lib"
+        elif [ -d "${CUPS_BIN_ROOT}-lib/lib" ]; then
+            CUPS_LIB_PATH="${CUPS_BIN_ROOT}-lib/lib"
+        fi
+
+        OLDIFS="$IFS"
+        IFS=':'
+        for RP in $RUNPATHS; do
+            [ -n "$RP" ] || continue
+            [ -e "$RP" ] && continue
+            TARGET=""
+            case "$RP" in
+                *musl*"/lib")
+                    TARGET="/lib"
+                    ;;
+                *cups*"/lib")
+                    TARGET="$CUPS_LIB_PATH"
+                    ;;
+                *gcc*"/armv6l-unknown-linux-musleabihf/lib")
+                    TARGET="$GCC_LIB_PATH"
+                    ;;
+            esac
+            if [ -n "$TARGET" ] && [ -d "$TARGET" ]; then
+                mkdir -p "$(dirname "$RP")"
+                rm -rf "$RP" 2>/dev/null || true
+                ln -snf "$TARGET" "$RP" 2>/dev/null || true
+                debug_echo "CUPS spike: repaired runpath for $(basename "$ELF_BIN") -> $RP"
+            fi
+        done
+        IFS="$OLDIFS"
+    }
+
+    # Apply runtime-path repair to all drop-in filters.
+    if [ -d /var/cups-serverbin/lib/cups/filter ]; then
+        for F in /var/cups-serverbin/lib/cups/filter/*; do
+            [ -f "$F" ] || continue
+            repair_elf_runtime "$F"
+        done
+    fi
     # brlaser drop-in ships .drv; expose concrete models by generating PPDs at boot.
     BRLASER_DRV="$CUPS_RUNTIME_DATA/drv/brlaser.drv"
     if [ -x /bin/ppdc ]; then
@@ -234,6 +300,48 @@ WebInterface No
 </Location>
 EOF
     fi
+
+    # One-command UART-friendly spike test runner.
+    cat > /bin/cups-spike-selftest <<'EOF'
+#!/bin/sh
+SOCK=/var/run/cups/cups.sock
+echo "[1] Queues"
+lpstat -h "$SOCK" -p -v
+echo
+
+echo "[2] Raw queue smoke test"
+printf '\033ESE raw selftest\r\n\f\033%%-12345X' > /tmp/cups-raw-test.pcl
+lp -h "$SOCK" -d test -o raw /tmp/cups-raw-test.pcl || true
+echo
+
+echo "[3] HBP queue smoke test (if present)"
+if lpstat -h "$SOCK" -p test-hbp >/dev/null 2>&1; then
+  cat > /tmp/cups-hbp-test.ps <<'PS'
+%!PS
+/Helvetica findfont 24 scalefont setfont
+72 720 moveto
+(SE HBP SELFTEST) show
+showpage
+PS
+  if command -v gs >/dev/null 2>&1; then
+    gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile=/tmp/cups-hbp-test.ras /tmp/cups-hbp-test.ps
+    lp -h "$SOCK" -d test-hbp -o document-format=application/vnd.cups-raster /tmp/cups-hbp-test.ras || true
+  else
+    echo "gs not found; skipping raster generation"
+  fi
+else
+  echo "test-hbp queue missing; skipping"
+fi
+echo
+
+echo "[4] Recent jobs"
+lpstat -h "$SOCK" -W not-completed -W completed
+echo
+
+echo "[5] Last 60 CUPS log lines"
+tail -n 60 /var/log/cups/error_log
+EOF
+    chmod 755 /bin/cups-spike-selftest
     provision_spike_queue() {
         # Return 0 when queue is configured, 1 otherwise.
         [ -x /bin/lpadmin ] || return 1
