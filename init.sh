@@ -174,6 +174,10 @@ EOF
     fi
     for EXTRA_ROOT in "${BRLASER_ROOT:-}" "$BRLASER_DROPIN_ROOT" "${CUPS_FILTERS_ROOT:-}"; do
         [ -n "$EXTRA_ROOT" ] || continue
+        if [ -d "$EXTRA_ROOT/share/cups/drv" ]; then
+            mkdir -p "$CUPS_RUNTIME_DATA/drv"
+            cp -a "$EXTRA_ROOT/share/cups/drv/." "$CUPS_RUNTIME_DATA/drv/" 2>/dev/null || true
+        fi
         if [ -d "$EXTRA_ROOT/share/cups/model" ]; then
             mkdir -p "$CUPS_RUNTIME_DATA/model"
             cp -a "$EXTRA_ROOT/share/cups/model/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
