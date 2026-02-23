@@ -118,8 +118,8 @@ nix build .#image-cups-spike-debug --impure
 3. If backend+filter path is viable, one model-specific proof (HL-L2400D or equivalent) is enough to decide whether to productize.
 
 ### Test checklist
-- [ ] Confirm backend discovery works (`lpinfo -v`) on target image.
-- [ ] Submit one controlled job via `usb://...` queue and verify physical page output.
+- [x] Confirm backend discovery/URI provisioning works on target image.
+- [x] Submit one controlled job via `usb://...` queue and verify physical page output.
 - [ ] Confirm repeated jobs (>=3) print without scheduler/backend stalls.
 - [ ] Capture logs for successful path (`/var/log/cups/error_log`) and record required config.
 - [ ] Measure overhead:
@@ -132,3 +132,15 @@ nix build .#image-cups-spike-debug --impure
 - At least one HBP printer prints SeedEtcher-generated content from Pi host mode with no manual shell setup.
 - Config is reproducible after reboot.
 - Resource overhead is documented and acceptable for Pi Zero constraints.
+
+### Milestone: USB backend queue prints on HL-L5000D
+- On `experimental/hbp-usb-backend`, boot logs show:
+  - `queue test configured uri=usb://Brother/HL-L5000D%20series?...`
+- Queue state confirms `device for test: usb://...`.
+- A raw PCL test job submitted through CUPS (`lp ... -o raw /tmp/test.pcl`) produced physical output.
+- Observed caveat:
+  - after print, Brother panel can remain in a "Data remaining" state briefly.
+  - status clears after a short delay; if needed, send a reset trailer:
+    - `printf '\033E\f\033%%-12345X' > /dev/usb/lp0`
+- Interpretation:
+  - this branch has crossed the core hurdle from non-printing CUPS jobs to actual physical print via `usb://` backend.
