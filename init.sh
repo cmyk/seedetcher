@@ -190,6 +190,11 @@ EOF
     done
     if [ -d /var/cups-serverbin/lib/cups ]; then
         # Avoid recursive permission walks at boot; keep this minimal for speed.
+        chown root:root /var/cups-serverbin/lib/cups 2>/dev/null || true
+        chown root:root /var/cups-serverbin/lib/cups/backend 2>/dev/null || true
+        chown root:root /var/cups-serverbin/lib/cups/filter 2>/dev/null || true
+        chown root:root /var/cups-serverbin/lib/cups/driver 2>/dev/null || true
+        chown root:root /var/cups-serverbin/lib/cups/daemon 2>/dev/null || true
         chmod 755 /var/cups-serverbin/lib/cups 2>/dev/null || true
         chmod 755 /var/cups-serverbin/lib/cups/backend 2>/dev/null || true
         chmod 755 /var/cups-serverbin/lib/cups/filter 2>/dev/null || true
