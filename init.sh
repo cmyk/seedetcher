@@ -342,6 +342,15 @@ echo "[5] Last 60 CUPS log lines"
 tail -n 60 /var/log/cups/error_log
 EOF
     chmod 755 /bin/cups-spike-selftest
+    brlaser_filter_usable() {
+        FILTER_BIN="/var/cups-serverbin/lib/cups/filter/rastertobrlaser"
+        [ -x "$FILTER_BIN" ] || return 1
+        # If exec fails (ENOENT/ABI mismatch), timeout/return code will indicate unusable.
+        /bin/timeout 2 "$FILTER_BIN" >/dev/null 2>&1
+        RC="$?"
+        [ "$RC" -ne 126 ] && [ "$RC" -ne 127 ]
+    }
+
     provision_spike_queue() {
         # Return 0 when queue is configured, 1 otherwise.
         [ -x /bin/lpadmin ] || return 1
@@ -362,6 +371,11 @@ EOF
         debug_echo "CUPS spike: queue test configured uri=$QUEUE_URI (raw)"
 
         # Optional non-raw queue via generated PPD first, then model lookup.
+        if ! brlaser_filter_usable; then
+            debug_echo "CUPS spike: rastertobrlaser not executable; skipping test-hbp queue"
+            return 0
+        fi
+
         PPD=""
         if [ -d "$CUPS_RUNTIME_DATA/model" ]; then
             PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname '*HL-L5000D*.ppd' -o -iname '*HL-L5000D*.ppd.gz' \) | head -n 1)"

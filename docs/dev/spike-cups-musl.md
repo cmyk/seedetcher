@@ -171,6 +171,8 @@ nix build .#image-cups-spike-debug --impure
     - `brlaser-root/lib/...` nested root
   - auto-repairs missing ELF interpreter path for drop-in filters.
   - auto-repairs missing RUNPATH directories by linking to current image libs.
+- Branch currently relies on the drop-in path for `brlaser` (`brlaser-root.tar.gz`); flake-built `brlaser` is still unresolved on this toolchain.
+- `test-hbp` queue is now gated by a filter exec smoke-check; if `rastertobrlaser` is not runnable, queue creation is skipped with a debug log line.
 
 ### UART-friendly self-test
 - Spike images now install:
