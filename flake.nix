@@ -689,6 +689,7 @@
                 nativeBuildInputs = with pkgs.buildPackages; [
                   cmake
                   pkg-config
+                  cups
                 ];
 
                 buildInputs = [
@@ -728,12 +729,14 @@ EOF
                   runHook preInstall
                   make install DESTDIR="$out"
                   # Normalize layout to what init overlay expects.
-                  mkdir -p "$out/lib/cups/filter" "$out/share/cups/drv"
+                  mkdir -p "$out/lib/cups/filter" "$out/share/cups/drv" "$out/share/cups/model"
                   if [ -f "$out/filter/rastertobrlaser" ]; then
                     cp -a "$out/filter/rastertobrlaser" "$out/lib/cups/filter/rastertobrlaser"
                   fi
                   if [ -f "$out/drv/brlaser.drv" ]; then
                     cp -a "$out/drv/brlaser.drv" "$out/share/cups/drv/brlaser.drv"
+                    # Pre-generate PPDs at build time to avoid runtime drv:/// dependency.
+                    ${pkgs.buildPackages.cups}/bin/ppdc -d "$out/share/cups/model" "$out/share/cups/drv/brlaser.drv" >/dev/null 2>&1 || true
                   fi
                   rm -rf "$out/filter" "$out/drv"
                   runHook postInstall
