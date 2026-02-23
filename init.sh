@@ -193,8 +193,10 @@ EOF
         chmod 755 /var/cups-serverbin/lib/cups 2>/dev/null || true
         chmod 755 /var/cups-serverbin/lib/cups/backend 2>/dev/null || true
         chmod 755 /var/cups-serverbin/lib/cups/filter 2>/dev/null || true
+        chmod 755 /var/cups-serverbin/lib/cups/driver 2>/dev/null || true
         chmod 555 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
         chmod 555 /var/cups-serverbin/lib/cups/filter/* 2>/dev/null || true
+        chmod 555 /var/cups-serverbin/lib/cups/driver/* 2>/dev/null || true
     fi
     if [ -d /var/cups-serverbin/lib/cups/backend ]; then
         chmod 700 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
@@ -315,14 +317,23 @@ EOF
         debug_echo "CUPS spike: installed brlaser wrapper at $FILTER_BIN"
     }
 
-    # Repair only needed filters by default to reduce boot latency.
+    # Repair only needed CUPS executables by default to reduce boot latency.
     if [ "${CUPS_SPIKE_REPAIR_ALL_FILTERS:-0}" = "1" ] && [ -d /var/cups-serverbin/lib/cups/filter ]; then
         for F in /var/cups-serverbin/lib/cups/filter/*; do
             [ -f "$F" ] || continue
             repair_elf_runtime "$F"
         done
+        if [ -d /var/cups-serverbin/lib/cups/driver ]; then
+            for F in /var/cups-serverbin/lib/cups/driver/*; do
+                [ -f "$F" ] || continue
+                repair_elf_runtime "$F"
+            done
+        fi
     else
         repair_elf_runtime /var/cups-serverbin/lib/cups/filter/rastertobrlaser
+        # Needed for `lpadmin -m drv:///...` model resolution.
+        repair_elf_runtime /var/cups-serverbin/lib/cups/driver/drv
+        repair_elf_runtime /var/cups-serverbin/lib/cups/driver/cups-driverd
     fi
     install_brlaser_wrapper
     # brlaser drop-in ships .drv. PPD generation via ppdc is optional and disabled
