@@ -730,13 +730,25 @@ EOF
                   make install DESTDIR="$out"
                   # Normalize layout to what init overlay expects.
                   mkdir -p "$out/lib/cups/filter" "$out/share/cups/drv" "$out/share/cups/model"
+                  # Carry CUPS ppdc/drv include defs so ppdc can resolve includes in brlaser.drv.
+                  if [ -d ${pkgs.cups.lib}/share/cups/drv ]; then
+                    cp -a ${pkgs.cups.lib}/share/cups/drv/. "$out/share/cups/drv/" >/dev/null 2>&1 || true
+                  fi
+                  if [ -d ${pkgs.cups.lib}/share/cups/ppdc ]; then
+                    mkdir -p "$out/share/cups/ppdc"
+                    cp -a ${pkgs.cups.lib}/share/cups/ppdc/. "$out/share/cups/ppdc/" >/dev/null 2>&1 || true
+                  fi
                   if [ -f "$out/filter/rastertobrlaser" ]; then
                     cp -a "$out/filter/rastertobrlaser" "$out/lib/cups/filter/rastertobrlaser"
                   fi
                   if [ -f "$out/drv/brlaser.drv" ]; then
                     cp -a "$out/drv/brlaser.drv" "$out/share/cups/drv/brlaser.drv"
                     # Pre-generate PPDs at build time to avoid runtime drv:/// dependency.
-                    ${pkgs.buildPackages.cups}/bin/ppdc -d "$out/share/cups/model" "$out/share/cups/drv/brlaser.drv" >/dev/null 2>&1 || true
+                    ${pkgs.buildPackages.cups}/bin/ppdc \
+                      -I "$out/share/cups/ppdc" \
+                      -I "$out/share/cups/drv" \
+                      -d "$out/share/cups/model" \
+                      "$out/share/cups/drv/brlaser.drv" >/dev/null 2>&1 || true
                   fi
                   rm -rf "$out/filter" "$out/drv"
                   runHook postInstall

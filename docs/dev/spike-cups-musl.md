@@ -204,47 +204,25 @@ nix build .#image-cups-spike-debug --impure
   - pre-converts PDF to CUPS raster via Ghostscript with fixed A4/600dpi settings
   - submits raster to `test-hbp`.
 
-## HBP Unblock Plan (Current)
+## HBP Stabilization Status (Current)
 
-HBP is currently blocked by `brlaser` ABI mismatch on this image. The architecture and queue flow are viable; the missing piece is a matching filter runtime artifact.
+HBP queue provisioning and real print are working on `experimental/hbp-artifact-runtime-wrapper` with the current runtime wrapper flow.
 
-### 1. Build `brlaser` for target ABI
-- Build `rastertobrlaser` for `armv6 + musl` against the same runtime family used by the image.
-- Output either:
-  - a fully static filter, or
-  - a dynamic filter plus the exact required shared libraries.
-- Helper template:
-  - `spike/build-brlaser-artifact.sh` packages:
-    - `lib/cups/filter/rastertobrlaser`
-    - `share/cups/drv/brlaser.drv`
-    - optional needed `.so*` libs into `spike/brlaser-root.tar.gz`.
+### Regression root causes that were fixed
+- `ppdc` include path failure:
+  - symptom: `Unable to find include file "<font.defs>"`.
+  - root cause: minimal CUPS data copy and brlaser runtime artifact did not include `share/cups/ppdc`; `ppdc` was also invoked without include directories.
+  - fix: copy `ppdc` data into runtime/artifact and call `ppdc` with `-I` include paths.
+- PPD selection mismatch:
+  - symptom: `print-hbp-pdf` could not auto-create `test-hbp` even though PPDs existed.
+  - root cause: selector matched only filename patterns like `*Brother*HL-*`, while generated files are named like `brl5000d.ppd`.
+  - fix: add content-based matching (`ModelName` / `1284DeviceID`) and fallback to `brl*.ppd`.
 
-### 2. Make runtime self-contained
-- Package filter + libs into a fixed runtime layout (example: `/var/cups-extra/brlaser-runtime`).
-- Add a wrapper that sets `LD_LIBRARY_PATH` and execs the real filter.
-  - Status on this branch: scaffold implemented in `init.sh` (runtime dir + wrapper install), awaiting matching ABI artifact/libs.
-
-### 3. Use wrapper as CUPS filter
-- Override `rastertobrlaser` in CUPS `ServerBin/filter` with the wrapper.
-- Keep `test-hbp` creation behind strict runtime probe:
-  - interpreter exists,
-  - needed libs resolvable,
-  - no relocation/shared-lib loader errors.
-
-### 4. Lock artifact provenance
-- Build artifact in one reproducible environment (CI or pinned container).
-- Version it and record checksum.
-- Load artifact at boot using current drop-in mechanism.
-
-### 5. Validation gate before enabling HBP
-- Cold boot x3.
-- `cups-spike-selftest` x3.
-- Real SeedEtcher page through `test-hbp` (not synthetic only).
-- Verify printed QR scanability and text readability.
-
-### Exit condition
-- Until step 1 succeeds, HBP remains blocked.
-- Once steps 1-5 pass, current spike architecture can support HBP enablement.
+### Current known-good behavior
+- `test` raw queue provisions from `usb://...`.
+- `test-hbp` provisions automatically using `brlaser` PPD (example: `brl5000d.ppd`).
+- `print-hbp-pdf /tmp/test_output.pdf` submits and completes HBP jobs.
+- `print-hbp-pdf` now emits a debug line with queue/model/URI/selected PPD.
 
 ## Current status update
 - `test-hbp` queue + `rastertobrlaser` execution are now working on `experimental/hbp-artifact-runtime-wrapper`.
@@ -264,41 +242,41 @@ HBP is currently blocked by `brlaser` ABI mismatch on this image. The architectu
 
 ## Pi Validation Checklist (Current Image)
 
-Run these checks on Pi for each new `image-cups-spike-debug` build:
+Run this exact sequence on Pi for each new `image-cups-spike-debug` flash:
 
-1. Boot timing
-- Measure boot until:
-  - `DEBUG: Init finished. Starting shell...`
-- Note any prolonged delay around queue provisioning.
-
-2. Queue provisioning
-- Verify queue presence:
-  - `lpstat -h /var/run/cups/cups.sock -p -v`
+1. Queue baseline
+- `SOCK=/var/run/cups/cups.sock`
+- `lpstat -h "$SOCK" -p -v`
 - Expected:
-  - `test` (raw)
-  - `test-hbp` (brlaser path)
+  - `test` exists with `usb://...`
+  - `test-hbp` exists (or is auto-creatable by helper)
 
-3. Raw print path
-- Create/send raw test:
-  - `printf '\033Eraw test\r\n\f\033%%-12345X' > /tmp/raw.pcl`
-  - `lp -h /var/run/cups/cups.sock -d test -o raw /tmp/raw.pcl`
-- Confirm physical page.
+2. Create test PDF (required after every flash)
+- `/tmp` is empty after reboot/flash.
+- Generate a fresh page:
+  - `./controller -test-createPageLayout -w multisig-mainnet-2of3 -dpi 600 -papersize A4`
+- Verify:
+  - `ls -l /tmp/test_output.pdf`
 
-4. Real SeedEtcher page via HBP
-- Generate test output:
-  - `./controller -test-createPageLayout -w singlesig -dpi 600 -papersize A4`
-- Print using known-good helper:
-  - `print-hbp-pdf /tmp/test_output.pdf`
-- Confirm:
-  - correct page scale/placement
-  - QR/text readability.
+3. HBP print through helper
+- `print-hbp-pdf /tmp/test_output.pdf`
+- Expected:
+  - helper debug line shows selected model + PPD
+  - job accepted (`request id is test-hbp-N`)
 
-5. Repetition/stability
-- Repeat HBP print (step 4) three times consecutively.
-- Reboot and run step 4 once more.
+4. Queue and job confirmation
+- `lpstat -h "$SOCK" -p test-hbp -v`
+- `lpstat -h "$SOCK" -W not-completed -W completed`
+- Expected:
+  - `test-hbp` enabled/idle after completion
+  - completed job listed
+
+5. Stability gate
+- Repeat step 3 three consecutive times.
+- Reboot once and run steps 1-4 again.
 
 6. Log sanity
-- Check:
-  - `tail -n 200 /log/init_debug.log`
-  - `tail -n 200 /var/log/cups/error_log`
+- `tail -n 200 /log/init_debug.log`
+- `tail -n 200 /var/log/cups/error_log`
+- `tail -n 200 /log/cups.log`
 - No relocation/shared-lib loader errors from `rastertobrlaser`.

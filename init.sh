@@ -188,10 +188,6 @@ EOF
             find "$EXTRA_ROOT/lib" -maxdepth 2 -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -a {} "$BRLASER_RUNTIME_ROOT/lib/" \; 2>/dev/null || true
         fi
     done
-    # Ensure runtime data dirs are writable for on-demand PPD generation.
-    mkdir -p "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime"
-    chown root:root "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" 2>/dev/null || true
-    chmod 755 "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" 2>/dev/null || true
     if [ -d /var/cups-serverbin/lib/cups ]; then
         # Avoid recursive permission walks at boot; keep this minimal for speed.
         chown root:root /var/cups-serverbin/lib/cups 2>/dev/null || true
@@ -227,7 +223,9 @@ EOF
         if [ "${CUPS_SPIKE_DATA_COPY:-minimal}" = "full" ]; then
             cp -a "${CUPS_DATA_ROOT}/share/cups/." "$CUPS_RUNTIME_DATA/" 2>/dev/null || true
         else
-            for D in mime usb; do
+            # Minimal set for fast boot + ppdc fallback support.
+            # `brlaser.drv` includes ppdc helper defs (for example font.defs).
+            for D in mime usb drv ppdc; do
                 if [ -d "${CUPS_DATA_ROOT}/share/cups/$D" ]; then
                     mkdir -p "$CUPS_RUNTIME_DATA/$D"
                     cp -a "${CUPS_DATA_ROOT}/share/cups/$D/." "$CUPS_RUNTIME_DATA/$D/" 2>/dev/null || true
@@ -245,11 +243,19 @@ EOF
             mkdir -p "$CUPS_RUNTIME_DATA/model"
             cp -a "$EXTRA_ROOT/share/cups/model/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
         fi
+        if [ -d "$EXTRA_ROOT/share/cups/ppdc" ]; then
+            mkdir -p "$CUPS_RUNTIME_DATA/ppdc"
+            cp -a "$EXTRA_ROOT/share/cups/ppdc/." "$CUPS_RUNTIME_DATA/ppdc/" 2>/dev/null || true
+        fi
         if [ -d "$EXTRA_ROOT/share/ppd" ]; then
             mkdir -p "$CUPS_RUNTIME_DATA/model"
             cp -a "$EXTRA_ROOT/share/ppd/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
         fi
     done
+    # Ensure runtime data dirs are writable for on-demand PPD generation.
+    mkdir -p "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" "$CUPS_RUNTIME_DATA/ppdc"
+    chown root:root "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" "$CUPS_RUNTIME_DATA/ppdc" 2>/dev/null || true
+    chmod 755 "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" "$CUPS_RUNTIME_DATA/ppdc" 2>/dev/null || true
 
     # Prebuilt drop-ins can carry Nix store paths from a different build host.
     # If so, make compatibility symlinks so execv does not fail with ENOENT.
@@ -351,6 +357,21 @@ EOF
         repair_elf_runtime /var/cups-serverbin/lib/cups/driver/cups-driverd
     fi
     install_brlaser_wrapper
+    run_ppdc_brlaser() {
+        OUT_DIR="$1"
+        DRV_FILE="$2"
+        TIMEOUT_SECS="${3:-10}"
+        [ -n "$OUT_DIR" ] && [ -n "$DRV_FILE" ] || return 1
+
+        set -- /bin/ppdc -d "$OUT_DIR"
+        for INC in "$CUPS_RUNTIME_DATA/ppdc" "$CUPS_RUNTIME_DATA/drv" "$CUPS_DATA_ROOT/share/cups/ppdc"; do
+            [ -d "$INC" ] || continue
+            set -- "$@" -I "$INC"
+        done
+        set -- "$@" "$DRV_FILE"
+        /bin/timeout "$TIMEOUT_SECS" "$@"
+    }
+
     # brlaser drop-in ships .drv. PPD generation via ppdc is optional and disabled
     # by default to keep boot latency low. Enable only for debugging:
     #   CUPS_SPIKE_ENABLE_PPDC=1
@@ -368,7 +389,7 @@ EOF
     if [ "${CUPS_SPIKE_ENABLE_PPDC:-0}" = "1" ] && [ -f "$BRLASER_DRV" ] && [ -x /bin/ppdc ]; then
         mkdir -p "$CUPS_RUNTIME_DATA/model"
         # Keep this bounded; if generation fails/hangs, continue with raw queue path.
-        /bin/timeout 10 /bin/ppdc -d "$CUPS_RUNTIME_DATA/model" "$BRLASER_DRV" >/dev/null 2>&1 || \
+        run_ppdc_brlaser "$CUPS_RUNTIME_DATA/model" "$BRLASER_DRV" 10 >/dev/null 2>&1 || \
             debug_echo "CUPS spike: ppdc model generation timed out/failed"
         MODEL_COUNT="$(find "$CUPS_RUNTIME_DATA/model" -type f 2>/dev/null | wc -l | tr -d ' ')"
         debug_echo "CUPS spike: model file count after ppdc=$MODEL_COUNT"
@@ -431,32 +452,60 @@ ensure_hbp_queue() {
     # usb://Brother/HL-L5000D%20series?serial=... -> HL-L5000D series
     printf '%s' "$1" | sed -n 's@^usb://Brother/\([^?]*\).*$@\1@p' | sed 's/%20/ /g'
   }
+  MODEL_NAME="$(model_from_uri "$URI")"
   find_brlaser_ppd() {
     model="$1"
+    model_dir="/var/cups-data/model"
+    [ -d "$model_dir" ] || return 0
+
     if [ -n "$model" ]; then
-      find /var/cups-data/model -type f \( -iname "*${model}*.ppd" -o -iname "*${model}*.ppd.gz" \) | head -n 1
+      # Fast path: direct filename match.
+      ppd="$(find "$model_dir" -type f \( -iname "*${model}*.ppd" -o -iname "*${model}*.ppd.gz" \) | head -n 1)"
+      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+
+      # ppdc-generated brlaser files are often named like brl5000d.ppd, so also match content.
+      ppd="$(grep -RilsF "ModelName: \"Brother $model\"" "$model_dir" 2>/dev/null | head -n 1)"
+      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+
+      ppd="$(grep -RilsF "MDL:$model;" "$model_dir" 2>/dev/null | head -n 1)"
+      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
     fi
+
+    find "$model_dir" -type f \
+      \( -iname 'brl*.ppd' -o -iname 'brl*.ppd.gz' -o -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) \
+      | head -n 1
+  }
+  run_ppdc_brlaser() {
+    out_dir="$1"
+    drv_file="$2"
+    [ -n "$out_dir" ] && [ -n "$drv_file" ] || return 1
+    set -- /bin/ppdc -d "$out_dir"
+    for inc in /var/cups-data/ppdc /var/cups-data/drv; do
+      [ -d "$inc" ] || continue
+      set -- "$@" -I "$inc"
+    done
+    CUPS_BIN_ROOT="$(readlink /bin/cupsd 2>/dev/null | sed 's#/bin/cupsd$##')"
+    if [ -n "$CUPS_BIN_ROOT" ] && [ -d "$CUPS_BIN_ROOT/share/cups/ppdc" ]; then
+      set -- "$@" -I "$CUPS_BIN_ROOT/share/cups/ppdc"
+    elif [ -n "$CUPS_BIN_ROOT" ] && [ -d "${CUPS_BIN_ROOT}-lib/share/cups/ppdc" ]; then
+      set -- "$@" -I "${CUPS_BIN_ROOT}-lib/share/cups/ppdc"
+    fi
+    set -- "$@" "$drv_file"
+    /bin/timeout 60 "$@" >/tmp/ppdc-hbp.out 2>/tmp/ppdc-hbp.err
   }
 
   # Prefer PPD path to avoid cups-driverd/dvr:/// dependency.
   PPD=""
   if [ -d /var/cups-data/model ]; then
-    MODEL_NAME="$(model_from_uri "$URI")"
     PPD="$(find_brlaser_ppd "$MODEL_NAME")"
-    if [ -z "$PPD" ]; then
-      PPD="$(find /var/cups-data/model -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
-    fi
   fi
   if [ -z "$PPD" ] && [ -x /bin/ppdc ] && [ -f /var/cups-data/drv/brlaser.drv ]; then
     mkdir -p /var/cups-data/model
-    /bin/timeout 60 /bin/ppdc -d /var/cups-data/model /var/cups-data/drv/brlaser.drv >/tmp/ppdc-hbp.out 2>/tmp/ppdc-hbp.err || true
-    MODEL_NAME="$(model_from_uri "$URI")"
+    run_ppdc_brlaser /var/cups-data/model /var/cups-data/drv/brlaser.drv || true
     PPD="$(find_brlaser_ppd "$MODEL_NAME")"
-    if [ -z "$PPD" ]; then
-      PPD="$(find /var/cups-data/model -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
-    fi
   fi
 
+  echo "print-hbp-pdf: queue='$QUEUE' model='$MODEL_NAME' uri='$URI' ppd='${PPD:-<none>}'" >&2
   lpadmin -h "$SOCK" -x "$QUEUE" >/dev/null 2>&1 || true
   if [ -n "$PPD" ]; then
     lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -P "$PPD" >/dev/null 2>&1 || return 1
@@ -576,25 +625,38 @@ EOF
             return 0
         fi
 
+        find_runtime_brlaser_ppd() {
+            model="$1"
+            model_dir="$CUPS_RUNTIME_DATA/model"
+            [ -d "$model_dir" ] || return 0
+
+            if [ -n "$model" ]; then
+                # Fast path: direct filename match.
+                ppd="$(find "$model_dir" -type f \( -iname "*${model}*.ppd" -o -iname "*${model}*.ppd.gz" \) | head -n 1)"
+                [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+
+                # ppdc-generated brlaser files are often named like brl5000d.ppd, so also match content.
+                ppd="$(grep -RilsF "ModelName: \"Brother $model\"" "$model_dir" 2>/dev/null | head -n 1)"
+                [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+
+                ppd="$(grep -RilsF "MDL:$model;" "$model_dir" 2>/dev/null | head -n 1)"
+                [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+            fi
+
+            find "$model_dir" -type f \
+              \( -iname 'brl*.ppd' -o -iname 'brl*.ppd.gz' -o -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) \
+              | head -n 1
+        }
+
         PPD=""
         MODEL_NAME="$(printf '%s' "$QUEUE_URI" | sed -n 's@^usb://Brother/\([^?]*\).*$@\1@p' | sed 's/%20/ /g')"
         if [ -d "$CUPS_RUNTIME_DATA/model" ]; then
-            if [ -n "$MODEL_NAME" ]; then
-                PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname "*${MODEL_NAME}*.ppd" -o -iname "*${MODEL_NAME}*.ppd.gz" \) | head -n 1)"
-            fi
-            if [ -z "$PPD" ]; then
-                PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
-            fi
+            PPD="$(find_runtime_brlaser_ppd "$MODEL_NAME")"
         fi
         if [ -z "$PPD" ] && [ -x /bin/ppdc ] && [ -f "$CUPS_RUNTIME_DATA/drv/brlaser.drv" ]; then
             mkdir -p "$CUPS_RUNTIME_DATA/model"
-            /bin/timeout 10 /bin/ppdc -d "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv/brlaser.drv" >/dev/null 2>&1 || true
-            if [ -n "$MODEL_NAME" ]; then
-                PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname "*${MODEL_NAME}*.ppd" -o -iname "*${MODEL_NAME}*.ppd.gz" \) | head -n 1)"
-            fi
-            if [ -z "$PPD" ]; then
-                PPD="$(find "$CUPS_RUNTIME_DATA/model" -type f \( -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) | head -n 1)"
-            fi
+            run_ppdc_brlaser "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv/brlaser.drv" 10 >/dev/null 2>&1 || true
+            PPD="$(find_runtime_brlaser_ppd "$MODEL_NAME")"
         fi
         if [ -n "$PPD" ]; then
             /bin/lpadmin -h /var/run/cups/cups.sock -x test-hbp >/dev/null 2>&1 || true
