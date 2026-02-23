@@ -373,7 +373,7 @@
                 if [ -d ${cupsPkg}/etc/cups ]; then
                   cp -a ${cupsPkg}/etc/cups/* initramfs/etc/cups/
                 fi
-                for f in cupsd lp lpstat lpadmin lpinfo cupsfilter; do
+                for f in cupsd lp lpstat lpadmin lpinfo cupsfilter ppdc; do
                   if [ -x ${cupsPkg}/bin/$f ]; then
                     ln -sf ${cupsPkg}/bin/$f initramfs/bin/$f
                   fi

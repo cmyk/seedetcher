@@ -183,6 +183,14 @@ EOF
             cp -a "$EXTRA_ROOT/share/ppd/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
         fi
     done
+    # brlaser drop-in ships .drv; expose concrete models by generating PPDs at boot.
+    BRLASER_DRV="$CUPS_RUNTIME_DATA/drv/brlaser.drv"
+    if [ -f "$BRLASER_DRV" ] && [ -x /bin/ppdc ]; then
+        mkdir -p "$CUPS_RUNTIME_DATA/model"
+        # Keep this bounded; if generation fails/hangs, continue with raw queue path.
+        /bin/timeout 10 /bin/ppdc -d "$CUPS_RUNTIME_DATA/model" "$BRLASER_DRV" >/dev/null 2>&1 || \
+            debug_echo "CUPS spike: ppdc model generation timed out/failed"
+    fi
 
     # Force a minimal, valid cups-files.conf for this spike.
     cat > /etc/cups/cups-files.conf <<EOF
@@ -230,9 +238,9 @@ EOF
         # Optional non-raw queue via brlaser model, if available.
         MODEL=""
         if [ -x /bin/lpinfo ]; then
-            MODEL="$(/bin/lpinfo -h /var/run/cups/cups.sock -m 2>/dev/null | awk '/brlaser/ && /HL-L5000D/ {print $1; exit}')"
+            MODEL="$(/bin/lpinfo -h /var/run/cups/cups.sock -m 2>/dev/null | awk 'toupper($0) ~ /HL-L5000D/ {print $1; exit}')"
             if [ -z "$MODEL" ]; then
-                MODEL="$(/bin/lpinfo -h /var/run/cups/cups.sock -m 2>/dev/null | awk '/brlaser/ {print $1; exit}')"
+                MODEL="$(/bin/lpinfo -h /var/run/cups/cups.sock -m 2>/dev/null | awk '/Brother/ && /HL-/ {print $1; exit}')"
             fi
         fi
         if [ -n "$MODEL" ]; then
