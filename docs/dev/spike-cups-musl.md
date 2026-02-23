@@ -184,12 +184,16 @@ nix build .#image-cups-spike-debug --impure
 ### UART-friendly self-test
 - Spike images now install:
   - `/bin/cups-spike-selftest`
+  - `/bin/print-hbp-pdf`
 - It performs:
   1. queue listing,
   2. raw queue test (`test`),
   3. HBP queue test (`test-hbp`) if present,
   4. recent job listing,
   5. last CUPS log lines.
+- `print-hbp-pdf` is the current known-good path for HBP:
+  - pre-converts PDF to CUPS raster via Ghostscript with fixed A4/600dpi settings
+  - submits raster to `test-hbp`.
 
 ## HBP Unblock Plan (Current)
 
@@ -232,3 +236,12 @@ HBP is currently blocked by `brlaser` ABI mismatch on this image. The architectu
 ### Exit condition
 - Until step 1 succeeds, HBP remains blocked.
 - Once steps 1-5 pass, current spike architecture can support HBP enablement.
+
+## Current status update
+- `test-hbp` queue + `rastertobrlaser` execution are now working on `experimental/hbp-artifact-runtime-wrapper`.
+- Real SeedEtcher page was printed successfully through HBP queue using:
+  - Ghostscript PDF -> CUPS raster conversion
+  - `lp ... -o document-format=application/vnd.cups-raster ...`
+- Remaining caveat:
+  - `cupsfilter` PDF -> CUPS raster chain is still missing (`No filter to convert from application/pdf to application/vnd.cups-raster`).
+  - Use `/bin/print-hbp-pdf` workaround path in the spike image.

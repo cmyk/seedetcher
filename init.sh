@@ -336,6 +336,28 @@ WebInterface No
 EOF
     fi
 
+    # Helper: print a PDF through test-hbp by pre-converting to CUPS raster.
+    cat > /bin/print-hbp-pdf <<'EOF'
+#!/bin/sh
+set -eu
+SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
+QUEUE="${HBP_QUEUE:-test-hbp}"
+PDF="${1:-}"
+if [ -z "$PDF" ] || [ ! -f "$PDF" ]; then
+  echo "usage: print-hbp-pdf /path/to/file.pdf" >&2
+  exit 2
+fi
+if ! lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1; then
+  echo "queue '$QUEUE' not found on $SOCK" >&2
+  exit 3
+fi
+RAS="/tmp/print-hbp.ras"
+# Known-good conversion settings for A4 @ 600dpi.
+gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r600 -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
+lp -h "$SOCK" -d "$QUEUE" -o document-format=application/vnd.cups-raster "$RAS"
+EOF
+    chmod 755 /bin/print-hbp-pdf
+
     # One-command UART-friendly spike test runner.
     cat > /bin/cups-spike-selftest <<'EOF'
 #!/bin/sh
@@ -359,7 +381,7 @@ if lpstat -h "$SOCK" -p test-hbp >/dev/null 2>&1; then
 showpage
 PS
   if command -v gs >/dev/null 2>&1; then
-    gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile=/tmp/cups-hbp-test.ras /tmp/cups-hbp-test.ps
+    gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile=/tmp/cups-hbp-test.ras -r600 -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage /tmp/cups-hbp-test.ps
     lp -h "$SOCK" -d test-hbp -o document-format=application/vnd.cups-raster /tmp/cups-hbp-test.ras || true
   else
     echo "gs not found; skipping raster generation"
