@@ -190,3 +190,39 @@ nix build .#image-cups-spike-debug --impure
   3. HBP queue test (`test-hbp`) if present,
   4. recent job listing,
   5. last CUPS log lines.
+
+## HBP Unblock Plan (Current)
+
+HBP is currently blocked by `brlaser` ABI mismatch on this image. The architecture and queue flow are viable; the missing piece is a matching filter runtime artifact.
+
+### 1. Build `brlaser` for target ABI
+- Build `rastertobrlaser` for `armv6 + musl` against the same runtime family used by the image.
+- Output either:
+  - a fully static filter, or
+  - a dynamic filter plus the exact required shared libraries.
+
+### 2. Make runtime self-contained
+- Package filter + libs into a fixed runtime layout (example: `/var/cups-extra/brlaser-runtime`).
+- Add a wrapper that sets `LD_LIBRARY_PATH` and execs the real filter.
+
+### 3. Use wrapper as CUPS filter
+- Override `rastertobrlaser` in CUPS `ServerBin/filter` with the wrapper.
+- Keep `test-hbp` creation behind strict runtime probe:
+  - interpreter exists,
+  - needed libs resolvable,
+  - no relocation/shared-lib loader errors.
+
+### 4. Lock artifact provenance
+- Build artifact in one reproducible environment (CI or pinned container).
+- Version it and record checksum.
+- Load artifact at boot using current drop-in mechanism.
+
+### 5. Validation gate before enabling HBP
+- Cold boot x3.
+- `cups-spike-selftest` x3.
+- Real SeedEtcher page through `test-hbp` (not synthetic only).
+- Verify printed QR scanability and text readability.
+
+### Exit condition
+- Until step 1 succeeds, HBP remains blocked.
+- Once steps 1-5 pass, current spike architecture can support HBP enablement.
