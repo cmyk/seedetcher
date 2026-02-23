@@ -165,6 +165,10 @@ nix build .#image-cups-spike-debug --impure
   - filter path shown as `/var/cups-serverbin/lib/cups/filter/rastertobrlaser`
 - Root cause:
   - prebuilt ELF interpreter/RUNPATH points at foreign Nix store hashes.
+- Observed hard failure mode on affected runs:
+  - `Error loading shared library libcups.so.2/libstdc++.so.6/libgcc_s.so.1`
+  - many C++ relocation symbol errors
+  - backend sends `Sent 0 bytes...` and no physical page output.
 - Mitigation now in `init.sh`:
   - accepts both archive layouts:
     - `lib/...` at root
@@ -173,6 +177,9 @@ nix build .#image-cups-spike-debug --impure
   - auto-repairs missing RUNPATH directories by linking to current image libs.
 - Branch currently relies on the drop-in path for `brlaser` (`brlaser-root.tar.gz`); flake-built `brlaser` is still unresolved on this toolchain.
 - `test-hbp` queue is now gated by a filter exec smoke-check; if `rastertobrlaser` is not runnable, queue creation is skipped with a debug log line.
+- Decision for current spike:
+  - do not auto-enable HBP queue unless strict runtime probe passes.
+  - treat HBP as blocked by ABI mismatch until a matching `brlaser` artifact is produced.
 
 ### UART-friendly self-test
 - Spike images now install:

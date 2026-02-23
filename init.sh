@@ -342,13 +342,51 @@ echo "[5] Last 60 CUPS log lines"
 tail -n 60 /var/log/cups/error_log
 EOF
     chmod 755 /bin/cups-spike-selftest
+    BRLASER_BLOCK_REASON=""
     brlaser_filter_usable() {
         FILTER_BIN="/var/cups-serverbin/lib/cups/filter/rastertobrlaser"
-        [ -x "$FILTER_BIN" ] || return 1
-        # If exec fails (ENOENT/ABI mismatch), timeout/return code will indicate unusable.
-        /bin/timeout 2 "$FILTER_BIN" >/dev/null 2>&1
+        BRLASER_BLOCK_REASON=""
+        [ -x "$FILTER_BIN" ] || { BRLASER_BLOCK_REASON="filter missing/not executable"; return 1; }
+        [ -x /bin/readelf ] || { BRLASER_BLOCK_REASON="readelf unavailable for probe"; return 1; }
+
+        # Strict runtime probe: verify interpreter, NEEDED libs, and reject relocation failures.
+        INTERP_PATH="$(/bin/readelf -l "$FILTER_BIN" 2>/dev/null | sed -n 's@.*Requesting program interpreter: \(.*\)]@\1@p' | head -n 1)"
+        if [ -n "$INTERP_PATH" ] && [ ! -e "$INTERP_PATH" ]; then
+            BRLASER_BLOCK_REASON="missing interpreter: $INTERP_PATH"
+            return 1
+        fi
+
+        RUNPATHS="$(/bin/readelf -d "$FILTER_BIN" 2>/dev/null | sed -n 's@.*Library runpath: \[\(.*\)\]@\1@p' | head -n 1)"
+        NEEDED_LIBS="$(/bin/readelf -d "$FILTER_BIN" 2>/dev/null | sed -n 's@.*Shared library: \[\(.*\)\]@\1@p')"
+        SEARCH_PATHS="$RUNPATHS:/lib:/usr/lib"
+        for LIB in $NEEDED_LIBS; do
+            FOUND=""
+            for P in $(echo "$SEARCH_PATHS" | tr ':' '\n'); do
+                [ -n "$P" ] || continue
+                if [ -e "$P/$LIB" ]; then
+                    FOUND=1
+                    break
+                fi
+            done
+            if [ -z "$FOUND" ]; then
+                BRLASER_BLOCK_REASON="missing shared lib: $LIB"
+                return 1
+            fi
+        done
+
+        PROBE_ERR="/tmp/brlaser-probe.err"
+        : > "$PROBE_ERR"
+        /bin/timeout 2 "$FILTER_BIN" >/dev/null 2>"$PROBE_ERR"
         RC="$?"
-        [ "$RC" -ne 126 ] && [ "$RC" -ne 127 ]
+        if grep -q -E "Error loading shared library|Error relocating|not found" "$PROBE_ERR"; then
+            BRLASER_BLOCK_REASON="ABI mismatch (relocation/shared-lib errors)"
+            return 1
+        fi
+        if [ "$RC" -eq 126 ] || [ "$RC" -eq 127 ]; then
+            BRLASER_BLOCK_REASON="filter failed to execute (rc=$RC)"
+            return 1
+        fi
+        return 0
     }
 
     provision_spike_queue() {
@@ -372,7 +410,7 @@ EOF
 
         # Optional non-raw queue via generated PPD first, then model lookup.
         if ! brlaser_filter_usable; then
-            debug_echo "CUPS spike: rastertobrlaser not executable; skipping test-hbp queue"
+            debug_echo "CUPS spike: HBP blocked: ABI mismatch; skipping test-hbp queue (${BRLASER_BLOCK_REASON})"
             return 0
         fi
 
