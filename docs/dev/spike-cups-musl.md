@@ -121,6 +121,7 @@ nix build .#image-cups-spike-debug --impure
 - [x] Confirm backend discovery/URI provisioning works on target image.
 - [x] Submit one controlled job via `usb://...` queue and verify physical page output.
 - [ ] Confirm repeated jobs (>=3) print without scheduler/backend stalls.
+- [ ] Replace timed queue-provision retry with proper hot-plug event handling (no fixed 3-minute window).
 - [ ] Capture logs for successful path (`/var/log/cups/error_log`) and record required config.
 - [ ] Measure overhead:
   - [ ] boot-to-ready delta vs non-spike image
@@ -144,3 +145,4 @@ nix build .#image-cups-spike-debug --impure
     - `printf '\033E\f\033%%-12345X' > /dev/usb/lp0`
 - Interpretation:
   - this branch has crossed the core hurdle from non-printing CUPS jobs to actual physical print via `usb://` backend.
+  - current queue provisioning still relies on a bounded retry loop; production path should be event-driven for printer hot-plug support.
