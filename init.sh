@@ -92,6 +92,8 @@ if [ -f /cups-spike.env ] && [ -x /bin/cupsd ]; then
     #   lib/cups/... and optionally share/cups/model or share/ppd
     BRLASER_DROPIN_ROOT=""
     mkdir -p /mnt/boot /var/cups-extra
+    BRLASER_RUNTIME_ROOT=/var/cups-extra/brlaser-runtime
+    mkdir -p "$BRLASER_RUNTIME_ROOT/filter" "$BRLASER_RUNTIME_ROOT/lib"
     if [ -b /dev/mmcblk0p1 ]; then
         mount -t vfat /dev/mmcblk0p1 /mnt/boot >/dev/null 2>&1 || true
         for CAND in /mnt/boot/brlaser-root.tar.gz /mnt/boot/brlaser-root.tgz /mnt/boot/brlaser-root.tar; do
@@ -158,6 +160,10 @@ EOF
         [ -n "$EXTRA_ROOT" ] || continue
         if [ -d "$EXTRA_ROOT/lib/cups" ]; then
             cp -a "$EXTRA_ROOT/lib/cups/." /var/cups-serverbin/lib/cups/ 2>/dev/null || true
+        fi
+        # Future-proof runtime: stash shared libs from artifact roots for wrapper-based loading.
+        if [ -d "$EXTRA_ROOT/lib" ]; then
+            find "$EXTRA_ROOT/lib" -maxdepth 2 -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -a {} "$BRLASER_RUNTIME_ROOT/lib/" \; 2>/dev/null || true
         fi
     done
     if [ -d /var/cups-serverbin/lib/cups ]; then
@@ -246,6 +252,33 @@ EOF
         IFS="$OLDIFS"
     }
 
+    install_brlaser_wrapper() {
+        FILTER_BIN="/var/cups-serverbin/lib/cups/filter/rastertobrlaser"
+        RUNTIME_FILTER="$BRLASER_RUNTIME_ROOT/filter/rastertobrlaser.real"
+        [ -x "$FILTER_BIN" ] || return 0
+
+        # Preserve the original filter binary under runtime root.
+        cp -a "$FILTER_BIN" "$RUNTIME_FILTER" 2>/dev/null || return 0
+
+        cat > "$FILTER_BIN" <<'EOF'
+#!/bin/sh
+RUNTIME_ROOT="/var/cups-extra/brlaser-runtime"
+REAL_FILTER="$RUNTIME_ROOT/filter/rastertobrlaser.real"
+[ -x "$REAL_FILTER" ] || exit 127
+LD_PATHS="$RUNTIME_ROOT/lib:/lib:/usr/lib"
+if [ -n "${BRLASER_LD_LIBRARY_PATH:-}" ]; then
+  LD_PATHS="$BRLASER_LD_LIBRARY_PATH:$LD_PATHS"
+fi
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+  LD_PATHS="$LD_LIBRARY_PATH:$LD_PATHS"
+fi
+export LD_LIBRARY_PATH="$LD_PATHS"
+exec "$REAL_FILTER" "$@"
+EOF
+        chmod 555 "$FILTER_BIN" 2>/dev/null || true
+        debug_echo "CUPS spike: installed brlaser wrapper at $FILTER_BIN"
+    }
+
     # Apply runtime-path repair to all drop-in filters.
     if [ -d /var/cups-serverbin/lib/cups/filter ]; then
         for F in /var/cups-serverbin/lib/cups/filter/*; do
@@ -253,6 +286,7 @@ EOF
             repair_elf_runtime "$F"
         done
     fi
+    install_brlaser_wrapper
     # brlaser drop-in ships .drv; expose concrete models by generating PPDs at boot.
     BRLASER_DRV="$CUPS_RUNTIME_DATA/drv/brlaser.drv"
     if [ -x /bin/ppdc ]; then

@@ -204,6 +204,7 @@ HBP is currently blocked by `brlaser` ABI mismatch on this image. The architectu
 ### 2. Make runtime self-contained
 - Package filter + libs into a fixed runtime layout (example: `/var/cups-extra/brlaser-runtime`).
 - Add a wrapper that sets `LD_LIBRARY_PATH` and execs the real filter.
+  - Status on this branch: scaffold implemented in `init.sh` (runtime dir + wrapper install), awaiting matching ABI artifact/libs.
 
 ### 3. Use wrapper as CUPS filter
 - Override `rastertobrlaser` in CUPS `ServerBin/filter` with the wrapper.
