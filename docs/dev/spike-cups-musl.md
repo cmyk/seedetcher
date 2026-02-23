@@ -146,3 +146,14 @@ nix build .#image-cups-spike-debug --impure
 - Interpretation:
   - this branch has crossed the core hurdle from non-printing CUPS jobs to actual physical print via `usb://` backend.
   - current queue provisioning still relies on a bounded retry loop; production path should be event-driven for printer hot-plug support.
+
+### Optional brlaser drop-in (no flake dependency)
+- This branch supports an optional runtime archive on SD boot partition:
+  - `/brlaser-root.tar.gz` (or `.tgz` / `.tar`)
+- Archive layout should include:
+  - `lib/cups/...`
+  - optionally `share/cups/model/...` and/or `share/ppd/...`
+- On boot, init extracts it to `/var/cups-extra/brlaser-root`, overlays CUPS serverbin/data, and attempts creating:
+  - raw queue: `test` (always)
+  - non-raw queue: `test-hbp` (only when a `brlaser` model is discoverable via `lpinfo -m`)
+- If no model is found, raw flow remains unchanged.

@@ -87,6 +87,29 @@ if [ -f /cups-spike.env ] && [ -x /bin/cupsd ]; then
     # shellcheck source=/dev/null
     . /cups-spike.env
 
+    # Optional drop-in payload from boot partition for drivers/filters not in image closure.
+    # Expected archive layout:
+    #   lib/cups/... and optionally share/cups/model or share/ppd
+    BRLASER_DROPIN_ROOT=""
+    mkdir -p /mnt/boot /var/cups-extra
+    if [ -b /dev/mmcblk0p1 ]; then
+        mount -t vfat /dev/mmcblk0p1 /mnt/boot >/dev/null 2>&1 || true
+        for CAND in /mnt/boot/brlaser-root.tar.gz /mnt/boot/brlaser-root.tgz /mnt/boot/brlaser-root.tar; do
+            if [ -f "$CAND" ]; then
+                rm -rf /var/cups-extra/brlaser-root
+                mkdir -p /var/cups-extra/brlaser-root
+                if tar -xf "$CAND" -C /var/cups-extra/brlaser-root >/dev/null 2>&1; then
+                    BRLASER_DROPIN_ROOT=/var/cups-extra/brlaser-root
+                    debug_echo "CUPS spike: loaded brlaser drop-in from $(basename "$CAND")"
+                else
+                    debug_echo "CUPS spike: failed to extract brlaser drop-in $(basename "$CAND")"
+                fi
+                break
+            fi
+        done
+        umount /mnt/boot >/dev/null 2>&1 || true
+    fi
+
     # Minimal identity DB for CUPS on initramfs-only userspace.
     if [ ! -f /etc/group ]; then
         cat > /etc/group <<'EOF'
@@ -127,7 +150,7 @@ EOF
         cp -a "${CUPS_BIN_ROOT}/lib/cups" /var/cups-serverbin/lib/
     fi
     # Overlay optional filters/drivers from brlaser/cups-filters.
-    for EXTRA_ROOT in "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
+    for EXTRA_ROOT in "${BRLASER_ROOT:-}" "$BRLASER_DROPIN_ROOT" "${CUPS_FILTERS_ROOT:-}"; do
         [ -n "$EXTRA_ROOT" ] || continue
         if [ -d "$EXTRA_ROOT/lib/cups" ]; then
             cp -a "$EXTRA_ROOT/lib/cups/." /var/cups-serverbin/lib/cups/ 2>/dev/null || true
@@ -149,7 +172,7 @@ EOF
     if [ -d "${CUPS_DATA_ROOT}/share/cups" ]; then
         cp -a "${CUPS_DATA_ROOT}/share/cups/." "$CUPS_RUNTIME_DATA/" 2>/dev/null || true
     fi
-    for EXTRA_ROOT in "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
+    for EXTRA_ROOT in "${BRLASER_ROOT:-}" "$BRLASER_DROPIN_ROOT" "${CUPS_FILTERS_ROOT:-}"; do
         [ -n "$EXTRA_ROOT" ] || continue
         if [ -d "$EXTRA_ROOT/share/cups/model" ]; then
             mkdir -p "$CUPS_RUNTIME_DATA/model"
