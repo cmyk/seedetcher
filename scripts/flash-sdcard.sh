@@ -113,7 +113,8 @@ else
     if [[ "${#CANDIDATES[@]}" -eq 0 ]]; then
         DISK_DEVICE="$(find_sd_disk_system_profiler || true)"
     elif [[ "${#CANDIDATES[@]}" -eq 1 ]]; then
-        DISK_DEVICE="${CANDIDATES[0]}"
+        # zsh arrays are 1-based
+        DISK_DEVICE="${CANDIDATES[1]}"
     else
         echo "Multiple external disks detected:"
         for d in "${CANDIDATES[@]}"; do
