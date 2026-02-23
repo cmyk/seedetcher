@@ -14,7 +14,7 @@ What you need:
 - [ ] Raspi Pi Zero with screen and cam (same hardware as SeedSigner)
 - [ ] micro SD-Card
 - [ ] SeedEtcher Firmware
-- [ ] Laser Printer (air gapped), I only tested Brother HL series, avoid eco toners, needs to understand PCL
+- [ ] Laser Printer (air gapped), I only tested Brother HL-L5000D so far. Printer needs to understand PCL or PS (not emulated!). Avoid eco toners.
 - [ ] Micro-USB male to USB-A female ([amazon](https://a.co/d/drLFF49))
 - [ ] Steel Plates, 10x10cm (make sure they are really flat). You can get them on ebay or amazon or cut your own.
 - [ ] Iron (for ironing clothes)
