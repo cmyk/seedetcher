@@ -284,6 +284,7 @@
               cupsFiltersPkg = crossPkgs.cups-filters;
               ghostscriptPkg = crossPkgs.ghostscript;
               popplerUtilsPkg = crossPkgs.poppler_utils;
+              brlaserPkg = self.packages.${system}.brlaser-se-runtime;
               brlaserDropin = ./spike/brlaser-root.tar.gz;
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
@@ -385,6 +386,7 @@
                   ln -sf ${popplerUtilsPkg}/bin/pdftops initramfs/bin/pdftops
                 fi
                 echo "CUPS_SPIKE=1" > initramfs/cups-spike.env
+                echo "BRLASER_ROOT=${brlaserPkg}" >> initramfs/cups-spike.env
                 echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-spike.env
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
                 '' else ""}
@@ -436,7 +438,7 @@
 
               initramfs = self.lib.${system}.mkinitramfs { inherit debug cupsSpike; };
               cupsSpikeStoreClosure = pkgs.closureInfo {
-                rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils ];
+                rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils self.packages.${system}.brlaser-se-runtime ];
               };
               img-name =
                 let
@@ -648,6 +650,75 @@
               outputHashAlgo = "sha256";
               outputHash = "sha256-Ixy4/6AGUNJknBYVMYf5LJB1AscPKlD1CtVHYeHcqbI=";
             };
+            brlaser-se-runtime =
+              let
+                pkgs = crossPkgs;
+              in
+              pkgs.stdenv.mkDerivation rec {
+                pname = "brlaser-se-runtime";
+                version = "6.2.7";
+
+                src = pkgs.fetchFromGitHub {
+                  owner = "Owl-Maintain";
+                  repo = "brlaser";
+                  tag = "v${version}";
+                  hash = "sha256-a+TjLmjqBz0b7v6kW1uxh4BGzrYOQ8aMdVo4orZeMT4=";
+                };
+
+                nativeBuildInputs = with pkgs.buildPackages; [
+                  cmake
+                  pkg-config
+                ];
+
+                buildInputs = [
+                  pkgs.zlib
+                  pkgs.cups.dev
+                  pkgs.cups.lib
+                ];
+
+                preConfigure = ''
+                  mkdir -p .fake-bin
+                  cat > .fake-bin/cups-config <<EOF
+#!/bin/sh
+case "$1" in
+  --datadir) echo share/cups ;;
+  --serverbin) echo lib/cups ;;
+  --cflags) echo -I${pkgs.cups.dev}/include ;;
+  --ldflags) echo -L${pkgs.cups.lib}/lib ;;
+  --image) shift; [ "$1" = "--libs" ] && echo -lcupsimage -lcups || echo ;;
+  --libs) echo -lcups ;;
+  *) echo ;;
+esac
+EOF
+                  chmod +x .fake-bin/cups-config
+                  export PATH="$PWD/.fake-bin:$PATH"
+                '';
+
+                cmakeFlags = [
+                  "-DBUILD_TESTING=OFF"
+                  "-DBUILD_TESTS=OFF"
+                  "-DCMAKE_INSTALL_PREFIX=/"
+                  "-DCUPS_CFLAGS=-I${pkgs.cups.dev}/include"
+                  "-DCUPS_LDFLAGS=-L${pkgs.cups.lib}/lib"
+                  "-DCUPS_LIBS=-lcupsimage;-lcups"
+                ];
+
+                installPhase = ''
+                  runHook preInstall
+                  make install DESTDIR="$out"
+                  # Normalize layout to what init overlay expects.
+                  mkdir -p "$out/lib/cups/filter" "$out/share/cups/drv"
+                  if [ -f "$out/filter/rastertobrlaser" ]; then
+                    cp -a "$out/filter/rastertobrlaser" "$out/lib/cups/filter/rastertobrlaser"
+                  fi
+                  if [ -f "$out/drv/brlaser.drv" ]; then
+                    cp -a "$out/drv/brlaser.drv" "$out/share/cups/drv/brlaser.drv"
+                  fi
+                  rm -rf "$out/filter" "$out/drv"
+                  runHook postInstall
+                '';
+
+              };
             controller = self.lib.${system}.mkcontroller false;
             controller-debug = self.lib.${system}.mkcontroller true;
             libcamera =
