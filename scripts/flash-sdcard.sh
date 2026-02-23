@@ -15,22 +15,25 @@ REMOTE_HOST="ubuntu"
 DD_BS="16m"
 SKIP_COPY=0
 FLASH_ENGINE="auto" # auto|asr|dd
+DISK_OVERRIDE=""
 
 usage() {
-  echo "Usage: $0 [-i image-name] [-r remote-host] [-s] [-e auto|asr|dd]"
+  echo "Usage: $0 [-i image-name] [-r remote-host] [-s] [-e auto|asr|dd] [-d diskN]"
   echo "  -i image-name   file name in ~/seedetcher/result (default: seedetcher-debug.img)"
   echo "  -r remote-host  scp source host (default: ubuntu)"
   echo "  -s              skip scp; use existing ~/Downloads/<image-name>"
   echo "  -e engine       flash engine: auto (default), asr, or dd"
+  echo "  -d diskN        target disk override (e.g. disk4)"
   exit 1
 }
 
-while getopts "i:r:se:h" opt; do
+while getopts "i:r:se:d:h" opt; do
   case "$opt" in
     i) IMAGE_NAME="$OPTARG" ;;
     r) REMOTE_HOST="$OPTARG" ;;
     s) SKIP_COPY=1 ;;
     e) FLASH_ENGINE="$OPTARG" ;;
+    d) DISK_OVERRIDE="$OPTARG" ;;
     h) usage ;;
     *) usage ;;
   esac
@@ -42,30 +45,48 @@ LOCAL_PATH="$HOME/Downloads/${IMAGE_NAME}"
 
 set -euo pipefail
 
-find_external_disk() {
-  # Fast and reliable on macOS: list only external physical disks.
-  diskutil list external physical 2>/dev/null \
-    | awk '/^\/dev\/disk[0-9]+/{gsub("/dev/","",$1); print $1; exit}'
+# Primary detector for MacBook built-in SD readers (your setup).
+find_sd_disk_system_profiler() {
+  system_profiler SPStorageDataType SPUSBDataType 2>/dev/null \
+    | awk '
+      /SDXC|SD Card|SDXC Reader|Card Reader/ {inblk=1}
+      inblk && /BSD Name:/ {print $3; exit}
+      inblk && /^$/ {inblk=0}
+    ' \
+    | sed 's/s[0-9]*$//'
 }
 
-list_external_disks() {
+list_disks_external_physical() {
   diskutil list external physical 2>/dev/null \
     | awk '/^\/dev\/disk[0-9]+/{gsub("/dev/","",$1); print $1}'
 }
 
+find_seedetcher_named_disk() {
+  diskutil list 2>/dev/null | awk '
+    /^\/dev\/disk[0-9]+/ {gsub("/dev/","",$1); disk=$1}
+    /Windows_FAT_32[[:space:]]+seedetcher/ {print disk; exit}
+  '
+}
+
 echo "Waiting for SD card to be available..."
 
-SD_CARD="$(find_external_disk || true)"
+if [[ -n "$DISK_OVERRIDE" ]]; then
+    SD_CARD="$DISK_OVERRIDE"
+else
+    SD_CARD="$(find_sd_disk_system_profiler || true)"
+fi
 
 if [[ -n "$SD_CARD" ]]; then
-    echo "Detected external disk: /dev/$SD_CARD"
+    echo "Detected candidate disk: /dev/$SD_CARD"
 else
     echo "Insert SD card..."
     while [[ -z "$SD_CARD" ]]; do
       sleep 1
-      SD_CARD="$(find_external_disk || true)"
+      SD_CARD="$(find_sd_disk_system_profiler || true)"
+      [[ -z "$SD_CARD" ]] && SD_CARD="$(find_seedetcher_named_disk || true)"
+      [[ -z "$SD_CARD" ]] && SD_CARD="$(list_disks_external_physical | head -n 1 || true)"
     done
-    echo "Detected external disk: /dev/$SD_CARD"
+    echo "Detected candidate disk: /dev/$SD_CARD"
 fi
 
 
@@ -84,21 +105,26 @@ fi
 
 # Step 2: Identify the SD card **safely**
 echo "Identifying SD card..."
-CANDIDATES=("${(@f)$(list_external_disks || true)}")
-if [[ "${#CANDIDATES[@]}" -eq 0 ]]; then
-    DISK_DEVICE=""
-elif [[ "${#CANDIDATES[@]}" -eq 1 ]]; then
-    DISK_DEVICE="${CANDIDATES[0]}"
+if [[ -n "$DISK_OVERRIDE" ]]; then
+    DISK_DEVICE="$DISK_OVERRIDE"
+    CANDIDATES=("$DISK_DEVICE")
 else
-    echo "Multiple external disks detected:"
-    for d in "${CANDIDATES[@]}"; do
-        INFO="$(diskutil info /dev/$d 2>/dev/null || true)"
-        NAME="$(echo "$INFO" | awk -F: '/Media Name/{sub(/^[ \t]+/, "", $2); print $2; exit}')"
-        SIZE="$(echo "$INFO" | awk -F: '/Disk Size/{sub(/^[ \t]+/, "", $2); print $2; exit}')"
-        echo "  - /dev/$d  ${NAME:-unknown}  ${SIZE:-unknown}"
-    done
-    echo
-    read "DISK_DEVICE?Type disk id to flash (e.g. disk4): "
+    CANDIDATES=("${(@f)$(list_disks_external_physical || true)}")
+    if [[ "${#CANDIDATES[@]}" -eq 0 ]]; then
+        DISK_DEVICE="$(find_sd_disk_system_profiler || true)"
+    elif [[ "${#CANDIDATES[@]}" -eq 1 ]]; then
+        DISK_DEVICE="${CANDIDATES[0]}"
+    else
+        echo "Multiple external disks detected:"
+        for d in "${CANDIDATES[@]}"; do
+            INFO="$(diskutil info /dev/$d 2>/dev/null || true)"
+            NAME="$(echo "$INFO" | awk -F: '/Media Name/{sub(/^[ \t]+/, "", $2); print $2; exit}')"
+            SIZE="$(echo "$INFO" | awk -F: '/Disk Size/{sub(/^[ \t]+/, "", $2); print $2; exit}')"
+            echo "  - /dev/$d  ${NAME:-unknown}  ${SIZE:-unknown}"
+        done
+        echo
+        read "DISK_DEVICE?Type disk id to flash (e.g. disk4): "
+    fi
 fi
 
 # Security check: Ensure disk number is 4 or higher
@@ -112,15 +138,9 @@ elif [[ $DISK_NUMBER -lt 4 ]]; then
     exit 1
 fi
 
-# Additional safety checks (fast, single diskutil call)
+# Additional safety checks (single diskutil call)
 DISK_INFO="$(diskutil info /dev/$DISK_DEVICE 2>/dev/null || true)"
-if echo "$DISK_INFO" | grep -qE 'Internal:[[:space:]]+Yes'; then
-    echo "SECURITY WARNING: /dev/$DISK_DEVICE is internal. Aborting."
-    exit 1
-fi
-if ! echo "$DISK_INFO" | grep -qE 'Device Location:[[:space:]]+External'; then
-    echo "Warning: Could not confirm external location for /dev/$DISK_DEVICE."
-fi
+echo "$DISK_INFO" | grep -qE 'Internal:[[:space:]]+Yes' && echo "Note: /dev/$DISK_DEVICE is reported as internal (built-in reader path)."
 
 MEDIA_NAME="$(echo "$DISK_INFO" | awk -F: '/Media Name/{sub(/^[ \t]+/, "", $2); print $2; exit}')"
 MEDIA_SIZE="$(echo "$DISK_INFO" | awk -F: '/Disk Size/{sub(/^[ \t]+/, "", $2); print $2; exit}')"
