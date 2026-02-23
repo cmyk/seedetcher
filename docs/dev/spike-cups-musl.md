@@ -61,5 +61,38 @@ nix build .#image-cups-spike-debug --impure
   - Do not pursue "full CUPS+GS in initramfs" further on this architecture.
   - If CUPS is still desired, test it only in an SD-card rootfs image model (persistent root filesystem), not ram-only initramfs.
 
+## Rootfs Follow-up (current branch)
+- Spike now uses an SD-backed ext4 partition for CUPS/GS closure data:
+  - keep initramfs lean (controller boot path unchanged),
+  - add `disk.img2` ext4 partition,
+  - mount `/dev/mmcblk0p2` at `/nix` during init in spike mode.
+- Requirement: kernel must include `EXT4_FS` (disabled in baseline minimal config, enabled on this spike branch).
+- Requirement: kernel must include basic socket networking (`NET`, `INET`, `UNIX`) for `cupsd` listeners; otherwise `socket(...)=ENOSYS` and scheduler exits.
+- New risk to validate: image size growth and boot-time mount reliability.
+
+## Current Boot Behavior (OOB on spike image)
+- In `cups-spike` images, init now:
+  - mounts `/dev/mmcblk0p2` on `/nix`,
+  - creates minimal `/etc/passwd` + `/etc/group` entries required by CUPS,
+  - prepares CUPS runtime dirs (`/run/cups`, `/var/run/cups`, `/var/cache/cups`, `/var/spool/cups/tmp`),
+  - writes a minimal `cups-files.conf`,
+  - copies CUPS `ServerBin` to writable storage and fixes backend ownership/perms expected by scheduler,
+  - starts `cupsd`,
+  - provisions a raw queue `test` on `file:/dev/usb/lp0`.
+
+## Runtime Findings So Far
+- `cupsd`, `gs`, and `pdftops` run on Pi Zero from the rootfs-backed spike image.
+- CUPS scheduler can listen on unix socket `/var/run/cups/cups.sock`.
+- Direct CUPS `usb://...` backend path was unstable in this environment.
+- Direct writes to `/dev/usb/lp0` print successfully.
+- CUPS raw queue jobs are accepted/completed but do not produce printed output reliably in this setup.
+- CUPS rewrites `file:///dev/usb/lp0` to `///dev/usb/lp0` in queue config on this target, which aligns with observed non-printing behavior.
+- CUPS warns raw queues are deprecated (separate from the functional failure above).
+
+## Decision
+- **NO-GO for release integration** (current musl spike implementation).
+- Keep existing direct PCL/PS path as the production strategy.
+- Keep this branch as a reference experiment only.
+
 ## Exit Criteria
 - If build/runtime complexity is too high or print path remains unreliable, mark as no-go and keep raw PCL/PS-only strategy.
