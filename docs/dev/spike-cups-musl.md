@@ -153,10 +153,19 @@ nix build .#image-cups-spike-debug --impure
 - Archive layout should include:
   - `lib/cups/...`
   - optionally `share/cups/model/...` and/or `share/ppd/...`
-- On boot, init extracts it to `/var/cups-extra/brlaser-root`, overlays CUPS serverbin/data, and attempts creating:
+- On boot, init can extract it to `/var/cups-extra/brlaser-root`, overlay CUPS serverbin/data, and attempt creating:
   - raw queue: `test` (always)
   - non-raw queue: `test-hbp` (only when a `brlaser` model is discoverable via `lpinfo -m`)
 - If no model is found, raw flow remains unchanged.
+- Drop-in load policy (startup latency control):
+  - `CUPS_SPIKE_LOAD_DROPIN=1` force load from boot partition
+  - `CUPS_SPIKE_LOAD_DROPIN=0` disable boot-partition drop-in load
+  - default (`auto`): load drop-in only when `BRLASER_ROOT` is not set in-image
+- Data/repair policy (startup latency control):
+  - `CUPS_SPIKE_DATA_COPY=minimal` (default) copies only required CUPS data subtrees (`mime`, `usb`)
+  - `CUPS_SPIKE_DATA_COPY=full` copies full `share/cups`
+  - `CUPS_SPIKE_REPAIR_ALL_FILTERS=0` (default) repairs only `rastertobrlaser`
+  - `CUPS_SPIKE_REPAIR_ALL_FILTERS=1` repairs all CUPS filters
 
 ### Current brlaser status (important)
 - `test-hbp` queue creation can succeed (`drv:///brlaser.drv/...`) when `brlaser.drv` is present.
@@ -249,6 +258,9 @@ HBP is currently blocked by `brlaser` ABI mismatch on this image. The architectu
   - `ppdc` model generation is disabled by default to reduce startup delay.
   - Re-enable only for debugging with:
     - `CUPS_SPIKE_ENABLE_PPDC=1`
+  - HBP queue provisioning now runs asynchronously by default, so boot only blocks on raw queue setup.
+  - To force synchronous behavior for debugging:
+    - `CUPS_SPIKE_HBP_ASYNC=0`
 
 ## Pi Validation Checklist (Current Image)
 

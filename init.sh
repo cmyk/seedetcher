@@ -90,11 +90,28 @@ if [ -f /cups-spike.env ] && [ -x /bin/cupsd ]; then
     # Optional drop-in payload from boot partition for drivers/filters not in image closure.
     # Expected archive layout:
     #   lib/cups/... and optionally share/cups/model or share/ppd
+    #
+    # Load policy:
+    # - CUPS_SPIKE_LOAD_DROPIN=1  -> always try loading boot drop-in
+    # - CUPS_SPIKE_LOAD_DROPIN=0  -> never load boot drop-in
+    # - unset/auto (default)      -> load only when BRLASER_ROOT is not provided
     BRLASER_DROPIN_ROOT=""
     mkdir -p /mnt/boot /var/cups-extra
     BRLASER_RUNTIME_ROOT=/var/cups-extra/brlaser-runtime
     mkdir -p "$BRLASER_RUNTIME_ROOT/filter" "$BRLASER_RUNTIME_ROOT/lib"
-    if [ -b /dev/mmcblk0p1 ]; then
+    SHOULD_LOAD_DROPIN=0
+    case "${CUPS_SPIKE_LOAD_DROPIN:-auto}" in
+        1|yes|true|on)
+            SHOULD_LOAD_DROPIN=1
+            ;;
+        0|no|false|off)
+            SHOULD_LOAD_DROPIN=0
+            ;;
+        *)
+            [ -z "${BRLASER_ROOT:-}" ] && SHOULD_LOAD_DROPIN=1
+            ;;
+    esac
+    if [ "$SHOULD_LOAD_DROPIN" -eq 1 ] && [ -b /dev/mmcblk0p1 ]; then
         mount -t vfat /dev/mmcblk0p1 /mnt/boot >/dev/null 2>&1 || true
         for CAND in /mnt/boot/brlaser-root.tar.gz /mnt/boot/brlaser-root.tgz /mnt/boot/brlaser-root.tar; do
             if [ -f "$CAND" ]; then
@@ -114,6 +131,10 @@ if [ -f /cups-spike.env ] && [ -x /bin/cupsd ]; then
             fi
         done
         umount /mnt/boot >/dev/null 2>&1 || true
+    elif [ "$SHOULD_LOAD_DROPIN" -eq 0 ]; then
+        debug_echo "CUPS spike: drop-in loading disabled"
+    else
+        debug_echo "CUPS spike: no boot partition for drop-in loading"
     fi
 
     # Minimal identity DB for CUPS on initramfs-only userspace.
@@ -168,20 +189,34 @@ EOF
         fi
     done
     if [ -d /var/cups-serverbin/lib/cups ]; then
-        chown -R root:root /var/cups-serverbin/lib/cups || true
-        find /var/cups-serverbin/lib/cups -type d -exec chmod 755 {} \; 2>/dev/null || true
-        find /var/cups-serverbin/lib/cups -type f -exec chmod 555 {} \; 2>/dev/null || true
+        # Avoid recursive permission walks at boot; keep this minimal for speed.
+        chmod 755 /var/cups-serverbin/lib/cups 2>/dev/null || true
+        chmod 755 /var/cups-serverbin/lib/cups/backend 2>/dev/null || true
+        chmod 755 /var/cups-serverbin/lib/cups/filter 2>/dev/null || true
+        chmod 555 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
+        chmod 555 /var/cups-serverbin/lib/cups/filter/* 2>/dev/null || true
     fi
     if [ -d /var/cups-serverbin/lib/cups/backend ]; then
         chmod 700 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
     fi
 
     # Build writable CUPS data dir and merge optional models/PPDs.
+    # Default to minimal copy for boot-time speed.
+    # Set CUPS_SPIKE_DATA_COPY=full to copy the entire share/cups tree.
     CUPS_RUNTIME_DATA=/var/cups-data
     rm -rf "$CUPS_RUNTIME_DATA"
     mkdir -p "$CUPS_RUNTIME_DATA"
     if [ -d "${CUPS_DATA_ROOT}/share/cups" ]; then
-        cp -a "${CUPS_DATA_ROOT}/share/cups/." "$CUPS_RUNTIME_DATA/" 2>/dev/null || true
+        if [ "${CUPS_SPIKE_DATA_COPY:-minimal}" = "full" ]; then
+            cp -a "${CUPS_DATA_ROOT}/share/cups/." "$CUPS_RUNTIME_DATA/" 2>/dev/null || true
+        else
+            for D in mime usb; do
+                if [ -d "${CUPS_DATA_ROOT}/share/cups/$D" ]; then
+                    mkdir -p "$CUPS_RUNTIME_DATA/$D"
+                    cp -a "${CUPS_DATA_ROOT}/share/cups/$D/." "$CUPS_RUNTIME_DATA/$D/" 2>/dev/null || true
+                fi
+            done
+        fi
     fi
     for EXTRA_ROOT in "$BRLASER_DROPIN_ROOT" "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
         [ -n "$EXTRA_ROOT" ] || continue
@@ -280,12 +315,14 @@ EOF
         debug_echo "CUPS spike: installed brlaser wrapper at $FILTER_BIN"
     }
 
-    # Apply runtime-path repair to all drop-in filters.
-    if [ -d /var/cups-serverbin/lib/cups/filter ]; then
+    # Repair only needed filters by default to reduce boot latency.
+    if [ "${CUPS_SPIKE_REPAIR_ALL_FILTERS:-0}" = "1" ] && [ -d /var/cups-serverbin/lib/cups/filter ]; then
         for F in /var/cups-serverbin/lib/cups/filter/*; do
             [ -f "$F" ] || continue
             repair_elf_runtime "$F"
         done
+    else
+        repair_elf_runtime /var/cups-serverbin/lib/cups/filter/rastertobrlaser
     fi
     install_brlaser_wrapper
     # brlaser drop-in ships .drv. PPD generation via ppdc is optional and disabled
@@ -450,24 +487,9 @@ EOF
         return 0
     }
 
-    provision_spike_queue() {
-        # Return 0 when queue is configured, 1 otherwise.
-        [ -x /bin/lpadmin ] || return 1
-        [ -S /var/run/cups/cups.sock ] || return 1
-
-        QUEUE_URI=""
-        USB_BACKEND="/var/cups-serverbin/lib/cups/backend/usb"
-        if [ -x "$USB_BACKEND" ]; then
-            QUEUE_URI="$("$USB_BACKEND" 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
-        fi
-        if [ -z "$QUEUE_URI" ] && [ -c /dev/usb/lp0 ]; then
-            QUEUE_URI="file:///dev/usb/lp0"
-        fi
+    provision_hbp_queue() {
+        QUEUE_URI="$1"
         [ -n "$QUEUE_URI" ] || return 1
-
-        /bin/lpadmin -h /var/run/cups/cups.sock -x test >/dev/null 2>&1 || true
-        /bin/lpadmin -h /var/run/cups/cups.sock -p test -E -v "$QUEUE_URI" -m raw >> /log/cups.log 2>&1 || return 1
-        debug_echo "CUPS spike: queue test configured uri=$QUEUE_URI (raw)"
 
         # Optional non-raw queue via generated PPD first, then model lookup.
         if ! brlaser_filter_usable; then
@@ -500,6 +522,41 @@ EOF
         else
             debug_echo "CUPS spike: no brlaser model found for non-raw queue"
         fi
+        return 0
+    }
+
+    maybe_provision_hbp_async() {
+        QUEUE_URI="$1"
+        [ -n "$QUEUE_URI" ] || return 0
+        if [ "${CUPS_SPIKE_HBP_ASYNC:-1}" = "1" ]; then
+            (
+                provision_hbp_queue "$QUEUE_URI"
+            ) &
+            debug_echo "CUPS spike: scheduling test-hbp provisioning in background"
+        else
+            provision_hbp_queue "$QUEUE_URI"
+        fi
+    }
+
+    provision_spike_queue() {
+        # Return 0 when raw queue is configured, 1 otherwise.
+        [ -x /bin/lpadmin ] || return 1
+        [ -S /var/run/cups/cups.sock ] || return 1
+
+        QUEUE_URI=""
+        USB_BACKEND="/var/cups-serverbin/lib/cups/backend/usb"
+        if [ -x "$USB_BACKEND" ]; then
+            QUEUE_URI="$("$USB_BACKEND" 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
+        fi
+        if [ -z "$QUEUE_URI" ] && [ -c /dev/usb/lp0 ]; then
+            QUEUE_URI="file:///dev/usb/lp0"
+        fi
+        [ -n "$QUEUE_URI" ] || return 1
+
+        /bin/lpadmin -h /var/run/cups/cups.sock -x test >/dev/null 2>&1 || true
+        /bin/lpadmin -h /var/run/cups/cups.sock -p test -E -v "$QUEUE_URI" -m raw >> /log/cups.log 2>&1 || return 1
+        debug_echo "CUPS spike: queue test configured uri=$QUEUE_URI (raw)"
+        maybe_provision_hbp_async "$QUEUE_URI"
         return 0
     }
 
