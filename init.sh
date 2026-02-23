@@ -389,7 +389,7 @@ EOF
     fi
 
     # Helper: print a PDF through test-hbp by pre-converting to CUPS raster.
-    cat > /bin/print-hbp-pdf <<'EOF'
+cat > /bin/print-hbp-pdf <<'EOF'
 #!/bin/sh
 set -eu
 SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
@@ -399,8 +399,26 @@ if [ -z "$PDF" ] || [ ! -f "$PDF" ]; then
   echo "usage: print-hbp-pdf /path/to/file.pdf" >&2
   exit 2
 fi
-if ! lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1; then
-  echo "queue '$QUEUE' not found on $SOCK" >&2
+
+ensure_hbp_queue() {
+  lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1 && return 0
+
+  URI=""
+  if lpstat -h "$SOCK" -p test >/dev/null 2>&1; then
+    URI="$(lpstat -h "$SOCK" -v 2>/dev/null | awk '$1=="device" && $3=="test:" {print $4; exit}')"
+  fi
+  if [ -z "$URI" ] && [ -x /var/cups-serverbin/lib/cups/backend/usb ]; then
+    URI="$(/var/cups-serverbin/lib/cups/backend/usb 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
+  fi
+  [ -n "$URI" ] || return 1
+
+  lpadmin -h "$SOCK" -x "$QUEUE" >/dev/null 2>&1 || true
+  lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -m "drv:///brlaser.drv/brl5000d.ppd" >/dev/null 2>&1 || return 1
+  lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1
+}
+
+if ! ensure_hbp_queue; then
+  echo "queue '$QUEUE' not found on $SOCK and auto-create failed" >&2
   exit 3
 fi
 RAS="/tmp/print-hbp.ras"
