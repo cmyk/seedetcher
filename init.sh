@@ -188,6 +188,10 @@ EOF
             find "$EXTRA_ROOT/lib" -maxdepth 2 -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -a {} "$BRLASER_RUNTIME_ROOT/lib/" \; 2>/dev/null || true
         fi
     done
+    # Ensure runtime data dirs are writable for on-demand PPD generation.
+    mkdir -p "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime"
+    chown root:root "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" 2>/dev/null || true
+    chmod 755 "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" 2>/dev/null || true
     if [ -d /var/cups-serverbin/lib/cups ]; then
         # Avoid recursive permission walks at boot; keep this minimal for speed.
         chown root:root /var/cups-serverbin/lib/cups 2>/dev/null || true
