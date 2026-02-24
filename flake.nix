@@ -279,12 +279,15 @@
               bashStatic = crossPkgs.pkgsStatic.bash;
               straceStatic = crossPkgs.pkgsStatic.strace;
               binutilsStatic = crossPkgs.pkgsStatic.binutils; #for readelf
-              mupdfHeadlessStatic = self.packages.${system}.mupdf_headless;
               cupsPkg = crossPkgs.cups;
               cupsFiltersPkg = crossPkgs.cups-filters;
               ghostscriptPkg = crossPkgs.ghostscript;
               popplerUtilsPkg = crossPkgs.poppler_utils;
+              brlaserPkg = self.packages.${system}.brlaser-se-runtime;
               brlaserDropin = ./spike/brlaser-root.tar.gz;
+              cupsSpikeStoreClosure = pkgs.closureInfo {
+                rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils brlaserPkg ];
+              };
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
               seedEtcherFontFile = ./font/seedetcher/SeedEtcher-Regular.ttf;
@@ -364,9 +367,6 @@
                 cp -L --no-preserve=mode "$target" initramfs/bin/readelf || echo "Failed to copy readelf"
                 chmod +x initramfs/bin/readelf 2>/dev/null || echo "Warning: Could not change permissions of readelf"
 
-                cp -a ${mupdfHeadlessStatic}/bin/mutool initramfs/bin/ || echo "Failed to copy mutool from ${mupdfHeadlessStatic}/bin/"
-                chmod +x initramfs/bin/mutool || echo "chmod failed, listing dir: $(ls -alh initramfs/bin/)"
-
                 # Optional CUPS/Ghostscript tooling for experimental spike images.
                 ${if cupsSpike then ''
                 mkdir -p initramfs/etc/cups initramfs/var/spool/cups initramfs/var/run/cups initramfs/nix/store
@@ -385,8 +385,12 @@
                   ln -sf ${popplerUtilsPkg}/bin/pdftops initramfs/bin/pdftops
                 fi
                 echo "CUPS_SPIKE=1" > initramfs/cups-spike.env
+                echo "BRLASER_ROOT=${brlaserPkg}" >> initramfs/cups-spike.env
                 echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-spike.env
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
+                cp ${cupsSpikeStoreClosure}/store-paths initramfs/cups-spike-store-paths
+                chmod 0644 initramfs/cups-spike-store-paths
+                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike-store-paths
                 '' else ""}
 
 
@@ -436,7 +440,7 @@
 
               initramfs = self.lib.${system}.mkinitramfs { inherit debug cupsSpike; };
               cupsSpikeStoreClosure = pkgs.closureInfo {
-                rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils ];
+                rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils self.packages.${system}.brlaser-se-runtime ];
               };
               img-name =
                 let
@@ -444,7 +448,7 @@
                   base = if cupsSpike then "${modeBase}-cups-spike" else modeBase;
                 in
                 if debug then "${base}-debug.img" else "${base}.img";
-              imageSizeMB = if cupsSpike then 1600 else 64;
+              imageSizeMB = 64;
 
               cmdlinetxt =
                 let
@@ -497,16 +501,41 @@
                 }
 
                 # Create disk image.
-                dd if=/dev/zero of=disk.img bs=1M count=${toString imageSizeMB}
                 ${if cupsSpike then ''
+                # Auto-size rootfs partition from closure size to avoid huge sparse images.
+                CLOSURE_BYTES=0
+                while IFS= read -r p; do
+                  [ -e "$p" ] || continue
+                  sz="$(${pkgs.coreutils}/bin/du -sb "$p" | ${pkgs.coreutils}/bin/cut -f1)"
+                  CLOSURE_BYTES=$((CLOSURE_BYTES + sz))
+                done < ${cupsSpikeStoreClosure}/store-paths
+
+                # Add overhead for filesystem metadata + runtime writable paths.
+                ROOTFS_BYTES_EST=$(( (CLOSURE_BYTES * 130) / 100 + 128 * 1024 * 1024 ))
+                MIN_ROOTFS_BYTES=$((256 * 1024 * 1024))
+                if [ "$ROOTFS_BYTES_EST" -lt "$MIN_ROOTFS_BYTES" ]; then
+                  ROOTFS_BYTES_EST=$MIN_ROOTFS_BYTES
+                fi
+                ROOTFS_SECTORS=$(( (ROOTFS_BYTES_EST + 511) / 512 ))
+
+                BOOT_SECTORS=114688
+                START1=2048
+                START2=$((START1 + BOOT_SECTORS))
+                ALIGN_SECTORS=2048
+                TOTAL_SECTORS=$((START2 + ROOTFS_SECTORS + ALIGN_SECTORS))
+                IMAGE_BYTES=$((TOTAL_SECTORS * 512))
+                IMAGE_MB=$(( (IMAGE_BYTES + 1024*1024 - 1) / (1024*1024) ))
+
+                dd if=/dev/zero of=disk.img bs=1M count="$IMAGE_MB"
                 ${pkgs.util-linux}/bin/sfdisk disk.img <<EOF
                   label: dos
                   label-id: 0xceedb0ad
 
-                  disk.img1 : size=114688, type=c, bootable
-                  disk.img2 : type=83
+                  disk.img1 : size=$BOOT_SECTORS, type=c, bootable
+                  disk.img2 : size=$ROOTFS_SECTORS, type=83
                 EOF
                 '' else ''
+                dd if=/dev/zero of=disk.img bs=1M count=${toString imageSizeMB}
                 ${pkgs.util-linux}/bin/sfdisk disk.img <<EOF
                   label: dos
                   label-id: 0xceedb0ad
@@ -648,6 +677,90 @@
               outputHashAlgo = "sha256";
               outputHash = "sha256-Ixy4/6AGUNJknBYVMYf5LJB1AscPKlD1CtVHYeHcqbI=";
             };
+            brlaser-se-runtime =
+              let
+                pkgs = crossPkgs;
+              in
+              pkgs.stdenv.mkDerivation rec {
+                pname = "brlaser-se-runtime";
+                version = "6.2.7";
+
+                src = pkgs.fetchFromGitHub {
+                  owner = "Owl-Maintain";
+                  repo = "brlaser";
+                  tag = "v${version}";
+                  hash = "sha256-a+TjLmjqBz0b7v6kW1uxh4BGzrYOQ8aMdVo4orZeMT4=";
+                };
+
+                nativeBuildInputs = with pkgs.buildPackages; [
+                  cmake
+                  pkg-config
+                  cups
+                ];
+
+                buildInputs = [
+                  pkgs.zlib
+                  pkgs.cups.dev
+                  pkgs.cups.lib
+                ];
+
+                preConfigure = ''
+                  mkdir -p .fake-bin
+                  cat > .fake-bin/cups-config <<EOF
+#!/bin/sh
+case "$1" in
+  --datadir) echo share/cups ;;
+  --serverbin) echo lib/cups ;;
+  --cflags) echo -I${pkgs.cups.dev}/include ;;
+  --ldflags) echo -L${pkgs.cups.lib}/lib ;;
+  --image) shift; [ "$1" = "--libs" ] && echo -lcupsimage -lcups || echo ;;
+  --libs) echo -lcups ;;
+  *) echo ;;
+esac
+EOF
+                  chmod +x .fake-bin/cups-config
+                  export PATH="$PWD/.fake-bin:$PATH"
+                '';
+
+                cmakeFlags = [
+                  "-DBUILD_TESTING=OFF"
+                  "-DBUILD_TESTS=OFF"
+                  "-DCMAKE_INSTALL_PREFIX=/"
+                  "-DCUPS_CFLAGS=-I${pkgs.cups.dev}/include"
+                  "-DCUPS_LDFLAGS=-L${pkgs.cups.lib}/lib"
+                  "-DCUPS_LIBS=-lcupsimage;-lcups"
+                ];
+
+                installPhase = ''
+                  runHook preInstall
+                  make install DESTDIR="$out"
+                  # Normalize layout to what init overlay expects.
+                  mkdir -p "$out/lib/cups/filter" "$out/share/cups/drv" "$out/share/cups/model"
+                  # Carry CUPS ppdc/drv include defs so ppdc can resolve includes in brlaser.drv.
+                  if [ -d ${pkgs.cups.lib}/share/cups/drv ]; then
+                    cp -a ${pkgs.cups.lib}/share/cups/drv/. "$out/share/cups/drv/" >/dev/null 2>&1 || true
+                  fi
+                  if [ -d ${pkgs.cups.lib}/share/cups/ppdc ]; then
+                    mkdir -p "$out/share/cups/ppdc"
+                    cp -a ${pkgs.cups.lib}/share/cups/ppdc/. "$out/share/cups/ppdc/" >/dev/null 2>&1 || true
+                  fi
+                  if [ -f "$out/filter/rastertobrlaser" ]; then
+                    cp -a "$out/filter/rastertobrlaser" "$out/lib/cups/filter/rastertobrlaser"
+                  fi
+                  if [ -f "$out/drv/brlaser.drv" ]; then
+                    cp -a "$out/drv/brlaser.drv" "$out/share/cups/drv/brlaser.drv"
+                    # Pre-generate PPDs at build time to avoid runtime drv:/// dependency.
+                    ${pkgs.buildPackages.cups}/bin/ppdc \
+                      -I "$out/share/cups/ppdc" \
+                      -I "$out/share/cups/drv" \
+                      -d "$out/share/cups/model" \
+                      "$out/share/cups/drv/brlaser.drv" >/dev/null 2>&1 || true
+                  fi
+                  rm -rf "$out/filter" "$out/drv"
+                  runHook postInstall
+                '';
+
+              };
             controller = self.lib.${system}.mkcontroller false;
             controller-debug = self.lib.${system}.mkcontroller true;
             libcamera =
@@ -878,52 +991,6 @@
               ${pkgs.mtools}/bin/mdel -i "$dst@@$OFFSET" ::cmdline.txt
               ${pkgs.mtools}/bin/mcopy -bpm -i "$dst@@$OFFSET" "$TMPDIR/cmdline.txt" ::
             '';
-
-          mupdf_headless = crossPkgs.stdenv.mkDerivation {
-            name = "mupdf-headless";
-            version = "1.25.4";
-
-            src = crossPkgs.fetchurl {
-              url = "https://mupdf.com/downloads/archive/mupdf-1.25.4-source.tar.gz";
-              # Replace with the correct hash from your build logs or nix-prefetch-url
-              hash = "sha256-dLlDA4/oFZS/f8ViHGC8pYiyhH8NRvsumWUqIfoNlJE="; # Update this!
-            };
-
-            nativeBuildInputs = with crossPkgs.buildPackages; [
-              pkg-config
-            ];
-            buildInputs = with crossPkgs.pkgsStatic; [
-              zlib
-              freetype
-              libpng
-              musl # Explicitly include musl for static linking
-            ];
-
-            # Ensure static linking by passing -static and adjusting LDFLAGS
-            buildPhase = ''
-              make HAVE_X11=no HAVE_GLUT=no HAVE_GLFW=no prefix=/usr \
-                CC="${crossPkgs.stdenv.cc.targetPrefix}cc -static" \
-                AR=${crossPkgs.stdenv.cc.targetPrefix}ar \
-                LDFLAGS="-static -L${crossPkgs.pkgsStatic.zlib}/lib -L${crossPkgs.pkgsStatic.freetype}/lib -L${crossPkgs.pkgsStatic.libpng}/lib -L${crossPkgs.pkgsStatic.musl}/lib" \
-                libs # Build libmupdf first
-              make HAVE_X11=no HAVE_GLUT=no HAVE_GLFW=no prefix=/usr \
-                CC="${crossPkgs.stdenv.cc.targetPrefix}cc -static" \
-                AR=${crossPkgs.stdenv.cc.targetPrefix}ar \
-                LDFLAGS="-static -L${crossPkgs.pkgsStatic.zlib}/lib -L${crossPkgs.pkgsStatic.freetype}/lib -L${crossPkgs.pkgsStatic.libpng}/lib -L${crossPkgs.pkgsStatic.musl}/lib" \
-                apps # Build mutool statically
-            '';
-
-            installPhase = ''
-              mkdir -p $out/bin $out/lib
-              cp build/release/libmupdf.a $out/lib/
-              cp build/release/mutool $out/bin/
-              ${crossPkgs.stdenv.cc.targetPrefix}strip $out/bin/mutool
-            '';
-
-            hardeningDisable = ["all"];
-            dontStrip = false;
-            allowedReferences = []; # Keep this for now, should be empty if fully static
-          };
 
             default = self.packages.${system}.image;
           };

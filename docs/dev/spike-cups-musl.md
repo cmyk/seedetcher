@@ -153,10 +153,19 @@ nix build .#image-cups-spike-debug --impure
 - Archive layout should include:
   - `lib/cups/...`
   - optionally `share/cups/model/...` and/or `share/ppd/...`
-- On boot, init extracts it to `/var/cups-extra/brlaser-root`, overlays CUPS serverbin/data, and attempts creating:
+- On boot, init can extract it to `/var/cups-extra/brlaser-root`, overlay CUPS serverbin/data, and attempt creating:
   - raw queue: `test` (always)
   - non-raw queue: `test-hbp` (only when a `brlaser` model is discoverable via `lpinfo -m`)
 - If no model is found, raw flow remains unchanged.
+- Drop-in load policy (startup latency control):
+  - `CUPS_SPIKE_LOAD_DROPIN=1` force load from boot partition
+  - `CUPS_SPIKE_LOAD_DROPIN=0` disable boot-partition drop-in load
+  - default (`auto`): load drop-in only when `BRLASER_ROOT` is not set in-image
+- Data/repair policy (startup latency control):
+  - `CUPS_SPIKE_DATA_COPY=minimal` (default) copies only required CUPS data subtrees (`mime`, `usb`)
+  - `CUPS_SPIKE_DATA_COPY=full` copies full `share/cups`
+  - `CUPS_SPIKE_REPAIR_ALL_FILTERS=0` (default) repairs only `rastertobrlaser`
+  - `CUPS_SPIKE_REPAIR_ALL_FILTERS=1` repairs all CUPS filters
 
 ### Current brlaser status (important)
 - `test-hbp` queue creation can succeed (`drv:///brlaser.drv/...`) when `brlaser.drv` is present.
@@ -184,45 +193,173 @@ nix build .#image-cups-spike-debug --impure
 ### UART-friendly self-test
 - Spike images now install:
   - `/bin/cups-spike-selftest`
+  - `/bin/print-hbp-pdf`
 - It performs:
   1. queue listing,
   2. raw queue test (`test`),
   3. HBP queue test (`test-hbp`) if present,
   4. recent job listing,
   5. last CUPS log lines.
+- `print-hbp-pdf` is the current known-good path for HBP:
+  - pre-converts PDF to CUPS raster via Ghostscript with fixed A4/600dpi settings
+  - submits raster to `test-hbp`.
 
-## HBP Unblock Plan (Current)
+## HBP Stabilization Status (Current)
 
-HBP is currently blocked by `brlaser` ABI mismatch on this image. The architecture and queue flow are viable; the missing piece is a matching filter runtime artifact.
+HBP queue provisioning and real print are working on `experimental/hbp-artifact-runtime-wrapper` with the current runtime wrapper flow.
 
-### 1. Build `brlaser` for target ABI
-- Build `rastertobrlaser` for `armv6 + musl` against the same runtime family used by the image.
-- Output either:
-  - a fully static filter, or
-  - a dynamic filter plus the exact required shared libraries.
+### Regression root causes that were fixed
+- `ppdc` include path failure:
+  - symptom: `Unable to find include file "<font.defs>"`.
+  - root cause: minimal CUPS data copy and brlaser runtime artifact did not include `share/cups/ppdc`; `ppdc` was also invoked without include directories.
+  - fix: copy `ppdc` data into runtime/artifact and call `ppdc` with `-I` include paths.
+- PPD selection mismatch:
+  - symptom: `print-hbp-pdf` could not auto-create `test-hbp` even though PPDs existed.
+  - root cause: selector matched only filename patterns like `*Brother*HL-*`, while generated files are named like `brl5000d.ppd`.
+  - fix: add content-based matching (`ModelName` / `1284DeviceID`) and fallback to `brl*.ppd`.
 
-### 2. Make runtime self-contained
-- Package filter + libs into a fixed runtime layout (example: `/var/cups-extra/brlaser-runtime`).
-- Add a wrapper that sets `LD_LIBRARY_PATH` and execs the real filter.
+### Current known-good behavior
+- `test` raw queue provisions from `usb://...`.
+- `test-hbp` provisions automatically using `brlaser` PPD (example: `brl5000d.ppd`).
+- `print-hbp-pdf /tmp/test_output.pdf` submits and completes HBP jobs.
+- `print-hbp-pdf` now emits a debug line with queue/model/URI/selected PPD.
 
-### 3. Use wrapper as CUPS filter
-- Override `rastertobrlaser` in CUPS `ServerBin/filter` with the wrapper.
-- Keep `test-hbp` creation behind strict runtime probe:
-  - interpreter exists,
-  - needed libs resolvable,
-  - no relocation/shared-lib loader errors.
+## Current status update
+- `test-hbp` queue + `rastertobrlaser` execution are now working on `experimental/hbp-artifact-runtime-wrapper`.
+- Real SeedEtcher page was printed successfully through HBP queue using:
+  - Ghostscript PDF -> CUPS raster conversion
+  - `lp ... -o document-format=application/vnd.cups-raster ...`
+- Remaining caveat:
+  - `cupsfilter` PDF -> CUPS raster chain is still missing (`No filter to convert from application/pdf to application/vnd.cups-raster`).
+  - Use `/bin/print-hbp-pdf` workaround path in the spike image.
+- Boot optimization:
+  - `ppdc` model generation is disabled by default to reduce startup delay.
+  - Re-enable only for debugging with:
+    - `CUPS_SPIKE_ENABLE_PPDC=1`
+  - HBP queue provisioning now runs asynchronously by default, so boot only blocks on raw queue setup.
+  - To force synchronous behavior for debugging:
+    - `CUPS_SPIKE_HBP_ASYNC=0`
 
-### 4. Lock artifact provenance
-- Build artifact in one reproducible environment (CI or pinned container).
-- Version it and record checksum.
-- Load artifact at boot using current drop-in mechanism.
+## Pi Validation Checklist (Current Image)
 
-### 5. Validation gate before enabling HBP
-- Cold boot x3.
-- `cups-spike-selftest` x3.
-- Real SeedEtcher page through `test-hbp` (not synthetic only).
-- Verify printed QR scanability and text readability.
+Run this exact sequence on Pi for each new `image-cups-spike-debug` flash:
 
-### Exit condition
-- Until step 1 succeeds, HBP remains blocked.
-- Once steps 1-5 pass, current spike architecture can support HBP enablement.
+1. Queue baseline
+- `SOCK=/var/run/cups/cups.sock`
+- `lpstat -h "$SOCK" -p -v`
+- Expected:
+  - `test` exists with `usb://...`
+  - `test-hbp` exists (or is auto-creatable by helper)
+
+2. Create test PDF (required after every flash)
+- `/tmp` is empty after reboot/flash.
+- Generate a fresh page:
+  - `./controller -test-createPageLayout -w multisig-mainnet-2of3 -dpi 600 -papersize A4`
+- Verify:
+  - `ls -l /tmp/test_output.pdf`
+
+3. HBP print through helper
+- `print-hbp-pdf /tmp/test_output.pdf`
+- Expected:
+  - helper debug line shows selected model + PPD
+  - job accepted (`request id is test-hbp-N`)
+
+4. Queue and job confirmation
+- `lpstat -h "$SOCK" -p test-hbp -v`
+- `lpstat -h "$SOCK" -W not-completed -W completed`
+- Expected:
+  - `test-hbp` enabled/idle after completion
+  - completed job listed
+
+5. Stability gate
+- Repeat step 3 three consecutive times.
+- Reboot once and run steps 1-4 again.
+
+6. Log sanity
+- `tail -n 200 /log/init_debug.log`
+- `tail -n 200 /var/log/cups/error_log`
+- `tail -n 200 /log/cups.log`
+- No relocation/shared-lib loader errors from `rastertobrlaser`.
+
+## Productization Plan: Optional Brother HBP Support
+
+### Goal
+- Preserve current fast/default behavior for PCL/PS users.
+- Expose Brother non-PCL/PS support as an explicit opt-in path.
+- Keep SD-removal requirement explicit and testable.
+
+### Proposed UX
+1. Default OFF
+- Do not start CUPS/HBP stack automatically at boot.
+- Keep current direct PCL/PS path as default behavior.
+
+2. User opt-in toggle
+- Add a user-facing setting:
+  - `Enable Brother non-PCL/PS support (experimental)`
+- Persist value in config so reboot behavior is deterministic.
+
+3. Lazy runtime activation
+- Only initialize HBP runtime when:
+  - toggle is enabled, and
+  - a Brother/HBP print is requested.
+- Avoid boot-time CPU/RAM cost for users who do not need HBP.
+
+4. SD-removal workflow
+- Add explicit action:
+  - `Prepare Brother support for SD removal`
+- Action stages required Brother/CUPS runtime into RAM, runs a smoke test, then reports readiness for SD removal.
+- If runtime is not staged, UI should clearly state SD must remain inserted for HBP.
+
+### Engineering constraints
+- Full CUPS closure in RAM is likely too large for 512 MB targets.
+- Implement RAM mode as a minimal curated runtime bundle, not a full `/nix` copy.
+- Add hard size/budget checks and fail closed when runtime exceeds safe limits.
+
+### Validation gate
+- Toggle OFF:
+  - no HBP boot work, baseline boot time unchanged.
+- Toggle ON + no HBP print:
+  - no early heavy initialization.
+- Toggle ON + first HBP print:
+  - lazy init succeeds and print completes.
+- SD-removal prepared:
+  - unmount/remove SD, repeat HBP print successfully.
+
+## RAM Feasibility Probe (Blocker Gate)
+
+New helper in spike images:
+- `/bin/cups-spike-ram-feasibility`
+
+It supports two profiles:
+- `core`: curated HBP runtime roots (first-pass feasibility target)
+- `full`: complete CUPS spike closure from `/cups-spike-store-paths` (likely too large for 512MB)
+
+Run on Pi:
+```sh
+# 1) Size estimates (no copy/mount changes)
+cups-spike-ram-feasibility estimate core
+cups-spike-ram-feasibility estimate full
+
+# 2) Stage curated core runtime into tmpfs and bind /nix from RAM
+HBP_RAM_MIN_AVAIL_MB=100 cups-spike-ram-feasibility stage core
+
+# 3) Confirm queue + run one real HBP print
+./controller -test-createPageLayout -w multisig-mainnet-2of3 -dpi 600 -papersize A4
+print-hbp-pdf /tmp/test_output.pdf
+lpstat -h /var/run/cups/cups.sock -W not-completed -W completed
+
+# 4) Check memory gate and status
+cups-spike-ram-feasibility check
+cups-spike-ram-feasibility status
+
+# 5) Prepare safe SD removal (required before physically pulling SD)
+cups-spike-ram-feasibility detach-sd
+
+# 6) Revert RAM bind/mount state (for debug sessions where SD remains inserted)
+cups-spike-ram-feasibility unstage
+```
+
+Interpretation:
+- If `stage core` + real HBP print pass with memory gate headroom, RAM-only HBP is feasible.
+- If `stage core` fails memory gate or print stability, SD-removal for HBP is blocked until runtime is reduced.
+- `detach-sd` should be treated as mandatory before user-facing "remove SD now" prompt.
