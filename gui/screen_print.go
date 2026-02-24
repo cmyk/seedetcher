@@ -713,7 +713,9 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		select {
 		case p := <-progressCh:
 			stageState[p.stage] = p
-			lastStage = p.stage
+			if p.stage >= lastStage {
+				lastStage = p.stage
+			}
 			// Mark earlier stages complete if we reached a later stage.
 			ordered := []printer.PrintStage{printer.StagePrepare, printer.StageCompose, printer.StageSend}
 			for _, st := range ordered {
