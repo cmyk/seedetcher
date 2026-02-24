@@ -29,12 +29,6 @@ notes:
 USAGE
 }
 
-bootstrap_runtime() {
-  if [ -x /bin/cups-spike-bootstrap ]; then
-    /bin/cups-spike-bootstrap
-  fi
-}
-
 store_root_of() {
   p="${1:-}"
   [ -n "$p" ] || return 1
@@ -374,7 +368,6 @@ case "$ACTION" in
     summarize_estimate "$MODE"
     ;;
   stage)
-    bootstrap_runtime
     case "$MODE" in
       core) collect_core_roots ;;
       full) collect_full_roots ;;

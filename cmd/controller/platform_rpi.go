@@ -481,11 +481,22 @@ func detachSDCardMountsFallback(restoreRAMNix bool) error {
 }
 
 func (p *Platform) PrepareHBPForSDRemoval() error {
+	if _, err := os.Stat("/bin/cups-spike-bootstrap"); err != nil {
+		return fmt.Errorf("missing /bin/cups-spike-bootstrap: %w", err)
+	}
 	if _, err := os.Stat("/bin/cups-spike-ram-feasibility"); err != nil {
 		return fmt.Errorf("missing /bin/cups-spike-ram-feasibility: %w", err)
 	}
 
-	out, err := runCommandWithOutput("/bin/cups-spike-ram-feasibility", "stage", "core")
+	out, err := runCommandWithOutput("/bin/cups-spike-bootstrap")
+	if out != "" {
+		logutil.DebugLog("HBP bootstrap output:\n%s", out)
+	}
+	if err != nil {
+		return err
+	}
+
+	out, err = runCommandWithOutput("/bin/cups-spike-ram-feasibility", "stage", "core")
 	if out != "" {
 		logutil.DebugLog("HBP prep stage output:\n%s", out)
 	}
