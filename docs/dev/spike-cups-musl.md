@@ -351,11 +351,30 @@ Run this exact sequence on Pi for each new `image-cups-spike-debug` flash:
   - DPI fallback is only applied in the HBP-enabled session mode so PCL/PS-only users keep maximum performance.
 
 ### Follow-up for true 1200 on larger jobs
-- Current safety behavior prefers 600 DPI for memory-heavy multi-page PS/HBP jobs on Pi Zero.
-- If we want reliable 1200 DPI for larger jobs, the real fix is page-streaming:
+- Current safety behavior enforces 600 DPI for HBP on Pi Zero-class RAM.
+- If we want reliable 1200 DPI for larger HBP jobs, the real fix is page-streaming in the HBP pipeline:
   - render and send one page at a time,
   - avoid building full job plate/page buffers in RAM first.
 - Treat this as a future optimization track, not a blocker for current HBP opt-in scope.
+
+### HBP 1200 Streaming Plan
+1. Keep scope HBP-only (no PCL/PS behavior changes).
+2. Add a new HBP print path that streams per page:
+   - compose one page at a time,
+   - convert/submit one page at a time,
+   - release page buffers immediately after submit.
+3. Keep current 600-DPI HBP path as fallback behind a feature flag.
+4. Add memory instrumentation logs around each page stage (compose, convert, submit).
+5. Validate on-device with singlesig, multisig 2-of-3, and multisig 3-of-5 at 600 and 1200.
+6. Enable by default only after repeated no-OOM and no-scale-regression test runs.
+
+Current implementation status:
+- Started: HBP path now renders/sends in bounded batches (share-window batches) and releases batch buffers after submit.
+- HBP batch PDF generation now places plate images directly into PDF pages (no full-page raster compose step in that path).
+- HBP path is fixed to 600 DPI for correctness on-device.
+- Additional runtime guard: `print-hbp-pdf` clamps effective raster DPI to 600 when a higher DPI is requested, because 1200 raster currently causes incorrect oversized geometry on-device.
+- Note: this 600-DPI HBP policy is driven by brlaser 1200-raster behavior (oversized output), not by SeedEtcher layout/rendering logic; see upstream context in brlaser issues #208 and #40.
+- HBP prepare UI now shows an ETA-based progress bar during runtime staging and removes the bar once readiness is confirmed.
 
 ### GUI smoke test (current implementation)
 1. On startup, choose `Enable HBP` in the HBP gate.

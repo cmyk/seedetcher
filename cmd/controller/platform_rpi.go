@@ -877,6 +877,175 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 }
 
 func (p *Platform) createPlatesHBP(ctx *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
+	if opts.EtchStatsPage {
+		// Keep stats behavior intact for now; batching implementation below does not
+		// retain all plate bitmaps needed by BuildEtchStatsReport.
+		return p.createPlatesHBPLegacy(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
+	}
+
+	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
+	singlesigWithDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithDescriptorQR
+	singlesigWithInfo := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithInfo
+	isSinglesigJob := desc == nil || isSinglesigDesc
+	totalShares := len(mnemonics)
+	if desc != nil && len(desc.Keys) > 0 && !isSinglesigDesc {
+		totalShares = len(desc.Keys)
+	}
+	if totalShares <= 0 {
+		return fmt.Errorf("no shares to print")
+	}
+
+	compactSingleSided := desc != nil &&
+		printer.CompactDescriptor2of3Enabled() &&
+		desc.Type == urtypes.SortedMulti &&
+		desc.Threshold == 2 &&
+		len(desc.Keys) == 3 &&
+		totalShares == 3
+
+	var shardQRPayloads [][]string
+	if desc != nil && len(desc.Keys) > 0 {
+		if isSinglesigDesc && singlesigWithDescriptorSide {
+			qrPayload := printer.DescriptorQRPayload(desc)
+			if qrPayload == "" {
+				return fmt.Errorf("render: empty singlesig descriptor qr payload")
+			}
+			shardQRPayloads = make([][]string, totalShares)
+			for i := range shardQRPayloads {
+				shardQRPayloads[i] = []string{qrPayload}
+			}
+		} else {
+			var err error
+			shardQRPayloads = make([][]string, totalShares)
+			for i := 0; i < totalShares; i++ {
+				descKeyIdx := i % len(desc.Keys)
+				shardQRPayloads[i], err = printer.DescriptorShardQRPayloadsForShare(desc, totalShares, descKeyIdx)
+				if err != nil {
+					return fmt.Errorf("render: descriptor shard qrs: %w", err)
+				}
+			}
+		}
+	}
+
+	maxSlotsPerPage := 6
+	if paper == printer.PaperLetter {
+		maxSlotsPerPage = 4
+	}
+	slotsPerShare := 1
+	if desc != nil && !compactSingleSided {
+		slotsPerShare = 2
+	}
+	sharesPerBatch := maxSlotsPerPage / slotsPerShare
+	if sharesPerBatch < 1 {
+		sharesPerBatch = 1
+	}
+	numBatches := (totalShares + sharesPerBatch - 1) / sharesPerBatch
+	if numBatches < 1 {
+		numBatches = 1
+	}
+
+	prepareDone := int64(0)
+	prepareTotal := int64(totalShares)
+	if desc != nil && !compactSingleSided {
+		prepareTotal *= 2
+	}
+	for start := 0; start < totalShares; start += sharesPerBatch {
+		end := start + sharesPerBatch
+		if end > totalShares {
+			end = totalShares
+		}
+		batchSize := end - start
+		seedBatch := make([]*image.Paletted, 0, batchSize)
+		var descBatch []*image.Paletted
+		if desc != nil && !compactSingleSided {
+			descBatch = make([]*image.Paletted, 0, batchSize)
+		}
+		for i := start; i < end; i++ {
+			m := mnemonics[i%len(mnemonics)]
+			seedShareNum, seedShareTotal := i+1, totalShares
+			if isSinglesigJob {
+				seedShareNum, seedShareTotal = 1, 1
+			}
+			seedDesc := (*urtypes.OutputDescriptor)(nil)
+			if singlesigWithInfo {
+				seedDesc = desc
+			}
+			seedImg, err := printer.RenderSeedPlateBitmapWithDescriptor(m, seedShareNum, seedShareTotal, seedDesc, opts)
+			if err != nil {
+				return fmt.Errorf("render: seed plate %d: %w", i+1, err)
+			}
+			if compactSingleSided {
+				descKeyIdx := i % len(desc.Keys)
+				descQR := ""
+				if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
+					descQR = shardQRPayloads[i][0]
+				}
+				seedImg, err = printer.RenderCompact2of3PlateBitmap(m, desc, descKeyIdx, opts, descQR)
+				if err != nil {
+					return fmt.Errorf("render: compact plate %d: %w", i+1, err)
+				}
+			}
+			seedBatch = append(seedBatch, seedImg)
+			prepareDone++
+			if progress != nil && prepareTotal > 0 {
+				progress(printer.StagePrepare, prepareDone, prepareTotal)
+			}
+			if desc != nil && !compactSingleSided {
+				descKeyIdx := i % len(desc.Keys)
+				var descQRs []string
+				if i < len(shardQRPayloads) {
+					descQRs = shardQRPayloads[i]
+				}
+				descImg, err := printer.RenderDescriptorPlateBitmap(desc, descKeyIdx, i+1, totalShares, opts, descQRs)
+				if err != nil {
+					return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
+				}
+				descBatch = append(descBatch, descImg)
+				prepareDone++
+				if progress != nil && prepareTotal > 0 {
+					progress(printer.StagePrepare, prepareDone, prepareTotal)
+				}
+			}
+		}
+
+		outFile, err := os.CreateTemp("/tmp", "seedetcher-hbp-*.pdf")
+		if err != nil {
+			return fmt.Errorf("hbp: create temp pdf: %w", err)
+		}
+		outPath := outFile.Name()
+		if err := printer.WritePDFPlates(outFile, seedBatch, descBatch, paper, opts.DPI); err != nil {
+			outFile.Close()
+			_ = os.Remove(outPath)
+			return fmt.Errorf("hbp: write temp pdf batch %d-%d: %w", start+1, end, err)
+		}
+		if err := outFile.Close(); err != nil {
+			_ = os.Remove(outPath)
+			return fmt.Errorf("hbp: close temp pdf batch %d-%d: %w", start+1, end, err)
+		}
+		if progress != nil {
+			progress(printer.StageCompose, int64((start/sharesPerBatch)+1), int64(numBatches))
+		}
+
+		dpiArg := fmt.Sprintf("%.0f", opts.DPI)
+		cmdOut, err := runCommandWithOutput("/bin/print-hbp-pdf", outPath, dpiArg)
+		_ = os.Remove(outPath)
+		if cmdOut != "" {
+			logutil.DebugLog("HBP print helper output (batch %d-%d):\n%s", start+1, end, cmdOut)
+		}
+		if err != nil {
+			return err
+		}
+		if progress != nil {
+			progress(printer.StageSend, int64((start/sharesPerBatch)+1), int64(numBatches))
+		}
+
+		seedBatch = nil
+		descBatch = nil
+		releaseMemory()
+	}
+	return nil
+}
+
+func (p *Platform) createPlatesHBPLegacy(ctx *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
 	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
 	if err != nil {
 		return fmt.Errorf("render: plate bitmaps: %w", err)

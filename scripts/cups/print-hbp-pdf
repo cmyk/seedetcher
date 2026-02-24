@@ -19,6 +19,14 @@ if [ "$DPI" -lt 300 ] || [ "$DPI" -gt 1200 ]; then
   exit 2
 fi
 
+# Brother HBP via brlaser currently produces wrong geometry when fed 1200dpi
+# cups-raster in this environment. Keep raster path at 600dpi for correctness.
+EFFECTIVE_DPI="$DPI"
+if [ "$DPI" -gt 600 ]; then
+  EFFECTIVE_DPI=600
+  echo "print-hbp-pdf: requested ${DPI}dpi, using ${EFFECTIVE_DPI}dpi for correct geometry on HBP path" >&2
+fi
+
 ensure_runtime_tools() {
   command -v lpadmin >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1 && return 0
 
@@ -129,7 +137,7 @@ ensure_hbp_queue() {
     PPD="$(find_brlaser_ppd "$MODEL_NAME")"
   fi
 
-  echo "print-hbp-pdf: queue='$QUEUE' model='$MODEL_NAME' uri='$URI' ppd='${PPD:-<none>}' dpi='$DPI'" >&2
+  echo "print-hbp-pdf: queue='$QUEUE' model='$MODEL_NAME' uri='$URI' ppd='${PPD:-<none>}' dpi='$DPI' effective_dpi='$EFFECTIVE_DPI'" >&2
   lpadmin -h "$SOCK" -x "$QUEUE" >/dev/null 2>&1 || true
   if [ -n "$PPD" ]; then
     if ! lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -P "$PPD" >/tmp/lpadmin-hbp.out 2>/tmp/lpadmin-hbp.err; then
@@ -170,9 +178,9 @@ if command -v cancel >/dev/null 2>&1; then
 fi
 
 RAS="/tmp/print-hbp.ras"
-gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r"$DPI" -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
+gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r"$EFFECTIVE_DPI" -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
 lp -h "$SOCK" -d "$QUEUE" \
   -o media=A4 \
-  -o Resolution="${DPI}dpi" \
+  -o Resolution="${EFFECTIVE_DPI}dpi" \
   -o document-format=application/vnd.cups-raster \
   "$RAS"

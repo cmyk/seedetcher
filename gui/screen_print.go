@@ -3,6 +3,7 @@ package gui
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"time"
 
 	"seedetcher.com/bc/urtypes"
@@ -599,6 +600,8 @@ type HBPRuntimePrepareScreen struct {
 	inp InputTracker
 }
 
+var lastHBPPrepareDuration = 32 * time.Second
+
 func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) error {
 	if ctx == nil {
 		return fmt.Errorf("missing UI context")
@@ -613,6 +616,7 @@ func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) err
 		finished bool
 		prepErr  error
 	)
+	startedAt := ctx.Platform.Now()
 	for {
 		if !finished {
 			select {
@@ -639,12 +643,58 @@ func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) err
 		if finished && prepErr == nil {
 			body = "Brother HBP is ready.\nSD card can now be removed safely."
 		}
-		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, body)
+		bodyRect := layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, body)
+
+		if !finished {
+			barW := dims.X - 48
+			if barW < 120 {
+				barW = dims.X - 24
+			}
+			barH := 10
+			barX := (dims.X - barW) / 2
+			barY := bodyRect.Max.Y + 8
+			if barY+barH > dims.Y-leadingSize-8 {
+				barY = dims.Y - leadingSize - 8 - barH
+			}
+			barRect := image.Rect(barX, barY, barX+barW, barY+barH)
+
+			track := color.NRGBA{R: th.Text.R, G: th.Text.G, B: th.Text.B, A: 70}
+			op.ClipOp(barRect).Add(ops.Begin())
+			op.ColorOp(ops, track)
+			barBg := ops.End()
+			barBg.Add(ops)
+
+			eta := lastHBPPrepareDuration
+			if eta < 5*time.Second {
+				eta = 5 * time.Second
+			}
+			elapsed := ctx.Platform.Now().Sub(startedAt)
+			progress := float32(elapsed) / float32(eta)
+			if progress > 0.95 {
+				progress = 0.95
+			}
+			if progress < 0 {
+				progress = 0
+			}
+			fillW := int(float32(barW) * progress)
+			if fillW < 4 {
+				fillW = 4
+			}
+			fillRect := image.Rect(barX, barY, barX+fillW, barY+barH)
+			op.ClipOp(fillRect).Add(ops.Begin())
+			op.ColorOp(ops, th.Text)
+			barFill := ops.End()
+			barFill.Add(ops)
+		}
 
 		if finished && prepErr != nil {
 			return prepErr
 		}
 		if finished && prepErr == nil {
+			duration := ctx.Platform.Now().Sub(startedAt)
+			if duration > 0 {
+				lastHBPPrepareDuration = duration
+			}
 			layoutNavigation(ctx, &s.inp, ops, th, dims, []NavButton{
 				{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
 			}...)
@@ -767,9 +817,9 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 			case printer.StagePrepare:
 				label = fmt.Sprintf("Rendering plates %d/%d", upd.current, upd.total)
 			case printer.StageCompose:
-				label = "Composing pages..."
+				label = fmt.Sprintf("Composing pages %d/%d", upd.current, upd.total)
 			case printer.StageSend:
-				label = "Sending to printer..."
+				label = fmt.Sprintf("Sending to printer %d/%d", upd.current, upd.total)
 			}
 		}
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
