@@ -39,6 +39,7 @@ type PrinterLanguage uint8
 const (
 	PrinterLangPCL PrinterLanguage = iota
 	PrinterLangPS
+	PrinterLangBrotherHBP
 )
 
 type SinglesigLayoutMode uint8
@@ -162,6 +163,12 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		descImgs = nil
 	}
 
+	prepareTotal := int64(totalShares)
+	if hasDesc && !compactSingleSided {
+		prepareTotal *= 2
+	}
+	prepareDone := int64(0)
+
 	for i := 0; i < totalShares; i++ {
 		mnemonic := mnemonics[i%len(mnemonics)]
 		seedImg, err := renderSeedPlateBitmapWithLayout(mnemonic, i+1, totalShares, opts, seedLayout)
@@ -180,6 +187,10 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 			}
 		}
 		seedImgs[i] = seedImg
+		prepareDone++
+		if progress != nil && prepareTotal > 0 {
+			progress(StagePrepare, prepareDone, prepareTotal)
+		}
 
 		if hasDesc && !compactSingleSided {
 			descKeyIdx := i % len(desc.Keys)
@@ -192,10 +203,10 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 				return nil, nil, err
 			}
 			descImgs[i] = descImg
-		}
-
-		if progress != nil {
-			progress(StagePrepare, int64(i+1), int64(totalShares))
+			prepareDone++
+			if progress != nil && prepareTotal > 0 {
+				progress(StagePrepare, prepareDone, prepareTotal)
+			}
 		}
 	}
 

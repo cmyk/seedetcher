@@ -32,6 +32,7 @@ type Context struct {
 	EmptySDSlot      bool
 	PrinterConnected bool
 	PrinterModel     string
+	HBPRuntimeReady  bool
 	RotateCamera     bool
 	LastDescriptor   *urtypes.OutputDescriptor
 	Keystores        map[uint32]bip39.Mnemonic // Fingerprint -> Mnemonic
@@ -186,6 +187,7 @@ type Platform interface {
 	ScanQR(qr *image.Gray) ([][]byte, error)
 	Debug() bool
 	Printer() io.Writer
+	PrepareHBPForSDRemoval() error
 	CreatePlates(ctx *Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error // Updated
 }
 

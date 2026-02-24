@@ -145,7 +145,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				}
 			case "printerlang":
 				var next int
-				next, ok = chooseWithInitial("Printer Language", "If PCL prints blank pages,\ntry PS.", []string{"PCL", "PS"}, state.PrinterLang)
+				next, ok = choosePrinterLanguageOption(ctx, ops, th, state.PrinterLang, ctx != nil && ctx.HBPRuntimeReady)
 				if ok {
 					state.PrinterLang = next
 				}
@@ -194,6 +194,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		if state.PrinterLang == 1 {
 			opts.PrinterLang = printer.PrinterLangPS
 		}
+		if state.PrinterLang == 2 {
+			opts.PrinterLang = printer.PrinterLangBrotherHBP
+		}
 
 		updatePrinterStatus()
 		for {
@@ -210,8 +213,29 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				}
 			case Button3:
 				if inp.Clicked(e.Button) {
+					printOpts := opts
+					if opts.PrinterLang == printer.PrinterLangBrotherHBP {
+						if ctx == nil || !ctx.HBPRuntimeReady {
+							s.showError(ctx, ops, th, fmt.Errorf("Brother HBP runtime is not prepared.\nReturn to start screen and enable HBP before SD removal"))
+							continue
+						}
+						if printOpts.DPI > 600 {
+							pages := estimateJobPages(desc, selectedPaper, printOpts)
+							if pages > 1 {
+								printOpts.DPI = 600
+								s.showNotice(ctx, ops, th, fmt.Sprintf("HBP 1200 DPI is only available for one-page jobs.\nThis job has %d pages, so DPI was set to 600.", pages))
+							}
+						}
+					}
+					if ctx != nil && ctx.HBPRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && printOpts.DPI > 600 {
+						pages := estimateJobPages(desc, selectedPaper, printOpts)
+						if pages > 1 {
+							printOpts.DPI = 600
+							s.showNotice(ctx, ops, th, fmt.Sprintf("PS 1200 DPI is currently limited to one-page jobs.\nThis job has %d pages, so DPI was set to 600.", pages))
+						}
+					}
 					progress := &PrintProgressScreen{}
-					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper, opts)
+					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper, printOpts)
 					if err != nil && err.Error() != "print canceled" {
 						s.showError(ctx, ops, th, err)
 					}
@@ -404,6 +428,24 @@ func chooseSinglesigLayoutOption(ctx *Context, ops op.Ctx, th *Colors, initialCh
 	}
 }
 
+func choosePrinterLanguageOption(ctx *Context, ops op.Ctx, th *Colors, initialChoice int, hbpReady bool) (int, bool) {
+	choices := []string{"PCL", "PS"}
+	if hbpReady {
+		choices = append(choices, "Brother HBP")
+	}
+	choice := initialChoice
+	if choice < 0 || choice >= len(choices) {
+		choice = 0
+	}
+	cs := &ChoiceScreen{
+		Title:   "Printer Language",
+		Lead:    "Choose language",
+		Choices: choices,
+		choice:  choice,
+	}
+	return cs.Choose(ctx, ops, th)
+}
+
 func isCompact2of3Eligible(desc *urtypes.OutputDescriptor) bool {
 	if desc == nil {
 		return false
@@ -440,7 +482,43 @@ func printerLangLabel(lang printer.PrinterLanguage) string {
 	if lang == printer.PrinterLangPS {
 		return "PS"
 	}
+	if lang == printer.PrinterLangBrotherHBP {
+		return "HBP"
+	}
 	return "PCL"
+}
+
+func estimateJobPages(desc *urtypes.OutputDescriptor, paper printer.PaperSize, opts printOptions) int {
+	walletShares := 1
+	if desc != nil {
+		walletShares = len(desc.Keys)
+	}
+	maxSlotsPerPage := 6
+	if paper == printer.PaperLetter {
+		maxSlotsPerPage = 4
+	}
+	slotsPerShare := 2
+	if desc == nil {
+		slotsPerShare = 1
+	}
+	if isCompact2of3Eligible(desc) && opts.Compact2of3 {
+		slotsPerShare = 1
+	}
+	if isSinglesigDescriptor(desc) && opts.Singlesig != printer.SinglesigLayoutSeedWithDescriptorQR {
+		slotsPerShare = 1
+	}
+	sharesPerPage := maxSlotsPerPage / slotsPerShare
+	if sharesPerPage < 1 {
+		sharesPerPage = 1
+	}
+	totalPages := (walletShares + sharesPerPage - 1) / sharesPerPage
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if opts.EtchStats {
+		totalPages++
+	}
+	return totalPages
 }
 
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
@@ -451,6 +529,17 @@ func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err er
 		dismissed := errScr.Layout(ctx, ops, th, dims)
 		if dismissed {
 			logutil.DebugLog("Error screen dismissed")
+			break
+		}
+		ctx.Frame()
+	}
+}
+
+func (s *PrintSeedScreen) showNotice(ctx *Context, ops op.Ctx, th *Colors, msg string) {
+	n := &ErrorScreen{Title: "Notice", Body: msg}
+	for {
+		dims := ctx.Platform.DisplaySize()
+		if n.Layout(ctx, ops, th, dims) {
 			break
 		}
 		ctx.Frame()
@@ -498,6 +587,67 @@ func (s *PrintResultScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic 
 
 type PrintProgressScreen struct {
 	inp InputTracker
+}
+
+type HBPRuntimePrepareScreen struct {
+	inp InputTracker
+}
+
+func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) error {
+	if ctx == nil {
+		return fmt.Errorf("missing UI context")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ctx.Platform.PrepareHBPForSDRemoval()
+	}()
+
+	var (
+		finished bool
+		prepErr  error
+	)
+	for {
+		if !finished {
+			select {
+			case prepErr = <-done:
+				finished = true
+			default:
+			}
+		}
+
+		for {
+			e, ok := s.inp.Next(ctx, Button3)
+			if !ok {
+				break
+			}
+			if finished && prepErr == nil && s.inp.Clicked(e.Button) {
+				return nil
+			}
+		}
+
+		dims := ctx.Platform.DisplaySize()
+		op.ColorOp(ops, th.Background)
+		titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing HBP")
+		body := "Staging Brother runtime in RAM.\nRunning SD detach prep.\nPlease wait..."
+		if finished && prepErr == nil {
+			body = "Brother HBP is ready.\nSD card can now be removed safely."
+		}
+		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, body)
+
+		if finished && prepErr != nil {
+			return prepErr
+		}
+		if finished && prepErr == nil {
+			layoutNavigation(ctx, &s.inp, ops, th, dims, []NavButton{
+				{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
+			}...)
+		}
+		if !finished {
+			ctx.WakeupAt(ctx.Platform.Now().Add(200 * time.Millisecond))
+		}
+		ctx.Frame()
+	}
 }
 
 func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, printOpts printOptions) (bool, error) {

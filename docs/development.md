@@ -191,6 +191,7 @@ go run cmd/cli/main.go -w multisig \
 - Send PCL over USB: `scripts/print_pcl.sh <file.pcl> [printer_dev]` (defaults `/dev/usb/lp0`, resets channel and streams with `dd bs=16k`).
 - On Pi host mode (`/dev/usb/lp0`), controller printing uses direct 1bpp plate-to-PCL streaming (lower memory, faster).
 - Gadget mode fallback (`/dev/ttyGS1`) still uses raster page composition + PDF serialization for capture/dev flows.
+- Optional HBP runtime mode changes memory headroom and can affect DPI fallback behavior in PS/HBP paths; see `docs/dev/spike-cups-musl.md` ("DPI behavior with optional HBP runtime").
 - Plate QR circular data modules are intentionally undersized (`plateQRDotScale = 0.7` in `printer/raster.go`) to leave etch-growth headroom; structural islands (finder/alignment) remain square.
 
 ## Versioning
