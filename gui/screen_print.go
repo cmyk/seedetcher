@@ -219,12 +219,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 							s.showError(ctx, ops, th, fmt.Errorf("Brother HBP runtime is not prepared.\nReturn to start screen and enable HBP before SD removal"))
 							continue
 						}
-						if printOpts.DPI > 600 {
-							pages := estimateJobPages(desc, selectedPaper, printOpts)
-							if pages > 1 {
-								printOpts.DPI = 600
-								s.showNotice(ctx, ops, th, fmt.Sprintf("HBP 1200 DPI is only available for one-page jobs.\nThis job has %d pages, so DPI was set to 600.", pages))
-							}
+						if printOpts.DPI != 600 {
+							printOpts.DPI = 600
+							s.showNotice(ctx, ops, th, "HBP mode uses 600 DPI.\nDPI was set to 600 for this print.")
 						}
 					}
 					if ctx != nil && ctx.HBPRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && printOpts.DPI > 600 {
@@ -270,7 +267,16 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		}
 		showCompactLine := isCompact2of3Eligible(desc)
 		showSinglesigLine := isSinglesigDescriptor(desc)
-		lead := fmt.Sprintf("%s\nPaper:%s @%d dpi\nInvert: %s, Mirror: %s\nEtch stats page: %s\nPrinter lang: %s", status, selectedPaper, opts.DPI, onOff(opts.Invert), onOff(opts.Mirror), onOff(opts.EtchStats), printerLangLabel(opts.PrinterLang))
+		effectiveDPI := opts.DPI
+		if opts.PrinterLang == printer.PrinterLangBrotherHBP {
+			effectiveDPI = 600
+		} else if ctx != nil && ctx.HBPRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && opts.DPI > 600 {
+			pages := estimateJobPages(desc, selectedPaper, opts)
+			if pages > 1 {
+				effectiveDPI = 600
+			}
+		}
+		lead := fmt.Sprintf("%s\nPaper:%s @%d dpi\nInvert: %s, Mirror: %s\nEtch stats page: %s\nPrinter lang: %s", status, selectedPaper, effectiveDPI, onOff(opts.Invert), onOff(opts.Mirror), onOff(opts.EtchStats), printerLangLabel(opts.PrinterLang))
 		if showCompactLine {
 			lead += fmt.Sprintf("\nCompact 2/3: %s", onOff(opts.Compact2of3))
 		}

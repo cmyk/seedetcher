@@ -592,13 +592,10 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	}
 	hbpRuntimeReady := ctx != nil && ctx.HBPRuntimeReady
 	if opts.PrinterLang == printer.PrinterLangBrotherHBP {
-		if opts.DPI > 600 {
-			// Allow 1200 only for one-page jobs to avoid multi-page OOM spikes.
-			if estimateJobPages(desc, paper, opts) > 1 {
-				logutil.DebugLog("HBP path: forcing 600 DPI for multi-page job")
-				opts.DPI = 600
-			}
+		if opts.DPI != 600 {
+			logutil.DebugLog("HBP path: forcing 600 DPI")
 		}
+		opts.DPI = 600
 		return p.createPlatesHBP(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
 	}
 	if hbpRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && opts.DPI > 600 {

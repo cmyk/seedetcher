@@ -85,11 +85,14 @@ func runCLI(f *testutils.Flags) error {
 	}
 	printer.SetCompactDescriptor2of3Enabled(f.Compact2of3)
 	defer printer.SetCompactDescriptor2of3Enabled(false)
-	if adjusted, note, err := adjustDPILowMem(mnemonics, desc, printer.PaperSize(f.PaperSize), opts, f.Compact2of3); err != nil {
-		return err
-	} else if adjusted != opts.DPI {
-		opts.DPI = adjusted
-		fmt.Fprintln(os.Stderr, note)
+	forceCLIDPI := os.Getenv("SE_CLI_FORCE_DPI") == "1"
+	if !forceCLIDPI {
+		if adjusted, note, err := adjustDPILowMem(mnemonics, desc, printer.PaperSize(f.PaperSize), opts, f.Compact2of3); err != nil {
+			return err
+		} else if adjusted != opts.DPI {
+			opts.DPI = adjusted
+			fmt.Fprintln(os.Stderr, note)
+		}
 	}
 
 	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, 0, opts, nil)
