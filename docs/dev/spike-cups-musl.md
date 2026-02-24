@@ -280,3 +280,47 @@ Run this exact sequence on Pi for each new `image-cups-spike-debug` flash:
 - `tail -n 200 /var/log/cups/error_log`
 - `tail -n 200 /log/cups.log`
 - No relocation/shared-lib loader errors from `rastertobrlaser`.
+
+## Productization Plan: Optional Brother HBP Support
+
+### Goal
+- Preserve current fast/default behavior for PCL/PS users.
+- Expose Brother non-PCL/PS support as an explicit opt-in path.
+- Keep SD-removal requirement explicit and testable.
+
+### Proposed UX
+1. Default OFF
+- Do not start CUPS/HBP stack automatically at boot.
+- Keep current direct PCL/PS path as default behavior.
+
+2. User opt-in toggle
+- Add a user-facing setting:
+  - `Enable Brother non-PCL/PS support (experimental)`
+- Persist value in config so reboot behavior is deterministic.
+
+3. Lazy runtime activation
+- Only initialize HBP runtime when:
+  - toggle is enabled, and
+  - a Brother/HBP print is requested.
+- Avoid boot-time CPU/RAM cost for users who do not need HBP.
+
+4. SD-removal workflow
+- Add explicit action:
+  - `Prepare Brother support for SD removal`
+- Action stages required Brother/CUPS runtime into RAM, runs a smoke test, then reports readiness for SD removal.
+- If runtime is not staged, UI should clearly state SD must remain inserted for HBP.
+
+### Engineering constraints
+- Full CUPS closure in RAM is likely too large for 512 MB targets.
+- Implement RAM mode as a minimal curated runtime bundle, not a full `/nix` copy.
+- Add hard size/budget checks and fail closed when runtime exceeds safe limits.
+
+### Validation gate
+- Toggle OFF:
+  - no HBP boot work, baseline boot time unchanged.
+- Toggle ON + no HBP print:
+  - no early heavy initialization.
+- Toggle ON + first HBP print:
+  - lazy init succeeds and print completes.
+- SD-removal prepared:
+  - unmount/remove SD, repeat HBP print successfully.
