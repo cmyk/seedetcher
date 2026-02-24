@@ -324,3 +324,42 @@ Run this exact sequence on Pi for each new `image-cups-spike-debug` flash:
   - lazy init succeeds and print completes.
 - SD-removal prepared:
   - unmount/remove SD, repeat HBP print successfully.
+
+## RAM Feasibility Probe (Blocker Gate)
+
+New helper in spike images:
+- `/bin/cups-spike-ram-feasibility`
+
+It supports two profiles:
+- `core`: curated HBP runtime roots (first-pass feasibility target)
+- `full`: complete CUPS spike closure from `/cups-spike-store-paths` (likely too large for 512MB)
+
+Run on Pi:
+```sh
+# 1) Size estimates (no copy/mount changes)
+cups-spike-ram-feasibility estimate core
+cups-spike-ram-feasibility estimate full
+
+# 2) Stage curated core runtime into tmpfs and bind /nix from RAM
+HBP_RAM_MIN_AVAIL_MB=100 cups-spike-ram-feasibility stage core
+
+# 3) Confirm queue + run one real HBP print
+./controller -test-createPageLayout -w multisig-mainnet-2of3 -dpi 600 -papersize A4
+print-hbp-pdf /tmp/test_output.pdf
+lpstat -h /var/run/cups/cups.sock -W not-completed -W completed
+
+# 4) Check memory gate and status
+cups-spike-ram-feasibility check
+cups-spike-ram-feasibility status
+
+# 5) Prepare safe SD removal (required before physically pulling SD)
+cups-spike-ram-feasibility detach-sd
+
+# 6) Revert RAM bind/mount state (for debug sessions where SD remains inserted)
+cups-spike-ram-feasibility unstage
+```
+
+Interpretation:
+- If `stage core` + real HBP print pass with memory gate headroom, RAM-only HBP is feasible.
+- If `stage core` fails memory gate or print stability, SD-removal for HBP is blocked until runtime is reduced.
+- `detach-sd` should be treated as mandatory before user-facing "remove SD now" prompt.

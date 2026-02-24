@@ -285,6 +285,9 @@
               popplerUtilsPkg = crossPkgs.poppler_utils;
               brlaserPkg = self.packages.${system}.brlaser-se-runtime;
               brlaserDropin = ./spike/brlaser-root.tar.gz;
+              cupsSpikeStoreClosure = pkgs.closureInfo {
+                rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils brlaserPkg ];
+              };
 
               fontFile = ./font/martianmono/MartianMono_Condensed-Regular.ttf;
               seedEtcherFontFile = ./font/seedetcher/SeedEtcher-Regular.ttf;
@@ -385,6 +388,9 @@
                 echo "BRLASER_ROOT=${brlaserPkg}" >> initramfs/cups-spike.env
                 echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-spike.env
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
+                cp ${cupsSpikeStoreClosure}/store-paths initramfs/cups-spike-store-paths
+                chmod 0644 initramfs/cups-spike-store-paths
+                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike-store-paths
                 '' else ""}
 
 
