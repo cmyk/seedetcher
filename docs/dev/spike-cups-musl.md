@@ -340,6 +340,16 @@ Run this exact sequence on Pi for each new `image-cups-spike-debug` flash:
 - HBP print path now renders canonical pages to a temp PDF and submits through:
   - `/bin/print-hbp-pdf <temp.pdf>`
 
+### DPI behavior with optional HBP runtime
+- When startup choice is `PCL/PS only` (HBP runtime not prepared):
+  - PCL and PS keep legacy DPI behavior (no HBP-driven 1200->600 fallback).
+- When startup choice is `Enable HBP` (HBP runtime prepared in RAM):
+  - Brother HBP path keeps conservative multi-page safety behavior.
+  - PS path applies the same multi-page 1200->600 safety fallback to reduce OOM risk on Pi Zero.
+- Rationale:
+  - RAM staging for optional HBP support reduces available memory headroom.
+  - DPI fallback is only applied in the HBP-enabled session mode so PCL/PS-only users keep maximum performance.
+
 ### GUI smoke test (current implementation)
 1. On startup, choose `Enable HBP` in the HBP gate.
 2. Wait for `Preparing HBP` to complete and confirm success screen.
