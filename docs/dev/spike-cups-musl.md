@@ -370,7 +370,9 @@ Run this exact sequence on Pi for each new `image-cups-spike-debug` flash:
 
 Current implementation status:
 - Started: HBP path now renders/sends in bounded batches (share-window batches) and releases batch buffers after submit.
-- Safety default remains unchanged: HBP still uses 600 DPI unless explicitly overridden with `SE_HBP_ALLOW_1200=1` for on-device validation.
+- HBP batch PDF generation now places plate images directly into PDF pages (no full-page raster compose step in that path).
+- HBP path is fixed to 600 DPI for correctness on-device.
+- Additional runtime guard: `print-hbp-pdf` clamps effective raster DPI to 600 when a higher DPI is requested, because 1200 raster currently causes incorrect oversized geometry on-device.
 
 ### GUI smoke test (current implementation)
 1. On startup, choose `Enable HBP` in the HBP gate.

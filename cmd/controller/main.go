@@ -99,30 +99,39 @@ func runCLI(f *testutils.Flags) error {
 	if err != nil {
 		return fmt.Errorf("render bitmaps: %w", err)
 	}
-	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, nil)
-	if err != nil {
-		return fmt.Errorf("compose pages: %w", err)
-	}
-	if opts.EtchStatsPage {
-		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, printer.PaperSize(f.PaperSize))
-		if err != nil {
-			return fmt.Errorf("build etch stats report: %w", err)
-		}
-		statsPage, err := printer.RenderEtchStatsPage(report, printer.PaperSize(f.PaperSize), opts.DPI)
-		if err != nil {
-			return fmt.Errorf("render etch stats page: %w", err)
-		}
-		pages = append(pages, statsPage)
-	}
-
 	const outPDF = "/tmp/test_output.pdf"
 	pdfFile, err := os.Create(outPDF)
 	if err != nil {
 		return fmt.Errorf("failed to create output PDF: %v", err)
 	}
-	if err := printer.WritePDFRaster(pdfFile, pages, printer.PaperSize(f.PaperSize)); err != nil {
-		pdfFile.Close()
-		return fmt.Errorf("write PDF: %w", err)
+	pclPath := strings.TrimSpace(f.PCLOut)
+	paper := printer.PaperSize(f.PaperSize)
+	if !opts.EtchStatsPage {
+		if err := printer.WritePDFPlates(pdfFile, seedImgs, descImgs, paper, opts.DPI); err != nil {
+			pdfFile.Close()
+			return fmt.Errorf("write PDF: %w", err)
+		}
+	} else {
+		pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, nil)
+		if err != nil {
+			pdfFile.Close()
+			return fmt.Errorf("compose pages: %w", err)
+		}
+		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, paper)
+		if err != nil {
+			pdfFile.Close()
+			return fmt.Errorf("build etch stats report: %w", err)
+		}
+		statsPage, err := printer.RenderEtchStatsPage(report, paper, opts.DPI)
+		if err != nil {
+			pdfFile.Close()
+			return fmt.Errorf("render etch stats page: %w", err)
+		}
+		pages = append(pages, statsPage)
+		if err := printer.WritePDFRaster(pdfFile, pages, paper); err != nil {
+			pdfFile.Close()
+			return fmt.Errorf("write PDF: %w", err)
+		}
 	}
 	if err := pdfFile.Close(); err != nil {
 		return fmt.Errorf("close output PDF: %w", err)
@@ -131,8 +140,22 @@ func runCLI(f *testutils.Flags) error {
 		logutil.DebugLog("PDF generated at %s", outPDF)
 	}
 
-	pclPath := strings.TrimSpace(f.PCLOut)
 	if pclPath != "" {
+		pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, nil)
+		if err != nil {
+			return fmt.Errorf("compose pages: %w", err)
+		}
+		if opts.EtchStatsPage {
+			report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, paper)
+			if err != nil {
+				return fmt.Errorf("build etch stats report: %w", err)
+			}
+			statsPage, err := printer.RenderEtchStatsPage(report, paper, opts.DPI)
+			if err != nil {
+				return fmt.Errorf("render etch stats page: %w", err)
+			}
+			pages = append(pages, statsPage)
+		}
 		if strings.HasSuffix(pclPath, "/") || isDir(pclPath) {
 			pclPath = filepath.Join(strings.TrimRight(pclPath, "/"), config.Name+".pcl")
 		}
@@ -143,7 +166,7 @@ func runCLI(f *testutils.Flags) error {
 		if err != nil {
 			return fmt.Errorf("create PCL output file: %w", err)
 		}
-		if err := printer.WritePCL(pclFile, pages, opts.DPI, printer.PaperSize(f.PaperSize), nil); err != nil {
+		if err := printer.WritePCL(pclFile, pages, opts.DPI, paper, nil); err != nil {
 			pclFile.Close()
 			return fmt.Errorf("write PCL: %w", err)
 		}

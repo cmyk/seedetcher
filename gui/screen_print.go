@@ -3,7 +3,6 @@ package gui
 import (
 	"fmt"
 	"image"
-	"os"
 	"time"
 
 	"seedetcher.com/bc/urtypes"
@@ -220,8 +219,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 							s.showError(ctx, ops, th, fmt.Errorf("Brother HBP runtime is not prepared.\nReturn to start screen and enable HBP before SD removal"))
 							continue
 						}
-						allowHBP1200 := os.Getenv("SE_HBP_ALLOW_1200") == "1"
-						if !allowHBP1200 && printOpts.DPI != 600 {
+						if printOpts.DPI != 600 {
 							printOpts.DPI = 600
 							s.showNotice(ctx, ops, th, "HBP mode uses 600 DPI.\nDPI was set to 600 for this print.")
 						}
@@ -270,8 +268,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		showCompactLine := isCompact2of3Eligible(desc)
 		showSinglesigLine := isSinglesigDescriptor(desc)
 		effectiveDPI := opts.DPI
-		allowHBP1200 := os.Getenv("SE_HBP_ALLOW_1200") == "1"
-		if opts.PrinterLang == printer.PrinterLangBrotherHBP && !allowHBP1200 {
+		if opts.PrinterLang == printer.PrinterLangBrotherHBP {
 			effectiveDPI = 600
 		} else if ctx != nil && ctx.HBPRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && opts.DPI > 600 {
 			pages := estimateJobPages(desc, selectedPaper, opts)

@@ -592,13 +592,10 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	}
 	hbpRuntimeReady := ctx != nil && ctx.HBPRuntimeReady
 	if opts.PrinterLang == printer.PrinterLangBrotherHBP {
-		allowHBP1200 := os.Getenv("SE_HBP_ALLOW_1200") == "1"
-		if !allowHBP1200 {
-			if opts.DPI != 600 {
-				logutil.DebugLog("HBP path: forcing 600 DPI")
-			}
-			opts.DPI = 600
+		if opts.DPI != 600 {
+			logutil.DebugLog("HBP path: forcing 600 DPI")
 		}
+		opts.DPI = 600
 		return p.createPlatesHBP(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
 	}
 	if hbpRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && opts.DPI > 600 {
@@ -1015,17 +1012,12 @@ func (p *Platform) createPlatesHBP(ctx *gui.Context, mnemonics []bip39.Mnemonic,
 			}
 		}
 
-		pages, err := printer.ComposePages(seedBatch, descBatch, paper, opts.DPI, nil)
-		if err != nil {
-			return fmt.Errorf("render: compose pages batch %d-%d: %w", start+1, end, err)
-		}
-
 		outFile, err := os.CreateTemp("/tmp", "seedetcher-hbp-*.pdf")
 		if err != nil {
 			return fmt.Errorf("hbp: create temp pdf: %w", err)
 		}
 		outPath := outFile.Name()
-		if err := printer.WritePDFRaster(outFile, pages, paper); err != nil {
+		if err := printer.WritePDFPlates(outFile, seedBatch, descBatch, paper, opts.DPI); err != nil {
 			outFile.Close()
 			_ = os.Remove(outPath)
 			return fmt.Errorf("hbp: write temp pdf batch %d-%d: %w", start+1, end, err)
@@ -1053,7 +1045,6 @@ func (p *Platform) createPlatesHBP(ctx *gui.Context, mnemonics []bip39.Mnemonic,
 
 		seedBatch = nil
 		descBatch = nil
-		pages = nil
 		releaseMemory()
 	}
 	return nil
