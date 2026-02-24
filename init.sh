@@ -1128,7 +1128,8 @@ EOF
     maybe_provision_hbp_async() {
         QUEUE_URI="$1"
         [ -n "$QUEUE_URI" ] || return 0
-        if [ "${CUPS_SPIKE_HBP_ASYNC:-1}" = "1" ]; then
+        # HBP queue pre-provisioning is optional and should not run unless explicitly enabled.
+        if [ "${CUPS_SPIKE_HBP_ASYNC:-0}" = "1" ]; then
             (
                 provision_hbp_queue "$QUEUE_URI"
             ) &
@@ -1164,19 +1165,25 @@ EOF
     if /bin/cupsd >> /log/cups.log 2>&1; then
         # Try immediate provisioning first.
         if ! provision_spike_queue; then
-            debug_echo "CUPS spike: no printer URI discovered at boot; starting retry loop"
-            # Printer can enumerate after boot; retry for up to 3 minutes in background.
-            (
-                retries=90
-                while [ "$retries" -gt 0 ]; do
-                    sleep 2
-                    if provision_spike_queue; then
-                        exit 0
-                    fi
-                    retries=$((retries - 1))
-                done
-                debug_echo "CUPS spike: queue provisioning timed out (no URI discovered)"
-            ) &
+            # Default is OFF to avoid persistent background /nix access after SD removal
+            # when running in PCL/PS-only mode.
+            if [ "${CUPS_SPIKE_QUEUE_RETRY:-0}" = "1" ]; then
+                debug_echo "CUPS spike: no printer URI discovered at boot; starting retry loop"
+                # Printer can enumerate after boot; retry for up to 3 minutes in background.
+                (
+                    retries=90
+                    while [ "$retries" -gt 0 ]; do
+                        sleep 2
+                        if provision_spike_queue; then
+                            exit 0
+                        fi
+                        retries=$((retries - 1))
+                    done
+                    debug_echo "CUPS spike: queue provisioning timed out (no URI discovered)"
+                ) &
+            else
+                debug_echo "CUPS spike: no printer URI discovered at boot; retry loop disabled"
+            fi
         fi
         debug_echo "CUPS spike: scheduler started"
     else
