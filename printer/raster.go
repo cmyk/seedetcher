@@ -39,6 +39,7 @@ type PrinterLanguage uint8
 const (
 	PrinterLangPCL PrinterLanguage = iota
 	PrinterLangPS
+	PrinterLangBrotherHBP
 )
 
 type SinglesigLayoutMode uint8

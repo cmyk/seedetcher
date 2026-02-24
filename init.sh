@@ -828,8 +828,9 @@ run_check() {
 
 detach_sd() {
   src="$(awk '$2=="/nix"{print $1}' /proc/mounts | tail -n 1)"
-  if [ "$src" != "$RAM_ROOT/nix" ]; then
-    echo "error: /nix is not RAM-backed; run 'stage' first" >&2
+  fstype="$(awk '$2=="/nix"{print $3}' /proc/mounts | tail -n 1)"
+  if [ "$src" != "$RAM_ROOT/nix" ] && [ "$fstype" != "tmpfs" ]; then
+    echo "error: /nix is not RAM-backed; run 'stage' first (src=$src fstype=$fstype)" >&2
     return 1
   fi
 
@@ -838,14 +839,42 @@ detach_sd() {
     blockdev --flushbufs /dev/mmcblk0 >/dev/null 2>&1 || true
   fi
 
-  awk '$1 ~ /^\/dev\/mmcblk0p[0-9]+$/ {print $1}' /proc/mounts \
-    | sort -u \
-    | while read -r dev; do
-        [ -n "$dev" ] || continue
-        echo "detach: unmounting $dev"
-        umount "$dev" >/dev/null 2>&1 || umount -l "$dev" >/dev/null 2>&1 || \
-          echo "warn: failed to unmount $dev" >&2
-      done
+  pass=0
+  while [ "$pass" -lt 6 ]; do
+    pass=$((pass + 1))
+    remain="$(awk '$1 ~ /^\/dev\/mmcblk0p[0-9]+$/ {print $1 " " $2}' /proc/mounts)"
+    [ -z "$remain" ] && break
+
+    # Handle stacked /nix mounts: if top /nix is RAM-backed but an mmc mount
+    # still exists at /nix, drop top layer once to expose lower mount.
+    if echo "$remain" | awk '$2=="/nix"{found=1} END{exit found?0:1}'; then
+      src="$(awk '$2=="/nix"{print $1}' /proc/mounts | tail -n 1)"
+      fstype="$(awk '$2=="/nix"{print $3}' /proc/mounts | tail -n 1)"
+      if [ "$src" = "$RAM_ROOT/nix" ] || [ "$fstype" = "tmpfs" ]; then
+        umount /nix >/dev/null 2>&1 || true
+      fi
+    fi
+
+    remain="$(awk '$1 ~ /^\/dev\/mmcblk0p[0-9]+$/ {print $1 " " $2}' /proc/mounts)"
+    [ -z "$remain" ] && break
+    tmp_mmc="/tmp/hbp-ram-mmc.$$.${pass}"
+    echo "$remain" > "$tmp_mmc"
+    while read -r dev mnt; do
+      [ -n "$dev" ] || continue
+      [ -n "$mnt" ] || continue
+      echo "detach: unmounting $dev ($mnt)"
+      umount "$mnt" >/dev/null 2>&1 || umount -l "$mnt" >/dev/null 2>&1 || \
+        echo "warn: failed to unmount $dev ($mnt)" >&2
+    done < "$tmp_mmc"
+    rm -f "$tmp_mmc"
+
+    # Ensure /nix is RAM-backed after detach steps.
+    src="$(awk '$2=="/nix"{print $1}' /proc/mounts | tail -n 1)"
+    fstype="$(awk '$2=="/nix"{print $3}' /proc/mounts | tail -n 1)"
+    if [ "$src" != "$RAM_ROOT/nix" ] && [ "$fstype" != "tmpfs" ] && [ -d "$RAM_ROOT/nix/store" ]; then
+      mount --bind "$RAM_ROOT/nix" /nix >/dev/null 2>&1 || true
+    fi
+  done
 
   sync
   remain="$(awk '$1 ~ /^\/dev\/mmcblk0p[0-9]+$/ {print $1 " -> " $2}' /proc/mounts)"

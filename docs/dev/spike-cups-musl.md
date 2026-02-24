@@ -325,6 +325,29 @@ Run this exact sequence on Pi for each new `image-cups-spike-debug` flash:
 - SD-removal prepared:
   - unmount/remove SD, repeat HBP print successfully.
 
+### Current implementation status (sub-branch)
+- Branch: `experimental/cups-musl-spike-hbp-optin-runtime`
+- Print settings expose:
+  - always: `PCL`, `PS`
+  - after successful startup prep: `Brother HBP`
+- Startup flow now includes an HBP selection gate **before** SD-removal screen:
+  - `PCL/PS only`
+  - `Enable HBP`
+- Choosing `Enable HBP` runs prep immediately in startup flow:
+  1. run `/bin/cups-spike-ram-feasibility stage core`
+  2. run `/bin/cups-spike-ram-feasibility detach-sd`
+  3. mark HBP runtime ready in session state, then continue to SD-removal screen
+- HBP print path now renders canonical pages to a temp PDF and submits through:
+  - `/bin/print-hbp-pdf <temp.pdf>`
+
+### GUI smoke test (current implementation)
+1. On startup, choose `Enable HBP` in the HBP gate.
+2. Wait for `Preparing HBP` to complete and confirm success screen.
+3. Continue to SD-removal screen and proceed normally.
+4. Enter print flow and set `Printer Language` to `Brother HBP`.
+5. Print job should submit via CUPS HBP queue.
+6. Optional: remove SD card and verify another HBP print succeeds.
+
 ## RAM Feasibility Probe (Blocker Gate)
 
 New helper in spike images:

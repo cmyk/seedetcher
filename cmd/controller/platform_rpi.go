@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"image"
@@ -10,7 +11,9 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"syscall"
@@ -272,18 +275,219 @@ func (p *Platform) Printer() io.Writer {
 	p.printerCached = os.Stderr
 	return p.printerCached
 }
+
+func summarizeCommandOutput(out []byte) string {
+	text := strings.TrimSpace(string(out))
+	if text == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	const maxLines = 24
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+func runCommandWithOutput(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	out, err := cmd.CombinedOutput()
+	summary := summarizeCommandOutput(out)
+	if err != nil {
+		if summary != "" {
+			return summary, fmt.Errorf("%s %s failed: %w\n%s", name, strings.Join(args, " "), err, summary)
+		}
+		return "", fmt.Errorf("%s %s failed: %w", name, strings.Join(args, " "), err)
+	}
+	return summary, nil
+}
+
+func nixMountIsRAMBacked() bool {
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 3 {
+			continue
+		}
+		if fields[1] != "/nix" {
+			continue
+		}
+		src, fstype := fields[0], fields[2]
+		if src == "/run/hbp-ram-runtime/nix" {
+			return true
+		}
+		if fstype == "tmpfs" {
+			return true
+		}
+	}
+	return false
+}
+
+type mmcMount struct {
+	dev    string
+	target string
+}
+
+func mountedMMCPartitions() ([]mmcMount, error) {
+	f, err := os.Open("/proc/mounts")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	re := regexp.MustCompile(`^/dev/mmcblk0p[0-9]+$`)
+	seen := make(map[string]struct{})
+	var out []mmcMount
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 2 {
+			continue
+		}
+		dev, target := fields[0], fields[1]
+		if !re.MatchString(dev) {
+			continue
+		}
+		key := dev + "@" + target
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, mmcMount{dev: dev, target: target})
+	}
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func bindNixFromRAM() error {
+	if _, err := os.Stat("/run/hbp-ram-runtime/nix"); err != nil {
+		return fmt.Errorf("missing RAM nix root: %w", err)
+	}
+	if _, err := runCommandWithOutput("mount", "--bind", "/run/hbp-ram-runtime/nix", "/nix"); err != nil {
+		return err
+	}
+	return nil
+}
+
+func formatMMCMounts(entries []mmcMount) string {
+	parts := make([]string, 0, len(entries))
+	for _, e := range entries {
+		parts = append(parts, fmt.Sprintf("%s -> %s", e.dev, e.target))
+	}
+	return strings.Join(parts, ", ")
+}
+
+func detachSDCardMountsFallback() error {
+	syscall.Sync()
+	if _, err := exec.LookPath("blockdev"); err == nil {
+		_, _ = runCommandWithOutput("blockdev", "--flushbufs", "/dev/mmcblk0")
+	}
+
+	for pass := 0; pass < 6; pass++ {
+		parts, err := mountedMMCPartitions()
+		if err != nil {
+			return fmt.Errorf("scan mmc mounts: %w", err)
+		}
+		if len(parts) == 0 {
+			if !nixMountIsRAMBacked() {
+				if err := bindNixFromRAM(); err != nil {
+					return fmt.Errorf("restore RAM /nix bind: %w", err)
+				}
+			}
+			return nil
+		}
+
+		progress := false
+
+		// If /nix is currently RAM-backed but a lower mmc mount still exists on /nix,
+		// drop the top layer once so the lower mount can be detached.
+		if nixMountIsRAMBacked() {
+			for _, p := range parts {
+				if p.target == "/nix" {
+					if _, err := runCommandWithOutput("umount", "/nix"); err == nil {
+						logutil.DebugLog("HBP prep fallback: unmounted top /nix layer to expose lower mount")
+						progress = true
+					}
+					break
+				}
+			}
+		}
+
+		parts, err = mountedMMCPartitions()
+		if err != nil {
+			return fmt.Errorf("scan mmc mounts: %w", err)
+		}
+		for _, p := range parts {
+			if _, err := runCommandWithOutput("umount", p.target); err == nil {
+				progress = true
+				continue
+			}
+			if _, errLazy := runCommandWithOutput("umount", "-l", p.target); errLazy == nil {
+				progress = true
+			}
+		}
+
+		if !nixMountIsRAMBacked() {
+			if err := bindNixFromRAM(); err == nil {
+				progress = true
+			}
+		}
+
+		if !progress {
+			break
+		}
+	}
+
+	syscall.Sync()
+	remain, err := mountedMMCPartitions()
+	if err != nil {
+		return fmt.Errorf("scan remaining mmc mounts: %w", err)
+	}
+	if len(remain) > 0 {
+		return fmt.Errorf("fallback detach incomplete: mounted partitions remain: %s", formatMMCMounts(remain))
+	}
+	return nil
+}
+
+func (p *Platform) PrepareHBPForSDRemoval() error {
+	if _, err := os.Stat("/bin/cups-spike-ram-feasibility"); err != nil {
+		return fmt.Errorf("missing /bin/cups-spike-ram-feasibility: %w", err)
+	}
+
+	out, err := runCommandWithOutput("/bin/cups-spike-ram-feasibility", "stage", "core")
+	if out != "" {
+		logutil.DebugLog("HBP prep stage output:\n%s", out)
+	}
+	if err != nil {
+		return err
+	}
+
+	out, err = runCommandWithOutput("/bin/cups-spike-ram-feasibility", "detach-sd")
+	if out != "" {
+		logutil.DebugLog("HBP prep detach output:\n%s", out)
+	}
+	if err != nil {
+		msg := err.Error()
+		if nixMountIsRAMBacked() && (strings.Contains(msg, "/nix is not RAM-backed") || strings.Contains(msg, "mmc partitions still mounted")) {
+			logutil.DebugLog("HBP prep: detach helper failed with RAM-backed /nix, applying fallback SD detach")
+			return detachSDCardMountsFallback()
+		}
+		return err
+	}
+
+	return nil
+}
+
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
-	printerDev := p.Printer()
-	if printerDev == nil {
-		logutil.DebugLog("Printer is nil")
-		return fmt.Errorf("no printer available")
-	}
-	if p.supportsPCL {
-		logutil.DebugLog("Printer acquired (PCL), preparing to write job")
-	} else {
-		logutil.DebugLog("Printer acquired (non-PCL), using raster-to-PDF path")
-	}
 
 	p.printing = true
 	defer func() { p.printing = false }()
@@ -323,6 +527,25 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	if opts.DPI <= 0 {
 		opts.DPI = 1200
 	}
+	if opts.PrinterLang == printer.PrinterLangBrotherHBP {
+		if opts.DPI > 600 {
+			// HBP helper is currently fixed to a known-good 600 DPI path.
+			opts.DPI = 600
+		}
+		return p.createPlatesHBP(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
+	}
+
+	printerDev := p.Printer()
+	if printerDev == nil {
+		logutil.DebugLog("Printer is nil")
+		return fmt.Errorf("no printer available")
+	}
+	if p.supportsPCL {
+		logutil.DebugLog("Printer acquired (PCL), preparing to write job")
+	} else {
+		logutil.DebugLog("Printer acquired (non-PCL), using raster-to-PDF path")
+	}
+
 	if !p.supportsPCL && opts.DPI > 600 {
 		// Gadget fallback path is heavier (raster->PDF); keep it conservative.
 		opts.DPI = 600
@@ -579,6 +802,58 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		progress(printer.StageSend, written, total)
 	}
 	time.Sleep(2 * time.Second)
+	return nil
+}
+
+func (p *Platform) createPlatesHBP(ctx *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
+	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
+	if err != nil {
+		return fmt.Errorf("render: plate bitmaps: %w", err)
+	}
+
+	pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, progress)
+	if err != nil {
+		return fmt.Errorf("render: compose pages: %w", err)
+	}
+	if opts.EtchStatsPage {
+		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, paper)
+		if err != nil {
+			return fmt.Errorf("stats: build report: %w", err)
+		}
+		statsPage, err := printer.RenderEtchStatsPage(report, paper, opts.DPI)
+		if err != nil {
+			return fmt.Errorf("stats: render page: %w", err)
+		}
+		pages = append(pages, statsPage)
+	}
+
+	outFile, err := os.CreateTemp("/tmp", "seedetcher-hbp-*.pdf")
+	if err != nil {
+		return fmt.Errorf("hbp: create temp pdf: %w", err)
+	}
+	outPath := outFile.Name()
+	defer os.Remove(outPath)
+	if err := printer.WritePDFRaster(outFile, pages, paper); err != nil {
+		outFile.Close()
+		return fmt.Errorf("hbp: write temp pdf: %w", err)
+	}
+	if err := outFile.Close(); err != nil {
+		return fmt.Errorf("hbp: close temp pdf: %w", err)
+	}
+
+	if progress != nil {
+		progress(printer.StageSend, 0, 1)
+	}
+	cmdOut, err := runCommandWithOutput("/bin/print-hbp-pdf", outPath)
+	if cmdOut != "" {
+		logutil.DebugLog("HBP print helper output:\n%s", cmdOut)
+	}
+	if err != nil {
+		return err
+	}
+	if progress != nil {
+		progress(printer.StageSend, 1, 1)
+	}
 	return nil
 }
 
