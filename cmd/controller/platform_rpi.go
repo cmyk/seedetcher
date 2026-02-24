@@ -238,6 +238,15 @@ func (p *Platform) CameraFrame(dims image.Point) {
 }
 
 func (p *Platform) Printer() io.Writer {
+	// usblp can disconnect/re-enumerate between jobs; always reopen fresh in host mode
+	// to avoid writing through a stale file descriptor.
+	if p.printerCached != nil && p.supportsPCL {
+		if f, ok := p.printerCached.(*os.File); ok && f != os.Stderr {
+			_ = f.Close()
+		}
+		p.printerCached = nil
+	}
+
 	// If we previously failed and cached a non-PCL writer, but lp0 exists now,
 	// clear the cache and try again.
 	if p.printerCached != nil {
