@@ -81,6 +81,8 @@ install_brlaser_wrapper() {
 
   mkdir -p "$runtime_root/filter" "$runtime_root/lib"
   cp -a "$filter_bin" "$runtime_filter" 2>/dev/null || return 0
+  chown root:root "$runtime_filter" 2>/dev/null || true
+  chmod 555 "$runtime_filter" 2>/dev/null || true
 
   cat > "$filter_bin" <<'WRAP'
 #!/bin/sh
@@ -97,7 +99,27 @@ fi
 export LD_LIBRARY_PATH="$LD_PATHS"
 exec "$REAL_FILTER" "$@"
 WRAP
+  chown root:root "$filter_bin" 2>/dev/null || true
   chmod 555 "$filter_bin" 2>/dev/null || true
+}
+
+harden_cups_serverbin() {
+  cups_bin="/var/cups-serverbin/lib/cups"
+  [ -d "$cups_bin" ] || return 0
+
+  chown root:root "$cups_bin" 2>/dev/null || true
+  chmod 755 "$cups_bin" 2>/dev/null || true
+
+  for d in backend filter driver daemon; do
+    [ -d "$cups_bin/$d" ] || continue
+    chown root:root "$cups_bin/$d" 2>/dev/null || true
+    chmod 755 "$cups_bin/$d" 2>/dev/null || true
+    chown root:root "$cups_bin/$d"/* 2>/dev/null || true
+    chmod 555 "$cups_bin/$d"/* 2>/dev/null || true
+  done
+  if [ -d "$cups_bin/backend" ]; then
+    chmod 700 "$cups_bin/backend"/* 2>/dev/null || true
+  fi
 }
 
 provision_raw_queue() {
@@ -176,6 +198,7 @@ for extra_root in "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
     find "$extra_root/lib" -maxdepth 2 -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -a {} /var/cups-extra/brlaser-runtime/lib/ \; 2>/dev/null || true
   fi
 done
+harden_cups_serverbin
 
 mkdir -p /var/cups-data
 rm -rf /var/cups-data/*
@@ -212,6 +235,7 @@ repair_elf_runtime /var/cups-serverbin/lib/cups/filter/rastertobrlaser
 repair_elf_runtime /var/cups-serverbin/lib/cups/driver/drv
 repair_elf_runtime /var/cups-serverbin/lib/cups/driver/cups-driverd
 install_brlaser_wrapper
+harden_cups_serverbin
 
 cat > /etc/cups/cups-files.conf <<CFG
 SystemGroup root lpadmin

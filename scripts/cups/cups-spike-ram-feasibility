@@ -295,6 +295,23 @@ run_check() {
   lpstat -h "$SOCK" -p -v || true
 }
 
+stop_cupsd() {
+  if command -v killall >/dev/null 2>&1; then
+    killall cupsd >/dev/null 2>&1 || true
+  fi
+  sleep 1
+}
+
+start_cupsd() {
+  if [ -S "$SOCK" ]; then
+    return 0
+  fi
+  if [ -x /bin/cupsd ]; then
+    /bin/cupsd >/log/cups.log 2>&1 || true
+    sleep 1
+  fi
+}
+
 detach_sd() {
   src="$(awk '$2=="/nix"{print $1}' /proc/mounts | tail -n 1)"
   fstype="$(awk '$2=="/nix"{print $3}' /proc/mounts | tail -n 1)"
@@ -303,6 +320,7 @@ detach_sd() {
     return 1
   fi
 
+  stop_cupsd
   sync
   if command -v blockdev >/dev/null 2>&1 && [ -b /dev/mmcblk0 ]; then
     blockdev --flushbufs /dev/mmcblk0 >/dev/null 2>&1 || true
@@ -350,8 +368,10 @@ detach_sd() {
   if [ -n "$remain" ]; then
     echo "FAIL: mmc partitions still mounted:" >&2
     echo "$remain" >&2
+    start_cupsd
     return 1
   fi
+  start_cupsd
   echo "SD detach prep complete: no mmcblk0p* mounts remain."
 }
 

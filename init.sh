@@ -470,6 +470,22 @@ if ! ensure_runtime_tools; then
   exit 4
 fi
 
+ensure_cupsd_running() {
+  if [ -S "$SOCK" ]; then
+    return 0
+  fi
+  if [ -x /bin/cupsd ]; then
+    /bin/cupsd >/log/cups.log 2>&1 || true
+    sleep 1
+  fi
+  [ -S "$SOCK" ]
+}
+
+if ! ensure_cupsd_running; then
+  echo "print-hbp-pdf: cupsd socket '$SOCK' not available" >&2
+  exit 4
+fi
+
 ensure_printer_connected() {
   ls /dev/usb/lp* >/dev/null 2>&1
 }
@@ -570,6 +586,18 @@ if ! ensure_hbp_queue; then
   exit 3
 fi
 
+ensure_queue_ready() {
+  lpadmin -h "$SOCK" -p "$QUEUE" -E >/dev/null 2>&1 || true
+  if command -v cupsenable >/dev/null 2>&1; then
+    cupsenable -h "$SOCK" "$QUEUE" >/dev/null 2>&1 || true
+  fi
+  if command -v cupsaccept >/dev/null 2>&1; then
+    cupsaccept -h "$SOCK" "$QUEUE" >/dev/null 2>&1 || true
+  fi
+}
+
+ensure_queue_ready
+
 # SeedEtcher expects one immediate physical print, not backlog replay.
 # Clear any stale pending jobs on this queue before submitting the new one.
 if command -v cancel >/dev/null 2>&1; then
@@ -578,7 +606,11 @@ fi
 
 RAS="/tmp/print-hbp.ras"
 gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r"$DPI" -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
-lp -h "$SOCK" -d "$QUEUE" -o document-format=application/vnd.cups-raster "$RAS"
+lp -h "$SOCK" -d "$QUEUE" \
+  -o media=A4 \
+  -o Resolution="${DPI}dpi" \
+  -o document-format=application/vnd.cups-raster \
+  "$RAS"
 EOF
     chmod 755 /bin/print-hbp-pdf
 
@@ -881,6 +913,23 @@ run_check() {
   lpstat -h "$SOCK" -p -v || true
 }
 
+stop_cupsd() {
+  if command -v killall >/dev/null 2>&1; then
+    killall cupsd >/dev/null 2>&1 || true
+  fi
+  sleep 1
+}
+
+start_cupsd() {
+  if [ -S "$SOCK" ]; then
+    return 0
+  fi
+  if [ -x /bin/cupsd ]; then
+    /bin/cupsd >/log/cups.log 2>&1 || true
+    sleep 1
+  fi
+}
+
 detach_sd() {
   src="$(awk '$2=="/nix"{print $1}' /proc/mounts | tail -n 1)"
   fstype="$(awk '$2=="/nix"{print $3}' /proc/mounts | tail -n 1)"
@@ -889,6 +938,7 @@ detach_sd() {
     return 1
   fi
 
+  stop_cupsd
   sync
   if command -v blockdev >/dev/null 2>&1 && [ -b /dev/mmcblk0 ]; then
     blockdev --flushbufs /dev/mmcblk0 >/dev/null 2>&1 || true
@@ -936,8 +986,10 @@ detach_sd() {
   if [ -n "$remain" ]; then
     echo "FAIL: mmc partitions still mounted:" >&2
     echo "$remain" >&2
+    start_cupsd
     return 1
   fi
+  start_cupsd
   echo "SD detach prep complete: no mmcblk0p* mounts remain."
 }
 
