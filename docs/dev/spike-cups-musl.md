@@ -350,6 +350,13 @@ Run this exact sequence on Pi for each new `image-cups-spike-debug` flash:
   - RAM staging for optional HBP support reduces available memory headroom.
   - DPI fallback is only applied in the HBP-enabled session mode so PCL/PS-only users keep maximum performance.
 
+### Follow-up for true 1200 on larger jobs
+- Current safety behavior prefers 600 DPI for memory-heavy multi-page PS/HBP jobs on Pi Zero.
+- If we want reliable 1200 DPI for larger jobs, the real fix is page-streaming:
+  - render and send one page at a time,
+  - avoid building full job plate/page buffers in RAM first.
+- Treat this as a future optimization track, not a blocker for current HBP opt-in scope.
+
 ### GUI smoke test (current implementation)
 1. On startup, choose `Enable HBP` in the HBP gate.
 2. Wait for `Preparing HBP` to complete and confirm success screen.
