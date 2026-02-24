@@ -356,6 +356,8 @@
                 cp -a ${straceStatic}/bin/strace initramfs/bin/
                 cp -L --no-preserve=mode ${binutilsStatic}/bin/readelf initramfs/bin/readelf
                 chmod +x initramfs/bin/readelf
+                cp ${./scripts/debug/sd-removal-dump} initramfs/bin/sd-removal-dump
+                chmod 0755 initramfs/bin/sd-removal-dump
 
                 # Debug output
                 echo "Verifying readelf:"
