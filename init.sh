@@ -69,8 +69,15 @@ wait_for "$CTRL_TTY" 30
 
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
 
-# Optional CUPS spike bootstrap.
+CUPS_SPIKE_EAGER_BOOT=0
 if [ -f /cups-spike.env ]; then
+    # shellcheck source=/dev/null
+    . /cups-spike.env
+    CUPS_SPIKE_EAGER_BOOT="${CUPS_SPIKE_EAGER_BOOT:-0}"
+fi
+
+# Optional CUPS spike bootstrap.
+if [ -f /cups-spike.env ] && [ "$CUPS_SPIKE_EAGER_BOOT" = "1" ]; then
     mkdir -p /nix /etc/cups /var/run/cups /var/spool/cups /var/log/cups
     tries=10
     while [ "$tries" -gt 0 ] && [ ! -b /dev/mmcblk0p2 ]; do
@@ -83,7 +90,7 @@ if [ -f /cups-spike.env ]; then
         debug_echo "CUPS spike: /dev/mmcblk0p2 not found after wait"
     fi
 fi
-if [ -f /cups-spike.env ] && [ -x /bin/cupsd ]; then
+if [ -f /cups-spike.env ] && [ -x /bin/cupsd ] && [ "$CUPS_SPIKE_EAGER_BOOT" = "1" ]; then
     # shellcheck source=/dev/null
     . /cups-spike.env
 
@@ -1189,6 +1196,8 @@ EOF
     else
         debug_echo "CUPS spike: failed to start cupsd"
     fi
+elif [ -f /cups-spike.env ]; then
+    debug_echo "CUPS spike: lazy bootstrap mode (boot init skipped)"
 fi
 
 # Fix DRM framebuffer permissions

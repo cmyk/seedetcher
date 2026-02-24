@@ -1,0 +1,246 @@
+#!/bin/sh
+set -eu
+
+SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
+
+log() {
+  msg="$*"
+  echo "$msg" >> /log/cups.log
+  echo "DEBUG: CUPS bootstrap: $msg" > /dev/kmsg 2>/dev/null || true
+}
+
+is_mounted() {
+  mnt="$1"
+  awk -v m="$mnt" '$2==m{found=1} END{exit found?0:1}' /proc/mounts
+}
+
+mount_nix_from_sd() {
+  mkdir -p /nix
+  if is_mounted /nix; then
+    return 0
+  fi
+  tries=10
+  while [ "$tries" -gt 0 ] && [ ! -b /dev/mmcblk0p2 ]; do
+    sleep 1
+    tries=$((tries - 1))
+  done
+  if [ ! -b /dev/mmcblk0p2 ]; then
+    echo "cups-spike-bootstrap: /dev/mmcblk0p2 not found" >&2
+    return 1
+  fi
+  mount -t ext4 /dev/mmcblk0p2 /nix >> /log/cups.log 2>&1
+}
+
+repair_elf_runtime() {
+  elf_bin="$1"
+  [ -x "$elf_bin" ] || return 0
+  [ -x /bin/readelf ] || return 0
+
+  interp_path="$(/bin/readelf -l "$elf_bin" 2>/dev/null | sed -n 's@.*Requesting program interpreter: \(.*\)]@\1@p' | head -n 1)"
+  if [ -n "$interp_path" ] && [ ! -e "$interp_path" ] && [ -e /lib/ld-musl-armhf.so.1 ]; then
+    mkdir -p "$(dirname "$interp_path")"
+    ln -snf /lib/ld-musl-armhf.so.1 "$interp_path" 2>/dev/null || true
+  fi
+
+  runpaths="$(/bin/readelf -d "$elf_bin" 2>/dev/null | sed -n 's@.*Library runpath: \[\(.*\)\]@\1@p' | head -n 1)"
+  [ -n "$runpaths" ] || return 0
+
+  gcc_lib_path="$(find /nix/store -path '*gcc*lib*/armv6l-unknown-linux-musleabihf/lib' 2>/dev/null | head -n 1)"
+  cups_lib_path=""
+  if [ -d "${CUPS_BIN_ROOT}/lib" ]; then
+    cups_lib_path="${CUPS_BIN_ROOT}/lib"
+  elif [ -d "${CUPS_BIN_ROOT}-lib/lib" ]; then
+    cups_lib_path="${CUPS_BIN_ROOT}-lib/lib"
+  fi
+
+  oldifs="$IFS"
+  IFS=':'
+  for rp in $runpaths; do
+    [ -n "$rp" ] || continue
+    [ -e "$rp" ] && continue
+    target=""
+    case "$rp" in
+      *musl*"/lib") target="/lib" ;;
+      *cups*"/lib") target="$cups_lib_path" ;;
+      *gcc*"/armv6l-unknown-linux-musleabihf/lib") target="$gcc_lib_path" ;;
+    esac
+    if [ -n "$target" ] && [ -d "$target" ]; then
+      mkdir -p "$(dirname "$rp")"
+      rm -rf "$rp" 2>/dev/null || true
+      ln -snf "$target" "$rp" 2>/dev/null || true
+    fi
+  done
+  IFS="$oldifs"
+}
+
+install_brlaser_wrapper() {
+  filter_bin="/var/cups-serverbin/lib/cups/filter/rastertobrlaser"
+  runtime_root="/var/cups-extra/brlaser-runtime"
+  runtime_filter="$runtime_root/filter/rastertobrlaser.real"
+  [ -x "$filter_bin" ] || return 0
+
+  mkdir -p "$runtime_root/filter" "$runtime_root/lib"
+  cp -a "$filter_bin" "$runtime_filter" 2>/dev/null || return 0
+
+  cat > "$filter_bin" <<'WRAP'
+#!/bin/sh
+RUNTIME_ROOT="/var/cups-extra/brlaser-runtime"
+REAL_FILTER="$RUNTIME_ROOT/filter/rastertobrlaser.real"
+[ -x "$REAL_FILTER" ] || exit 127
+LD_PATHS="$RUNTIME_ROOT/lib:/lib:/usr/lib"
+if [ -n "${BRLASER_LD_LIBRARY_PATH:-}" ]; then
+  LD_PATHS="$BRLASER_LD_LIBRARY_PATH:$LD_PATHS"
+fi
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+  LD_PATHS="$LD_LIBRARY_PATH:$LD_PATHS"
+fi
+export LD_LIBRARY_PATH="$LD_PATHS"
+exec "$REAL_FILTER" "$@"
+WRAP
+  chmod 555 "$filter_bin" 2>/dev/null || true
+}
+
+provision_raw_queue() {
+  [ -x /bin/lpadmin ] || return 0
+  [ -S "$SOCK" ] || return 0
+
+  uri=""
+  usb_backend="/var/cups-serverbin/lib/cups/backend/usb"
+  if [ -x "$usb_backend" ]; then
+    uri="$($usb_backend 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
+  fi
+  if [ -z "$uri" ] && [ -c /dev/usb/lp0 ]; then
+    uri="file:///dev/usb/lp0"
+  fi
+  [ -n "$uri" ] || return 0
+
+  /bin/lpadmin -h "$SOCK" -x test >/dev/null 2>&1 || true
+  /bin/lpadmin -h "$SOCK" -p test -E -v "$uri" -m raw >> /log/cups.log 2>&1 || true
+}
+
+if [ -f /cups-spike.env ]; then
+  # shellcheck source=/dev/null
+  . /cups-spike.env
+fi
+
+# Minimal identity DB expected by cupsd in initramfs.
+if [ ! -f /etc/group ]; then
+  cat > /etc/group <<'EOF_GROUP'
+root:x:0:
+sys:x:3:
+lp:x:7:
+lpadmin:x:19:
+EOF_GROUP
+fi
+if [ ! -f /etc/passwd ]; then
+  cat > /etc/passwd <<'EOF_PASSWD'
+root:x:0:0:root:/root:/bin/sh
+lp:x:7:7:CUPS:/var/spool/cups:/bin/false
+EOF_PASSWD
+fi
+grep -q '^lpadmin:' /etc/group || echo 'lpadmin:x:19:' >> /etc/group
+grep -q '^lp:' /etc/group || echo 'lp:x:7:' >> /etc/group
+grep -q '^sys:' /etc/group || echo 'sys:x:3:' >> /etc/group
+grep -q '^root:' /etc/group || echo 'root:x:0:' >> /etc/group
+grep -q '^lp:' /etc/passwd || echo 'lp:x:7:7:CUPS:/var/spool/cups:/bin/false' >> /etc/passwd
+
+mkdir -p /etc/cups /var/run/cups /var/spool/cups/tmp /var/log/cups /var/cache/cups /run/cups /var/cups-serverbin/lib /var/cups-data /var/cups-extra /var/cups-extra/brlaser-runtime/lib /var/cups-extra/brlaser-runtime/filter
+chmod 1777 /var/spool/cups/tmp
+
+mount_nix_from_sd
+
+CUPS_BIN_ROOT="$(readlink /bin/cupsd 2>/dev/null | sed 's#/bin/cupsd$##')"
+if [ -z "$CUPS_BIN_ROOT" ]; then
+  CUPS_BIN_ROOT="$(readlink -f /bin/cupsd 2>/dev/null | sed 's#/bin/cupsd$##')"
+fi
+if [ -z "$CUPS_BIN_ROOT" ]; then
+  echo "cups-spike-bootstrap: unable to resolve cupsd root" >&2
+  exit 1
+fi
+
+CUPS_DATA_ROOT="$CUPS_BIN_ROOT"
+if [ ! -d "${CUPS_DATA_ROOT}/share/cups" ] && [ -d "${CUPS_BIN_ROOT}-lib/share/cups" ]; then
+  CUPS_DATA_ROOT="${CUPS_BIN_ROOT}-lib"
+fi
+
+rm -rf /var/cups-serverbin/lib/cups
+if [ -d "${CUPS_BIN_ROOT}/lib/cups" ]; then
+  cp -a "${CUPS_BIN_ROOT}/lib/cups" /var/cups-serverbin/lib/
+fi
+for extra_root in "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
+  [ -n "$extra_root" ] || continue
+  if [ -d "$extra_root/lib/cups" ]; then
+    cp -a "$extra_root/lib/cups/." /var/cups-serverbin/lib/cups/ 2>/dev/null || true
+  fi
+  if [ -d "$extra_root/lib" ]; then
+    find "$extra_root/lib" -maxdepth 2 -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -a {} /var/cups-extra/brlaser-runtime/lib/ \; 2>/dev/null || true
+  fi
+done
+
+mkdir -p /var/cups-data
+rm -rf /var/cups-data/*
+if [ -d "${CUPS_DATA_ROOT}/share/cups" ]; then
+  for d in mime usb drv ppdc; do
+    if [ -d "${CUPS_DATA_ROOT}/share/cups/$d" ]; then
+      mkdir -p "/var/cups-data/$d"
+      cp -a "${CUPS_DATA_ROOT}/share/cups/$d/." "/var/cups-data/$d/" 2>/dev/null || true
+    fi
+  done
+fi
+for extra_root in "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
+  [ -n "$extra_root" ] || continue
+  if [ -d "$extra_root/share/cups/drv" ]; then
+    mkdir -p /var/cups-data/drv
+    cp -a "$extra_root/share/cups/drv/." /var/cups-data/drv/ 2>/dev/null || true
+  fi
+  if [ -d "$extra_root/share/cups/model" ]; then
+    mkdir -p /var/cups-data/model
+    cp -a "$extra_root/share/cups/model/." /var/cups-data/model/ 2>/dev/null || true
+  fi
+  if [ -d "$extra_root/share/cups/ppdc" ]; then
+    mkdir -p /var/cups-data/ppdc
+    cp -a "$extra_root/share/cups/ppdc/." /var/cups-data/ppdc/ 2>/dev/null || true
+  fi
+  if [ -d "$extra_root/share/ppd" ]; then
+    mkdir -p /var/cups-data/model
+    cp -a "$extra_root/share/ppd/." /var/cups-data/model/ 2>/dev/null || true
+  fi
+done
+mkdir -p /var/cups-data/model /var/cups-data/drv /var/cups-data/usb /var/cups-data/mime /var/cups-data/ppdc
+
+repair_elf_runtime /var/cups-serverbin/lib/cups/filter/rastertobrlaser
+repair_elf_runtime /var/cups-serverbin/lib/cups/driver/drv
+repair_elf_runtime /var/cups-serverbin/lib/cups/driver/cups-driverd
+install_brlaser_wrapper
+
+cat > /etc/cups/cups-files.conf <<CFG
+SystemGroup root lpadmin
+FileDevice Yes
+RequestRoot /var/spool/cups
+ServerRoot /etc/cups
+CacheDir /var/cache/cups
+DataDir /var/cups-data
+ServerBin /var/cups-serverbin/lib/cups
+CFG
+
+if [ ! -f /etc/cups/cupsd.conf ]; then
+  cat > /etc/cups/cupsd.conf <<'CFG'
+LogLevel warn
+Listen 0.0.0.0:631
+Browsing Off
+DefaultAuthType None
+WebInterface No
+<Location />
+  Order allow,deny
+  Allow all
+</Location>
+CFG
+fi
+
+if ! [ -S "$SOCK" ]; then
+  /bin/cupsd >> /log/cups.log 2>&1 || true
+  sleep 1
+fi
+provision_raw_queue
+
+log "bootstrap complete"
