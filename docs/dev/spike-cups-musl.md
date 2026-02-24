@@ -373,6 +373,7 @@ Current implementation status:
 - HBP batch PDF generation now places plate images directly into PDF pages (no full-page raster compose step in that path).
 - HBP path is fixed to 600 DPI for correctness on-device.
 - Additional runtime guard: `print-hbp-pdf` clamps effective raster DPI to 600 when a higher DPI is requested, because 1200 raster currently causes incorrect oversized geometry on-device.
+- HBP prepare UI now shows an ETA-based progress bar during runtime staging and removes the bar once readiness is confirmed.
 
 ### GUI smoke test (current implementation)
 1. On startup, choose `Enable HBP` in the HBP gate.
