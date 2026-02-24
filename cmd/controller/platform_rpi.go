@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	rdebug "runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -489,8 +490,17 @@ func (p *Platform) PrepareHBPForSDRemoval() error {
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 
+	connected, _ := p.PrinterStatus()
+	if !connected {
+		return fmt.Errorf("printer not connected")
+	}
+
+	releaseMemory()
 	p.printing = true
-	defer func() { p.printing = false }()
+	defer func() {
+		p.printing = false
+		releaseMemory()
+	}()
 
 	var mnemonics []bip39.Mnemonic
 	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
@@ -529,10 +539,20 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	}
 	if opts.PrinterLang == printer.PrinterLangBrotherHBP {
 		if opts.DPI > 600 {
-			// HBP helper is currently fixed to a known-good 600 DPI path.
-			opts.DPI = 600
+			// Allow 1200 only for one-page jobs to avoid multi-page OOM spikes.
+			if estimateJobPages(desc, paper, opts) > 1 {
+				logutil.DebugLog("HBP path: forcing 600 DPI for multi-page job")
+				opts.DPI = 600
+			}
 		}
 		return p.createPlatesHBP(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
+	}
+	if opts.PrinterLang == printer.PrinterLangPS && opts.DPI > 600 {
+		// PS rendering currently holds full raster pages in memory.
+		if estimateJobPages(desc, paper, opts) > 1 {
+			logutil.DebugLog("PS path: forcing 600 DPI for multi-page job")
+			opts.DPI = 600
+		}
 	}
 
 	printerDev := p.Printer()
@@ -844,7 +864,8 @@ func (p *Platform) createPlatesHBP(ctx *gui.Context, mnemonics []bip39.Mnemonic,
 	if progress != nil {
 		progress(printer.StageSend, 0, 1)
 	}
-	cmdOut, err := runCommandWithOutput("/bin/print-hbp-pdf", outPath)
+	dpiArg := fmt.Sprintf("%.0f", opts.DPI)
+	cmdOut, err := runCommandWithOutput("/bin/print-hbp-pdf", outPath, dpiArg)
 	if cmdOut != "" {
 		logutil.DebugLog("HBP print helper output:\n%s", cmdOut)
 	}
@@ -1092,4 +1113,48 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func releaseMemory() {
+	runtime.GC()
+	rdebug.FreeOSMemory()
+}
+
+func estimateJobPages(desc *urtypes.OutputDescriptor, paper printer.PaperSize, opts printer.RasterOptions) int {
+	walletShares := 1
+	if desc != nil {
+		walletShares = len(desc.Keys)
+	}
+	maxSlotsPerPage := 6
+	if paper == printer.PaperLetter {
+		maxSlotsPerPage = 4
+	}
+	slotsPerShare := 2
+	if desc == nil {
+		slotsPerShare = 1
+	}
+	compactSingleSided := desc != nil &&
+		printer.CompactDescriptor2of3Enabled() &&
+		desc.Type == urtypes.SortedMulti &&
+		desc.Threshold == 2 &&
+		len(desc.Keys) == 3
+	if compactSingleSided {
+		slotsPerShare = 1
+	}
+	isSinglesig := desc != nil && desc.Type == urtypes.Singlesig && len(desc.Keys) == 1
+	if isSinglesig && opts.SinglesigLayout != printer.SinglesigLayoutSeedWithDescriptorQR {
+		slotsPerShare = 1
+	}
+	sharesPerPage := maxSlotsPerPage / slotsPerShare
+	if sharesPerPage < 1 {
+		sharesPerPage = 1
+	}
+	totalPages := (walletShares + sharesPerPage - 1) / sharesPerPage
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if opts.EtchStatsPage {
+		totalPages++
+	}
+	return totalPages
 }

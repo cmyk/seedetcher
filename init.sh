@@ -431,9 +431,45 @@ set -eu
 SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
 QUEUE="${HBP_QUEUE:-test-hbp}"
 PDF="${1:-}"
+DPI="${2:-600}"
 if [ -z "$PDF" ] || [ ! -f "$PDF" ]; then
-  echo "usage: print-hbp-pdf /path/to/file.pdf" >&2
+  echo "usage: print-hbp-pdf /path/to/file.pdf [dpi]" >&2
   exit 2
+fi
+case "$DPI" in
+  ''|*[!0-9]*)
+    echo "invalid dpi: '$DPI'" >&2
+    exit 2
+    ;;
+esac
+if [ "$DPI" -lt 300 ] || [ "$DPI" -gt 1200 ]; then
+  echo "dpi out of range: $DPI (expected 300..1200)" >&2
+  exit 2
+fi
+
+ensure_runtime_tools() {
+  command -v lpadmin >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1 && return 0
+
+  # Recovery path after SD detach: restore /nix from RAM-backed stage, if present.
+  if [ -d /run/hbp-ram-runtime/nix/store ]; then
+    mount --bind /run/hbp-ram-runtime/nix /nix >/dev/null 2>&1 || true
+  fi
+
+  command -v lpadmin >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1
+}
+
+if ! ensure_runtime_tools; then
+  echo "print-hbp-pdf: CUPS tools unavailable (likely /nix not mounted). Run 'cups-spike-ram-feasibility stage core' before SD removal." >&2
+  exit 4
+fi
+
+ensure_printer_connected() {
+  ls /dev/usb/lp* >/dev/null 2>&1
+}
+
+if ! ensure_printer_connected; then
+  echo "print-hbp-pdf: printer not connected (/dev/usb/lp* missing); refusing to queue job." >&2
+  exit 5
 fi
 
 ensure_hbp_queue() {
@@ -505,24 +541,36 @@ ensure_hbp_queue() {
     PPD="$(find_brlaser_ppd "$MODEL_NAME")"
   fi
 
-  echo "print-hbp-pdf: queue='$QUEUE' model='$MODEL_NAME' uri='$URI' ppd='${PPD:-<none>}'" >&2
+  echo "print-hbp-pdf: queue='$QUEUE' model='$MODEL_NAME' uri='$URI' ppd='${PPD:-<none>}' dpi='$DPI'" >&2
   lpadmin -h "$SOCK" -x "$QUEUE" >/dev/null 2>&1 || true
   if [ -n "$PPD" ]; then
-    lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -P "$PPD" >/dev/null 2>&1 || return 1
+    if ! lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -P "$PPD" >/tmp/lpadmin-hbp.out 2>/tmp/lpadmin-hbp.err; then
+      echo "lpadmin failed while creating '$QUEUE' (see /tmp/lpadmin-hbp.err)" >&2
+      return 1
+    fi
   else
     echo "no usable PPD for '$QUEUE' (ppdc may have failed; see /tmp/ppdc-hbp.err)" >&2
     return 1
   fi
-  lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1
+  if ! lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1; then
+    echo "queue '$QUEUE' still missing after lpadmin (see /tmp/lpadmin-hbp.err)" >&2
+    return 1
+  fi
 }
 
 if ! ensure_hbp_queue; then
   echo "queue '$QUEUE' not found on $SOCK and auto-create failed" >&2
   exit 3
 fi
+
+# SeedEtcher expects one immediate physical print, not backlog replay.
+# Clear any stale pending jobs on this queue before submitting the new one.
+if command -v cancel >/dev/null 2>&1; then
+  cancel -h "$SOCK" -a "$QUEUE" >/dev/null 2>&1 || true
+fi
+
 RAS="/tmp/print-hbp.ras"
-# Known-good conversion settings for A4 @ 600dpi.
-gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r600 -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
+gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r"$DPI" -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
 lp -h "$SOCK" -d "$QUEUE" -o document-format=application/vnd.cups-raster "$RAS"
 EOF
     chmod 755 /bin/print-hbp-pdf
