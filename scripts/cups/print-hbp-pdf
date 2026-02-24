@@ -19,19 +19,6 @@ if [ "$DPI" -lt 300 ] || [ "$DPI" -gt 1200 ]; then
   exit 2
 fi
 
-ensure_bootstrap() {
-  # Lazy mode: initialize CUPS stack only on explicit HBP use.
-  [ -x /bin/cups-spike-bootstrap ] || return 0
-  [ -S "$SOCK" ] && return 0
-  [ -b /dev/mmcblk0p2 ] || return 0
-  /bin/cups-spike-bootstrap >/tmp/cups-bootstrap.out 2>/tmp/cups-bootstrap.err || return 1
-}
-
-if ! ensure_bootstrap; then
-  echo "print-hbp-pdf: failed to bootstrap CUPS runtime (see /tmp/cups-bootstrap.err)" >&2
-  exit 4
-fi
-
 ensure_runtime_tools() {
   command -v lpadmin >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1 && return 0
 
