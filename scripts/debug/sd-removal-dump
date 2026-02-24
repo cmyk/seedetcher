@@ -1,0 +1,84 @@
+#!/bin/sh
+set -eu
+
+MODE="${1:-snapshot}"
+OUT="${2:-/tmp/sd-removal-dump.log}"
+
+now() {
+  date 2>/dev/null || echo "no-date"
+}
+
+header() {
+  echo
+  echo "=== $1 ==="
+  echo "time=$(now)"
+  cat /proc/uptime 2>/dev/null | awk '{print "uptime_s=" $1}' || true
+}
+
+print_mounts() {
+  echo "--- mounts ---"
+  grep -E 'mmcblk0p| /nix ' /proc/mounts || true
+}
+
+print_ps() {
+  echo "--- ps ---"
+  ps || true
+}
+
+print_fuser() {
+  echo "--- fuser ---"
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -vm /nix /dev/mmcblk0 /dev/mmcblk0p1 /dev/mmcblk0p2 2>&1 || true
+  else
+    echo "fuser: not installed"
+  fi
+}
+
+print_proc_holders() {
+  echo "--- proc holders (/nix, /dev/mmcblk0*) ---"
+  for p in /proc/[0-9]*; do
+    [ -d "$p" ] || continue
+    pid="${p#/proc/}"
+    cmd="$(tr '\000' ' ' < "$p/cmdline" 2>/dev/null || true)"
+    [ -n "$cmd" ] || cmd="[kernel]"
+
+    for k in root cwd exe; do
+      t="$(readlink "$p/$k" 2>/dev/null || true)"
+      case "$t" in
+        /nix*|/dev/mmcblk0*|/run/hbp-ram-runtime/*)
+          echo "pid=$pid $k=$t cmd=$cmd"
+          ;;
+      esac
+    done
+
+    for fd in "$p"/fd/*; do
+      [ -e "$fd" ] || continue
+      t="$(readlink "$fd" 2>/dev/null || true)"
+      case "$t" in
+        /nix*|/dev/mmcblk0*|/run/hbp-ram-runtime/*)
+          echo "pid=$pid fd=$(basename "$fd")=$t cmd=$cmd"
+          ;;
+      esac
+    done
+  done
+}
+
+print_logs() {
+  echo "--- dmesg tail ---"
+  dmesg | tail -n 220 || true
+  echo "--- /log/debug.log tail ---"
+  tail -n 260 /log/debug.log 2>/dev/null || true
+  echo "--- /log/cups.log tail ---"
+  tail -n 260 /log/cups.log 2>/dev/null || true
+}
+
+{
+  header "$MODE"
+  print_mounts
+  print_ps
+  print_fuser
+  print_proc_holders
+  print_logs
+} >> "$OUT" 2>&1
+
+echo "$OUT"
