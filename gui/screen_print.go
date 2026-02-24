@@ -213,14 +213,29 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				}
 			case Button3:
 				if inp.Clicked(e.Button) {
+					printOpts := opts
 					if opts.PrinterLang == printer.PrinterLangBrotherHBP {
 						if ctx == nil || !ctx.HBPRuntimeReady {
 							s.showError(ctx, ops, th, fmt.Errorf("Brother HBP runtime is not prepared.\nReturn to start screen and enable HBP before SD removal"))
 							continue
 						}
+						if printOpts.DPI > 600 {
+							pages := estimateJobPages(desc, selectedPaper, printOpts)
+							if pages > 1 {
+								printOpts.DPI = 600
+								s.showNotice(ctx, ops, th, fmt.Sprintf("HBP 1200 DPI is only available for one-page jobs.\nThis job has %d pages, so DPI was set to 600.", pages))
+							}
+						}
+					}
+					if opts.PrinterLang == printer.PrinterLangPS && printOpts.DPI > 600 {
+						pages := estimateJobPages(desc, selectedPaper, printOpts)
+						if pages > 1 {
+							printOpts.DPI = 600
+							s.showNotice(ctx, ops, th, fmt.Sprintf("PS 1200 DPI is currently limited to one-page jobs.\nThis job has %d pages, so DPI was set to 600.", pages))
+						}
 					}
 					progress := &PrintProgressScreen{}
-					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper, opts)
+					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper, printOpts)
 					if err != nil && err.Error() != "print canceled" {
 						s.showError(ctx, ops, th, err)
 					}
@@ -473,6 +488,39 @@ func printerLangLabel(lang printer.PrinterLanguage) string {
 	return "PCL"
 }
 
+func estimateJobPages(desc *urtypes.OutputDescriptor, paper printer.PaperSize, opts printOptions) int {
+	walletShares := 1
+	if desc != nil {
+		walletShares = len(desc.Keys)
+	}
+	maxSlotsPerPage := 6
+	if paper == printer.PaperLetter {
+		maxSlotsPerPage = 4
+	}
+	slotsPerShare := 2
+	if desc == nil {
+		slotsPerShare = 1
+	}
+	if isCompact2of3Eligible(desc) && opts.Compact2of3 {
+		slotsPerShare = 1
+	}
+	if isSinglesigDescriptor(desc) && opts.Singlesig != printer.SinglesigLayoutSeedWithDescriptorQR {
+		slotsPerShare = 1
+	}
+	sharesPerPage := maxSlotsPerPage / slotsPerShare
+	if sharesPerPage < 1 {
+		sharesPerPage = 1
+	}
+	totalPages := (walletShares + sharesPerPage - 1) / sharesPerPage
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if opts.EtchStats {
+		totalPages++
+	}
+	return totalPages
+}
+
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
 	logutil.DebugLog("showError called with error: %v", err)
 	errScr := NewErrorScreen(err)
@@ -481,6 +529,17 @@ func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err er
 		dismissed := errScr.Layout(ctx, ops, th, dims)
 		if dismissed {
 			logutil.DebugLog("Error screen dismissed")
+			break
+		}
+		ctx.Frame()
+	}
+}
+
+func (s *PrintSeedScreen) showNotice(ctx *Context, ops op.Ctx, th *Colors, msg string) {
+	n := &ErrorScreen{Title: "Notice", Body: msg}
+	for {
+		dims := ctx.Platform.DisplaySize()
+		if n.Layout(ctx, ops, th, dims) {
 			break
 		}
 		ctx.Frame()
