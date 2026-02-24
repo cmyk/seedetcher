@@ -188,6 +188,7 @@ type Platform interface {
 	Debug() bool
 	Printer() io.Writer
 	PrepareHBPForSDRemoval() error
+	PrepareSDForRemoval() error
 	CreatePlates(ctx *Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error // Updated
 }
 
