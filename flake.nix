@@ -384,9 +384,14 @@
                 if [ -x ${popplerUtilsPkg}/bin/pdftops ]; then
                   ln -sf ${popplerUtilsPkg}/bin/pdftops initramfs/bin/pdftops
                 fi
+                cp ${./scripts/cups/cups-spike-bootstrap} initramfs/bin/cups-spike-bootstrap
+                cp ${./scripts/cups/cups-spike-ram-feasibility} initramfs/bin/cups-spike-ram-feasibility
+                cp ${./scripts/cups/print-hbp-pdf} initramfs/bin/print-hbp-pdf
+                chmod 0755 initramfs/bin/cups-spike-bootstrap initramfs/bin/cups-spike-ram-feasibility initramfs/bin/print-hbp-pdf
                 echo "CUPS_SPIKE=1" > initramfs/cups-spike.env
                 echo "BRLASER_ROOT=${brlaserPkg}" >> initramfs/cups-spike.env
                 echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-spike.env
+                echo "CUPS_SPIKE_EAGER_BOOT=0" >> initramfs/cups-spike.env
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
                 cp ${cupsSpikeStoreClosure}/store-paths initramfs/cups-spike-store-paths
                 chmod 0644 initramfs/cups-spike-store-paths
