@@ -227,7 +227,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 							}
 						}
 					}
-					if opts.PrinterLang == printer.PrinterLangPS && printOpts.DPI > 600 {
+					if ctx != nil && ctx.HBPRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && printOpts.DPI > 600 {
 						pages := estimateJobPages(desc, selectedPaper, printOpts)
 						if pages > 1 {
 							printOpts.DPI = 600

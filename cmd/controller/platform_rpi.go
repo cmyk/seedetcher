@@ -537,6 +537,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	if opts.DPI <= 0 {
 		opts.DPI = 1200
 	}
+	hbpRuntimeReady := ctx != nil && ctx.HBPRuntimeReady
 	if opts.PrinterLang == printer.PrinterLangBrotherHBP {
 		if opts.DPI > 600 {
 			// Allow 1200 only for one-page jobs to avoid multi-page OOM spikes.
@@ -547,10 +548,10 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		}
 		return p.createPlatesHBP(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
 	}
-	if opts.PrinterLang == printer.PrinterLangPS && opts.DPI > 600 {
+	if hbpRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && opts.DPI > 600 {
 		// PS rendering currently holds full raster pages in memory.
 		if estimateJobPages(desc, paper, opts) > 1 {
-			logutil.DebugLog("PS path: forcing 600 DPI for multi-page job")
+			logutil.DebugLog("PS path: forcing 600 DPI for multi-page job (HBP runtime enabled)")
 			opts.DPI = 600
 		}
 	}
