@@ -220,8 +220,11 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 							continue
 						}
 						if printOpts.DPI > 600 {
-							printOpts.DPI = 600
-							s.showNotice(ctx, ops, th, "Brother HBP currently uses 600 DPI.\nThis job was set to 600.")
+							pages := estimateJobPages(desc, selectedPaper, printOpts)
+							if pages > 1 {
+								printOpts.DPI = 600
+								s.showNotice(ctx, ops, th, fmt.Sprintf("HBP 1200 DPI is only available for one-page jobs.\nThis job has %d pages, so DPI was set to 600.", pages))
+							}
 						}
 					}
 					if ctx != nil && ctx.HBPRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && printOpts.DPI > 600 {
