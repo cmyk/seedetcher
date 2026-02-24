@@ -386,7 +386,26 @@ func formatMMCMounts(entries []mmcMount) string {
 	return strings.Join(parts, ", ")
 }
 
-func detachSDCardMountsFallback() error {
+func detachMountTarget(target string) bool {
+	if target == "" {
+		return false
+	}
+	if err := unix.Unmount(target, 0); err == nil {
+		return true
+	}
+	if err := unix.Unmount(target, unix.MNT_DETACH); err == nil {
+		return true
+	}
+	if _, err := runCommandWithOutput("umount", target); err == nil {
+		return true
+	}
+	if _, err := runCommandWithOutput("umount", "-l", target); err == nil {
+		return true
+	}
+	return false
+}
+
+func detachSDCardMountsFallback(restoreRAMNix bool) error {
 	syscall.Sync()
 	if _, err := exec.LookPath("blockdev"); err == nil {
 		_, _ = runCommandWithOutput("blockdev", "--flushbufs", "/dev/mmcblk0")
@@ -398,7 +417,7 @@ func detachSDCardMountsFallback() error {
 			return fmt.Errorf("scan mmc mounts: %w", err)
 		}
 		if len(parts) == 0 {
-			if !nixMountIsRAMBacked() {
+			if restoreRAMNix && !nixMountIsRAMBacked() {
 				if err := bindNixFromRAM(); err != nil {
 					return fmt.Errorf("restore RAM /nix bind: %w", err)
 				}
@@ -413,7 +432,7 @@ func detachSDCardMountsFallback() error {
 		if nixMountIsRAMBacked() {
 			for _, p := range parts {
 				if p.target == "/nix" {
-					if _, err := runCommandWithOutput("umount", "/nix"); err == nil {
+					if detachMountTarget("/nix") {
 						logutil.DebugLog("HBP prep fallback: unmounted top /nix layer to expose lower mount")
 						progress = true
 					}
@@ -427,16 +446,12 @@ func detachSDCardMountsFallback() error {
 			return fmt.Errorf("scan mmc mounts: %w", err)
 		}
 		for _, p := range parts {
-			if _, err := runCommandWithOutput("umount", p.target); err == nil {
-				progress = true
-				continue
-			}
-			if _, errLazy := runCommandWithOutput("umount", "-l", p.target); errLazy == nil {
+			if detachMountTarget(p.target) {
 				progress = true
 			}
 		}
 
-		if !nixMountIsRAMBacked() {
+		if restoreRAMNix && !nixMountIsRAMBacked() {
 			if err := bindNixFromRAM(); err == nil {
 				progress = true
 			}
@@ -453,6 +468,13 @@ func detachSDCardMountsFallback() error {
 		return fmt.Errorf("scan remaining mmc mounts: %w", err)
 	}
 	if len(remain) > 0 {
+		for _, p := range remain {
+			_ = detachMountTarget(p.target)
+		}
+		remain, _ = mountedMMCPartitions()
+		if len(remain) == 0 {
+			return nil
+		}
 		return fmt.Errorf("fallback detach incomplete: mounted partitions remain: %s", formatMMCMounts(remain))
 	}
 	return nil
@@ -479,7 +501,7 @@ func (p *Platform) PrepareHBPForSDRemoval() error {
 		msg := err.Error()
 		if nixMountIsRAMBacked() && (strings.Contains(msg, "/nix is not RAM-backed") || strings.Contains(msg, "mmc partitions still mounted")) {
 			logutil.DebugLog("HBP prep: detach helper failed with RAM-backed /nix, applying fallback SD detach")
-			return detachSDCardMountsFallback()
+			return detachSDCardMountsFallback(true)
 		}
 		return err
 	}
@@ -495,7 +517,7 @@ func (p *Platform) PrepareSDForRemoval() error {
 			logutil.DebugLog("SD prep: stopped cupsd:\n%s", out)
 		}
 	}
-	return detachSDCardMountsFallback()
+	return detachSDCardMountsFallback(false)
 }
 
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
