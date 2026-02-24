@@ -19,6 +19,14 @@ if [ "$DPI" -lt 300 ] || [ "$DPI" -gt 1200 ]; then
   exit 2
 fi
 
+# Brother HBP via brlaser currently produces wrong geometry when fed 1200dpi
+# cups-raster in this environment. Keep raster path at 600dpi for correctness.
+EFFECTIVE_DPI="$DPI"
+if [ "$DPI" -gt 600 ]; then
+  EFFECTIVE_DPI=600
+  echo "print-hbp-pdf: requested ${DPI}dpi, using ${EFFECTIVE_DPI}dpi for correct geometry on HBP path" >&2
+fi
+
 ensure_runtime_tools() {
   command -v lpadmin >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1 && return 0
 
@@ -32,6 +40,22 @@ ensure_runtime_tools() {
 
 if ! ensure_runtime_tools; then
   echo "print-hbp-pdf: CUPS tools unavailable (likely /nix not mounted). Run 'cups-spike-ram-feasibility stage core' before SD removal." >&2
+  exit 4
+fi
+
+ensure_cupsd_running() {
+  if [ -S "$SOCK" ]; then
+    return 0
+  fi
+  if [ -x /bin/cupsd ]; then
+    /bin/cupsd >/log/cups.log 2>&1 || true
+    sleep 1
+  fi
+  [ -S "$SOCK" ]
+}
+
+if ! ensure_cupsd_running; then
+  echo "print-hbp-pdf: cupsd socket '$SOCK' not available" >&2
   exit 4
 fi
 
@@ -113,7 +137,7 @@ ensure_hbp_queue() {
     PPD="$(find_brlaser_ppd "$MODEL_NAME")"
   fi
 
-  echo "print-hbp-pdf: queue='$QUEUE' model='$MODEL_NAME' uri='$URI' ppd='${PPD:-<none>}' dpi='$DPI'" >&2
+  echo "print-hbp-pdf: queue='$QUEUE' model='$MODEL_NAME' uri='$URI' ppd='${PPD:-<none>}' dpi='$DPI' effective_dpi='$EFFECTIVE_DPI'" >&2
   lpadmin -h "$SOCK" -x "$QUEUE" >/dev/null 2>&1 || true
   if [ -n "$PPD" ]; then
     if ! lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -P "$PPD" >/tmp/lpadmin-hbp.out 2>/tmp/lpadmin-hbp.err; then
@@ -135,6 +159,18 @@ if ! ensure_hbp_queue; then
   exit 3
 fi
 
+ensure_queue_ready() {
+  lpadmin -h "$SOCK" -p "$QUEUE" -E >/dev/null 2>&1 || true
+  if command -v cupsenable >/dev/null 2>&1; then
+    cupsenable -h "$SOCK" "$QUEUE" >/dev/null 2>&1 || true
+  fi
+  if command -v cupsaccept >/dev/null 2>&1; then
+    cupsaccept -h "$SOCK" "$QUEUE" >/dev/null 2>&1 || true
+  fi
+}
+
+ensure_queue_ready
+
 # SeedEtcher expects one immediate physical print, not backlog replay.
 # Clear any stale pending jobs on this queue before submitting the new one.
 if command -v cancel >/dev/null 2>&1; then
@@ -142,5 +178,9 @@ if command -v cancel >/dev/null 2>&1; then
 fi
 
 RAS="/tmp/print-hbp.ras"
-gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r"$DPI" -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
-lp -h "$SOCK" -d "$QUEUE" -o document-format=application/vnd.cups-raster "$RAS"
+gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r"$EFFECTIVE_DPI" -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
+lp -h "$SOCK" -d "$QUEUE" \
+  -o media=A4 \
+  -o Resolution="${EFFECTIVE_DPI}dpi" \
+  -o document-format=application/vnd.cups-raster \
+  "$RAS"
