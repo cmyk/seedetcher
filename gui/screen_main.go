@@ -33,9 +33,12 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			case Button1:
 				return s // No-op back on root
 			case Button3:
-				return &SDCardGateScreen{
+				return &HBPStartupGateScreen{
 					Theme: &singleTheme,
-					Next:  &ActionChoiceScreen{Theme: &singleTheme},
+					Next: &SDCardGateScreen{
+						Theme: &singleTheme,
+						Next:  &ActionChoiceScreen{Theme: &singleTheme},
+					},
 				}
 			}
 		}
@@ -57,6 +60,57 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		}...)
 		ctx.Frame()
 	}
+}
+
+// HBPStartupGateScreen runs before SD removal and allows optional Brother runtime prep.
+type HBPStartupGateScreen struct {
+	Theme *Colors
+	Next  Screen
+}
+
+func (s *HBPStartupGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
+	th := s.Theme
+	if th == nil {
+		th = &singleTheme
+	}
+	if ctx != nil && ctx.HBPRuntimeReady {
+		if s.Next != nil {
+			return s.Next
+		}
+		return &MainMenuScreen{}
+	}
+
+	choice, ok := (&ChoiceScreen{
+		Title:   "Brother HBP",
+		Lead:    "Enable experimental HBP support",
+		Choices: []string{"PCL/PS only", "Enable HBP"},
+		choice:  0,
+	}).Choose(ctx, ops, th)
+	if !ok {
+		return &MainMenuScreen{}
+	}
+	if choice == 0 {
+		if ctx != nil {
+			ctx.HBPRuntimeReady = false
+		}
+		if s.Next != nil {
+			return s.Next
+		}
+		return &MainMenuScreen{}
+	}
+
+	prep := &HBPRuntimePrepareScreen{}
+	if err := prep.Show(ctx, ops, th); err != nil {
+		showError(ctx, ops, th, err)
+		return &MainMenuScreen{}
+	}
+	if ctx != nil {
+		ctx.HBPRuntimeReady = true
+	}
+	if s.Next != nil {
+		return s.Next
+	}
+	return &MainMenuScreen{}
 }
 
 // BackupFlowScreen drives backup and print stages in the Screen loop.

@@ -145,7 +145,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				}
 			case "printerlang":
 				var next int
-				next, ok = chooseWithInitial("Printer Language", "If PCL prints blank pages,\ntry PS.", []string{"PCL", "PS"}, state.PrinterLang)
+				next, ok = choosePrinterLanguageOption(ctx, ops, th, state.PrinterLang, ctx != nil && ctx.HBPRuntimeReady)
 				if ok {
 					state.PrinterLang = next
 				}
@@ -194,6 +194,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		if state.PrinterLang == 1 {
 			opts.PrinterLang = printer.PrinterLangPS
 		}
+		if state.PrinterLang == 2 {
+			opts.PrinterLang = printer.PrinterLangBrotherHBP
+		}
 
 		updatePrinterStatus()
 		for {
@@ -210,6 +213,12 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				}
 			case Button3:
 				if inp.Clicked(e.Button) {
+					if opts.PrinterLang == printer.PrinterLangBrotherHBP {
+						if ctx == nil || !ctx.HBPRuntimeReady {
+							s.showError(ctx, ops, th, fmt.Errorf("Brother HBP runtime is not prepared.\nReturn to start screen and enable HBP before SD removal"))
+							continue
+						}
+					}
 					progress := &PrintProgressScreen{}
 					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper, opts)
 					if err != nil && err.Error() != "print canceled" {
@@ -404,6 +413,24 @@ func chooseSinglesigLayoutOption(ctx *Context, ops op.Ctx, th *Colors, initialCh
 	}
 }
 
+func choosePrinterLanguageOption(ctx *Context, ops op.Ctx, th *Colors, initialChoice int, hbpReady bool) (int, bool) {
+	choices := []string{"PCL", "PS"}
+	if hbpReady {
+		choices = append(choices, "Brother HBP")
+	}
+	choice := initialChoice
+	if choice < 0 || choice >= len(choices) {
+		choice = 0
+	}
+	cs := &ChoiceScreen{
+		Title:   "Printer Language",
+		Lead:    "Choose language",
+		Choices: choices,
+		choice:  choice,
+	}
+	return cs.Choose(ctx, ops, th)
+}
+
 func isCompact2of3Eligible(desc *urtypes.OutputDescriptor) bool {
 	if desc == nil {
 		return false
@@ -439,6 +466,9 @@ func onOff(v bool) string {
 func printerLangLabel(lang printer.PrinterLanguage) string {
 	if lang == printer.PrinterLangPS {
 		return "PS"
+	}
+	if lang == printer.PrinterLangBrotherHBP {
+		return "HBP"
 	}
 	return "PCL"
 }
@@ -498,6 +528,67 @@ func (s *PrintResultScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic 
 
 type PrintProgressScreen struct {
 	inp InputTracker
+}
+
+type HBPRuntimePrepareScreen struct {
+	inp InputTracker
+}
+
+func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) error {
+	if ctx == nil {
+		return fmt.Errorf("missing UI context")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ctx.Platform.PrepareHBPForSDRemoval()
+	}()
+
+	var (
+		finished bool
+		prepErr  error
+	)
+	for {
+		if !finished {
+			select {
+			case prepErr = <-done:
+				finished = true
+			default:
+			}
+		}
+
+		for {
+			e, ok := s.inp.Next(ctx, Button3)
+			if !ok {
+				break
+			}
+			if finished && prepErr == nil && s.inp.Clicked(e.Button) {
+				return nil
+			}
+		}
+
+		dims := ctx.Platform.DisplaySize()
+		op.ColorOp(ops, th.Background)
+		titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing HBP")
+		body := "Staging Brother runtime in RAM.\nRunning SD detach prep.\nPlease wait..."
+		if finished && prepErr == nil {
+			body = "Brother HBP is ready.\nSD card can now be removed safely."
+		}
+		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, body)
+
+		if finished && prepErr != nil {
+			return prepErr
+		}
+		if finished && prepErr == nil {
+			layoutNavigation(ctx, &s.inp, ops, th, dims, []NavButton{
+				{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
+			}...)
+		}
+		if !finished {
+			ctx.WakeupAt(ctx.Platform.Now().Add(200 * time.Millisecond))
+		}
+		ctx.Frame()
+	}
 }
 
 func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, printOpts printOptions) (bool, error) {
