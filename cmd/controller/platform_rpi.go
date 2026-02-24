@@ -948,11 +948,6 @@ func (p *Platform) createPlatesHBP(ctx *gui.Context, mnemonics []bip39.Mnemonic,
 	if desc != nil && !compactSingleSided {
 		prepareTotal *= 2
 	}
-	if progress != nil {
-		progress(printer.StageCompose, 0, int64(numBatches))
-		progress(printer.StageSend, 0, int64(numBatches))
-	}
-
 	for start := 0; start < totalShares; start += sharesPerBatch {
 		end := start + sharesPerBatch
 		if end > totalShares {

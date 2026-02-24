@@ -767,9 +767,9 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 			case printer.StagePrepare:
 				label = fmt.Sprintf("Rendering plates %d/%d", upd.current, upd.total)
 			case printer.StageCompose:
-				label = "Composing pages..."
+				label = fmt.Sprintf("Composing pages %d/%d", upd.current, upd.total)
 			case printer.StageSend:
-				label = "Sending to printer..."
+				label = fmt.Sprintf("Sending to printer %d/%d", upd.current, upd.total)
 			}
 		}
 		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
