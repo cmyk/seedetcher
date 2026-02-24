@@ -884,11 +884,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 	if err != nil {
 		return fmt.Errorf("render: plate bitmaps: %w", err)
 	}
-
-	pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, progress)
-	if err != nil {
-		return fmt.Errorf("render: compose pages: %w", err)
-	}
+	var extraPages []*image.Paletted
 	if opts.EtchStatsPage {
 		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, paper)
 		if err != nil {
@@ -898,14 +894,14 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		if err != nil {
 			return fmt.Errorf("stats: render page: %w", err)
 		}
-		pages = append(pages, statsPage)
+		extraPages = append(extraPages, statsPage)
 	}
 
 	printerDev := p.Printer()
 	if printerDev == nil {
 		return fmt.Errorf("no printer available")
 	}
-	return printer.WritePS(printerDev, pages, paper, progress)
+	return printer.WritePSPlates(printerDev, seedImgs, descImgs, paper, opts.DPI, extraPages, progress)
 }
 
 func (p *Platform) initSDCardNotifier() error {
