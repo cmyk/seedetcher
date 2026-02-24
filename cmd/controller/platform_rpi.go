@@ -487,6 +487,17 @@ func (p *Platform) PrepareHBPForSDRemoval() error {
 	return nil
 }
 
+func (p *Platform) PrepareSDForRemoval() error {
+	// PCL/PS-only flow: make SD removal safe by detaching mmc-backed mounts.
+	// Best-effort stop of cupsd first so unmount can complete cleanly.
+	if _, err := exec.LookPath("killall"); err == nil {
+		if out, err := runCommandWithOutput("killall", "cupsd"); err == nil && out != "" {
+			logutil.DebugLog("SD prep: stopped cupsd:\n%s", out)
+		}
+	}
+	return detachSDCardMountsFallback()
+}
+
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 
