@@ -3,7 +3,7 @@ set -eu
 
 BOOT_DEV="${SE_LOG_EXPORT_BOOT_DEV:-/dev/mmcblk0p1}"
 MNT="${SE_LOG_EXPORT_MNT:-/mnt/boot}"
-OUT_DIR_REL="${SE_LOG_EXPORT_DIR:-seedetcher-logs}"
+OUT_DIR_REL="${SE_LOG_EXPORT_DIR:-}"
 TS="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown)"
 HOST="$(uname -n 2>/dev/null || echo seedetcher)"
 OUT_BASE="${HOST}-${TS}"
@@ -15,7 +15,6 @@ need_cmd() {
   }
 }
 
-need_cmd tar
 need_cmd mkdir
 need_cmd cp
 
@@ -38,7 +37,11 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-OUT_DIR="$MNT/$OUT_DIR_REL"
+if [ -n "$OUT_DIR_REL" ]; then
+  OUT_DIR="$MNT/$OUT_DIR_REL"
+else
+  OUT_DIR="$MNT"
+fi
 mkdir -p "$OUT_DIR"
 
 WORK="/tmp/log-export-${OUT_BASE}"
@@ -67,10 +70,11 @@ fi
   echo "uname=$(uname -a 2>/dev/null || true)"
 } > "$WORK/manifest.txt"
 
-ARCHIVE="$OUT_DIR/${OUT_BASE}.tar.gz"
-tar -C "$WORK" -czf "$ARCHIVE" .
+DEST_DIR="$OUT_DIR/${OUT_BASE}"
+rm -rf "$DEST_DIR"
+mkdir -p "$DEST_DIR"
+cp -a "$WORK"/. "$DEST_DIR"/
 
 rm -rf "$WORK"
 sync
-echo "exported logs: $ARCHIVE"
-
+echo "exported logs: $DEST_DIR"
