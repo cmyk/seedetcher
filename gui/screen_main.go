@@ -29,15 +29,18 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			if !inp.Clicked(e.Button) {
 				continue
 			}
-			switch e.Button {
-			case Button1:
-				return s // No-op back on root
-			case Button3:
-				return &HBPStartupGateScreen{
-					Theme: &singleTheme,
-					Next: &SDCardGateScreen{
+				switch e.Button {
+				case Button1:
+					return s // No-op back on root
+				case Button3:
+					if ctx != nil {
+						ctx.SDRemovalPrepared = false
+					}
+					return &HBPStartupGateScreen{
 						Theme: &singleTheme,
-						Next:  &ActionChoiceScreen{Theme: &singleTheme},
+						Next: &SDCardGateScreen{
+							Theme: &singleTheme,
+							Next:  &ActionChoiceScreen{Theme: &singleTheme},
 					},
 				}
 			}
@@ -92,6 +95,11 @@ func (s *HBPStartupGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	if choice == 0 {
 		if ctx != nil {
 			ctx.HBPRuntimeReady = false
+			if err := ctx.Platform.PrepareSDForRemoval(); err != nil {
+				showError(ctx, ops, th, fmt.Errorf("SD removal prep failed: %v", err))
+				return &MainMenuScreen{}
+			}
+			ctx.SDRemovalPrepared = true
 		}
 		if s.Next != nil {
 			return s.Next
@@ -106,6 +114,7 @@ func (s *HBPStartupGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	}
 	if ctx != nil {
 		ctx.HBPRuntimeReady = true
+		ctx.SDRemovalPrepared = false
 	}
 	if s.Next != nil {
 		return s.Next

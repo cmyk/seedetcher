@@ -33,6 +33,7 @@ type Context struct {
 	PrinterConnected bool
 	PrinterModel     string
 	HBPRuntimeReady  bool
+	SDRemovalPrepared bool
 	RotateCamera     bool
 	LastDescriptor   *urtypes.OutputDescriptor
 	Keystores        map[uint32]bip39.Mnemonic // Fingerprint -> Mnemonic
