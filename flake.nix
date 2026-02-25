@@ -284,7 +284,6 @@
               ghostscriptPkg = crossPkgs.ghostscript;
               popplerUtilsPkg = crossPkgs.poppler_utils;
               brlaserPkg = self.packages.${system}.brlaser-se-runtime;
-              brlaserDropin = ./spike/brlaser-root.tar.gz;
               cupsSpikeStoreClosure = pkgs.closureInfo {
                 rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils brlaserPkg ];
               };
@@ -442,7 +441,6 @@
           mkimage = { debug, usbMode ? "gadget", cupsSpike ? false }:
             let
               pkgs = hostPkgs;
-              brlaserDropin = ./spike/brlaser-root.tar.gz;
               firmware = self.packages.${system}.firmware;
               kernel =
                 if debug then
@@ -581,10 +579,6 @@
                 # mcopy doesn't copy directories deterministically, so rely on sorted shell globbing
                 # instead.
                 ${pkgs.mtools}/bin/mcopy -bpm -i "boot.vfat@@$OFFSET" overlays/* ::overlays
-                ${if cupsSpike then ''
-                # Experimental: prebuilt brlaser drop-in for init.sh runtime loader.
-                ${pkgs.mtools}/bin/mcopy -bpm -i "boot.vfat@@$OFFSET" ${brlaserDropin} ::brlaser-root.tar.gz
-                '' else ""}
                 dd if=boot.vfat of=disk.img bs=512 seek="$START1" conv=notrunc status=none
 
                 ${if cupsSpike then ''
