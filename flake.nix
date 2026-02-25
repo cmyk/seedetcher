@@ -906,6 +906,8 @@ EOF
             image-gadget-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; };
             image-cups-spike = self.lib.${system}.mkimage { debug = false; usbMode = "host"; cupsSpike = true; };
             image-cups-spike-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; cupsSpike = true; };
+            image-cups-spike-gadget = self.lib.${system}.mkimage { debug = false; usbMode = "gadget"; cupsSpike = true; };
+            image-cups-spike-gadget-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; cupsSpike = true; };
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "reload" ''
               #!/bin/sh
