@@ -636,27 +636,23 @@ func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) err
 			}
 		}
 
-		dims := ctx.Platform.DisplaySize()
-		op.ColorOp(ops, th.Background)
-		titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing HBP")
-		body := "Staging Brother runtime in RAM.\nRunning SD detach prep.\nPlease wait..."
-		if finished && prepErr == nil {
-			body = "Brother HBP is ready.\nSD card can now be removed safely."
-		}
-		bodyRect := layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, body)
+			dims := ctx.Platform.DisplaySize()
+			op.ColorOp(ops, th.Background)
+			layoutTitle(ctx, ops, dims.X, th.Text, "Preparing HBP")
+			status := "Preparing Brother HBP runtime..."
+			if finished && prepErr == nil {
+				status = "Brother HBP is ready. SD can be removed safely."
+			}
 
-		if !finished {
-			barW := dims.X - 48
-			if barW < 120 {
-				barW = dims.X - 24
-			}
-			barH := 10
-			barX := (dims.X - barW) / 2
-			barY := bodyRect.Max.Y + 8
-			if barY+barH > dims.Y-leadingSize-8 {
-				barY = dims.Y - leadingSize - 8 - barH
-			}
-			barRect := image.Rect(barX, barY, barX+barW, barY+barH)
+			if !finished {
+				barW := dims.X - 48
+				if barW < 120 {
+					barW = dims.X - 24
+				}
+				barH := 10
+				barX := (dims.X - barW) / 2
+				barY := dims.Y/2 - barH/2
+				barRect := image.Rect(barX, barY, barX+barW, barY+barH)
 
 			track := color.NRGBA{R: th.Text.R, G: th.Text.G, B: th.Text.B, A: 70}
 			op.ClipOp(barRect).Add(ops.Begin())
@@ -683,13 +679,19 @@ func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) err
 			fillRect := image.Rect(barX, barY, barX+fillW, barY+barH)
 			op.ClipOp(fillRect).Add(ops.Begin())
 			op.ColorOp(ops, th.Text)
-			barFill := ops.End()
-			barFill.Add(ops)
-		}
+				barFill := ops.End()
+				barFill.Add(ops)
+			}
 
-		if finished && prepErr != nil {
-			return prepErr
-		}
+			r := layout.Rectangle{Max: dims}
+			_, bottom := r.CutTop(leadingSize)
+			_, lead := bottom.CutBottom(leadingSize)
+			sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", status)
+			op.Position(ops, ops.End(), lead.Center(sz))
+
+			if finished && prepErr != nil {
+				return prepErr
+			}
 		if finished && prepErr == nil {
 			duration := ctx.Platform.Now().Sub(startedAt)
 			if duration > 0 {
