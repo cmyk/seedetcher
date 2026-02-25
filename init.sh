@@ -121,7 +121,7 @@ run_log_export() {
         return 0
     fi
     echo "log-export: reason=${reason} start" >> /log/init_debug.log
-    if /bin/export-logs-to-sd >> /log/init_debug.log 2>&1; then
+    if /bin/export-logs-to-sd "$reason" >> /log/init_debug.log 2>&1; then
         echo "log-export: reason=${reason} done" >> /log/init_debug.log
         return 0
     fi

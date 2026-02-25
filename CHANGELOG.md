@@ -4,7 +4,7 @@
 - Debug-image diagnostics:
   - added `export-logs-to-sd` helper to write a privacy-first, plain-directory snapshot on the boot partition (`SE-LOGS-LATEST`),
   - export payload is now strict allowlist only: `init_debug.log`, CUPS logs, `dmesg`, and manifest metadata (no `/proc`/`/tmp` dump),
-  - export now attempts a best-effort PJL capability snapshot (`INFO VARIABLES/CONFIG/STATUS`, `INQUIRE RESOLUTION`) when printer access is available,
+  - export now attempts a best-effort PJL capability snapshot from `INFO VARIABLES` when printer access is available (skipped for boot-triggered exports),
   - UI error screens now trigger best-effort SD log export (rate-limited) to improve field-debug capture on failures,
   - debug images now auto-run this export with boot-time retries and again when `controller` exits, so UART/manual shell access is not required to collect logs,
   - default export folder name is now `SE-LOGS-<timestamp>` at boot-partition root for easy retrieval on desktop OSes,

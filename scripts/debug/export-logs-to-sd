@@ -4,6 +4,7 @@ set -eu
 BOOT_DEV="${SE_LOG_EXPORT_BOOT_DEV:-/dev/mmcblk0p1}"
 MNT="${SE_LOG_EXPORT_MNT:-/mnt}"
 OUT_DIR_REL="${SE_LOG_EXPORT_DIR:-}"
+REASON="${1:-manual}"
 TS="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown)"
 OUT_BASE="${SE_LOG_EXPORT_BASENAME:-SE-LOGS}"
 HOST="$(uname -n 2>/dev/null || echo seedetcher)"
@@ -62,12 +63,18 @@ if command -v dmesg >/dev/null 2>&1; then
   dmesg > "$WORK/dmesg.txt" 2>/dev/null || true
 fi
 
-if [ -x /bin/pjl-snapshot ]; then
-  /bin/pjl-snapshot "$WORK" >/dev/null 2>&1 || true
-fi
+case "$REASON" in
+  boot*) ;;
+  *)
+    if [ -x /bin/pjl-snapshot ]; then
+      /bin/pjl-snapshot "$WORK" >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
 
 {
   echo "timestamp=${TS}"
+  echo "reason=${REASON}"
   echo "host=${HOST}"
   echo "boot_dev=${BOOT_DEV}"
   echo "uname=$(uname -a 2>/dev/null || true)"
