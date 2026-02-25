@@ -2,7 +2,7 @@
 set -eu
 
 BOOT_DEV="${SE_LOG_EXPORT_BOOT_DEV:-/dev/mmcblk0p1}"
-MNT="${SE_LOG_EXPORT_MNT:-/mnt/boot}"
+MNT="${SE_LOG_EXPORT_MNT:-/mnt}"
 OUT_DIR_REL="${SE_LOG_EXPORT_DIR:-}"
 TS="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown)"
 OUT_BASE="${SE_LOG_EXPORT_BASENAME:-SE-LOGS}"
@@ -23,31 +23,23 @@ if [ ! -b "$BOOT_DEV" ]; then
 fi
 
 mounted_here=0
-mountpoint=""
-# If BOOT_DEV is already mounted elsewhere, reuse that mountpoint.
-if mountpoint="$(awk -v d="$BOOT_DEV" '$1==d{print $2; exit}' /proc/mounts)"; then
-  :
-fi
-if [ -z "${mountpoint:-}" ]; then
-  mkdir -p "$MNT"
-  mountpoint="$MNT"
-  if ! awk -v m="$mountpoint" '$2==m{found=1} END{exit found?0:1}' /proc/mounts; then
-    mount -t vfat "$BOOT_DEV" "$mountpoint"
-    mounted_here=1
-  fi
+mkdir -p "$MNT"
+if ! awk -v m="$MNT" '$2==m{found=1} END{exit found?0:1}' /proc/mounts; then
+  mount -t vfat "$BOOT_DEV" "$MNT"
+  mounted_here=1
 fi
 
 cleanup() {
   if [ "$mounted_here" = "1" ]; then
-    umount "$mountpoint" >/dev/null 2>&1 || true
+    umount "$MNT" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT INT TERM
 
 if [ -n "$OUT_DIR_REL" ]; then
-  OUT_DIR="$mountpoint/$OUT_DIR_REL"
+  OUT_DIR="$MNT/$OUT_DIR_REL"
 else
-  OUT_DIR="$mountpoint"
+  OUT_DIR="$MNT"
 fi
 mkdir -p "$OUT_DIR"
 
