@@ -113,6 +113,20 @@ ls -l /controller >> /log/init_debug.log 2>&1
 debug_echo "Starting controller..."
 # Ensure controller’s stdout/stderr go to log; stdin from controller TTY if present
 /controller < "$CTRL_TTY" >> /log/debug.log 2>> /log/debug.log &
+CONTROLLER_PID=$!
+
+# Debug image helper: if controller exits, export logs to SD automatically
+# so beta users can retrieve diagnostics without UART access.
+if [ -x /bin/export-logs-to-sd ]; then
+    (
+        pid="$CONTROLLER_PID"
+        while kill -0 "$pid" 2>/dev/null; do
+            sleep 1
+        done
+        echo "controller-exit: pid=$pid, exporting logs to SD..." >> /log/init_debug.log
+        /bin/export-logs-to-sd >> /log/init_debug.log 2>&1 || true
+    ) &
+fi
 
 # Wait until the controller process is fully running
 while ! pidof controller > /dev/null; do
