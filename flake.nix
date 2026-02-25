@@ -360,7 +360,9 @@
                 chmod 0755 initramfs/bin/sd-removal-dump
                 ${if debug then ''
                 cp ${./scripts/debug/export-logs-to-sd} initramfs/bin/export-logs-to-sd
+                cp ${./scripts/debug/pjl-snapshot} initramfs/bin/pjl-snapshot
                 chmod 0755 initramfs/bin/export-logs-to-sd
+                chmod 0755 initramfs/bin/pjl-snapshot
                 '' else ""}
 
                 # Debug output

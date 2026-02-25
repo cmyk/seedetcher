@@ -62,6 +62,10 @@ if command -v dmesg >/dev/null 2>&1; then
   dmesg > "$WORK/dmesg.txt" 2>/dev/null || true
 fi
 
+if [ -x /bin/pjl-snapshot ]; then
+  /bin/pjl-snapshot "$WORK" >/dev/null 2>&1 || true
+fi
+
 {
   echo "timestamp=${TS}"
   echo "host=${HOST}"
