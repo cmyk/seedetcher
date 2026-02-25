@@ -6,6 +6,7 @@ MNT="${SE_LOG_EXPORT_MNT:-/mnt}"
 OUT_DIR_REL="${SE_LOG_EXPORT_DIR:-}"
 TS="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown)"
 OUT_BASE="${SE_LOG_EXPORT_BASENAME:-SE-LOGS}"
+HOST="$(uname -n 2>/dev/null || echo seedetcher)"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
