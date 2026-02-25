@@ -67,7 +67,7 @@ func triggerErrorLogExport(ctx *Context, err error) {
 	}
 	ctx.LastErrorExport = now
 	go func(msg string) {
-		cmd := exec.Command("/bin/export-logs-to-sd")
+		cmd := exec.Command("/bin/export-logs-to-sd", "ui-error")
 		if out, runErr := cmd.CombinedOutput(); runErr != nil {
 			logutil.DebugLog("error-export failed: %v; out=%s", runErr, strings.TrimSpace(string(out)))
 			return
