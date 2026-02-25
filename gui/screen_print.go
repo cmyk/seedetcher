@@ -819,11 +819,14 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 			case printer.StageCompose:
 				label = fmt.Sprintf("Composing pages %d/%d", upd.current, upd.total)
 			case printer.StageSend:
-				label = "Sending to printer"
+				label = "Sending job to printer"
 			}
 		}
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
-		op.Position(ops, ops.End(), content.Center(sz).Add(image.Pt(0, assets.ProgressCircle.Bounds().Dy()/2+17)))
+			sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
+			r := layout.Rectangle{Max: dims}
+			_, bottom := r.CutTop(leadingSize)
+			_, lead := bottom.CutBottom(leadingSize)
+			op.Position(ops, ops.End(), lead.Center(sz))
 
 		layoutNavigation(ctx, &s.inp, ops, th, dims)
 		ctx.Frame()
