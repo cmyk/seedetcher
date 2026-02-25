@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"syscall"
 
+	"golang.org/x/sys/unix"
 	"seedetcher.com/logutil"
 )
 

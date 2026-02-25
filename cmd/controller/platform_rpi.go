@@ -3,35 +3,23 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
-	"errors"
 	"fmt"
 	"image"
 	"image/draw"
 	"io"
 	"log"
 	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
 	"runtime"
 	rdebug "runtime/debug"
-	"strings"
-	"syscall"
-	"time"
-	"unsafe"
-
-	"golang.org/x/sys/unix"
-	"seedetcher.com/bc/urtypes"
-	"seedetcher.com/bip39"
 	"seedetcher.com/driver/drm"
 	"seedetcher.com/driver/libcamera"
 	"seedetcher.com/driver/wshat"
 	"seedetcher.com/gui"
 	"seedetcher.com/logutil"
-	"seedetcher.com/printer"
 	"seedetcher.com/zbar"
+	"strings"
+	"syscall"
+	"time"
 )
 
 // Debug hooks (ensure unique per build tag if needed, but keep as is for now).
