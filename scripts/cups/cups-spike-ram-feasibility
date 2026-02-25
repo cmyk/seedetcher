@@ -232,6 +232,15 @@ copy_roots() {
   while read -r r; do
     [ -e "$r" ] || continue
     n=$((n + 1))
+    dest="$RAM_ROOT/nix/store/$(basename "$r")"
+    if [ -e "$dest" ]; then
+      src_real="$(readlink -f "$r" 2>/dev/null || true)"
+      dst_real="$(readlink -f "$dest" 2>/dev/null || true)"
+      if [ -n "$src_real" ] && [ "$src_real" = "$dst_real" ]; then
+        echo "copy[$n]: $r (already staged)"
+        continue
+      fi
+    fi
     echo "copy[$n]: $r"
     cp -a "$r" "$RAM_ROOT/nix/store/"
   done < "$TMP_LIST"
@@ -375,6 +384,22 @@ detach_sd() {
   echo "SD detach prep complete: no mmcblk0p* mounts remain."
 }
 
+nix_is_ram_backed() {
+  src="$(awk '$2=="/nix"{print $1}' /proc/mounts | tail -n 1)"
+  fstype="$(awk '$2=="/nix"{print $3}' /proc/mounts | tail -n 1)"
+  if [ "$src" = "$RAM_ROOT/nix" ] || [ "$fstype" = "tmpfs" ]; then
+    return 0
+  fi
+  if [ -d /nix/store ] && [ -d "$RAM_ROOT/nix/store" ]; then
+    nix_store="$(readlink -f /nix/store 2>/dev/null || true)"
+    ram_store="$(readlink -f "$RAM_ROOT/nix/store" 2>/dev/null || true)"
+    if [ -n "$nix_store" ] && [ "$nix_store" = "$ram_store" ]; then
+      return 0
+    fi
+  fi
+  return 1
+}
+
 ACTION="${1:-}"
 MODE="${2:-core}"
 
@@ -394,6 +419,12 @@ case "$ACTION" in
       *) usage; exit 2 ;;
     esac
     summarize_estimate "$MODE"
+    if nix_is_ram_backed; then
+      echo "stage: /nix already RAM-backed; skipping copy"
+      report_mem "after-stage"
+      run_check
+      exit 0
+    fi
     kib="$(estimate_kib)"
     size_opt="${HBP_RAM_SIZE:-$(default_tmpfs_size "$kib")}"
     report_mem "before-stage"
