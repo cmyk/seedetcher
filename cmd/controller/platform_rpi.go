@@ -39,31 +39,6 @@ var (
 	initHook func(p *Platform) error
 )
 
-// queryPrinterCapabilities sends a PJL query and parses the response for PCL/PostScript support
-func queryPrinterCapabilities(w io.Writer, r io.Reader) (supportsPCL, supportsPostScript bool, err error) {
-	// PJL query for printer language
-	query := []byte("\033%-12345X@PJL INFO VARIABLES\r\n\033%-12345X")
-	if _, err = w.Write(query); err != nil {
-		logutil.DebugLog("PJL query failed: %v", err)
-		return false, false, err
-	}
-
-	// Read response (simplified, assumes line-based response)
-	buf := make([]byte, 1024)
-	n, err := r.Read(buf)
-	if err != nil {
-		logutil.DebugLog("Failed to read PJL response: %v", err)
-		return false, false, err
-	}
-	response := string(buf[:n])
-	logutil.DebugLog("PJL response: %s", response)
-
-	// Parse for PCL and PostScript (simplified, adjust for actual printer response)
-	supportsPCL = strings.Contains(response, "PCL")
-	supportsPostScript = strings.Contains(response, "POSTSCRIPT")
-	return supportsPCL, supportsPostScript, nil
-}
-
 type Platform struct {
 	display *drm.LCD
 	events  chan gui.Event
@@ -76,11 +51,10 @@ type Platform struct {
 		close  func()
 		active bool
 	}
-	printerCached      io.Writer
-	supportsPCL        bool
-	supportsPostScript bool
-	hostPCLForce600    bool
-	printing           bool // Add flag to track printing state
+	printerCached   io.Writer
+	supportsPCL     bool
+	hostPCLForce600 bool
+	printing        bool // Add flag to track printing state
 }
 
 func isDeviceWriteEIO(err error) bool {
@@ -290,9 +264,8 @@ func (p *Platform) Printer() io.Writer {
 		} else {
 			p.supportsPCL = false
 		}
-		p.supportsPostScript = false
 		p.printerCached = printer
-		logutil.DebugLog("Printer initialized: dev=%s PCL=%v PS=%v", dev, p.supportsPCL, p.supportsPostScript)
+		logutil.DebugLog("Printer initialized: dev=%s PCL=%v", dev, p.supportsPCL)
 		return printer
 	}
 	p.printerCached = os.Stderr
@@ -1353,13 +1326,6 @@ func mountFS() error {
 		}
 	}
 	return nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func releaseMemory() {
