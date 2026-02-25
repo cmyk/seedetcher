@@ -687,7 +687,7 @@ func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) err
 			_, bottom := r.CutTop(leadingSize)
 			_, lead := bottom.CutBottom(leadingSize)
 			sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", status)
-			op.Position(ops, ops.End(), lead.Center(sz).Add(image.Pt(0, 12)))
+			op.Position(ops, ops.End(), lead.Center(sz))
 
 			if finished && prepErr != nil {
 				return prepErr
@@ -828,7 +828,7 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 				r := layout.Rectangle{Max: dims}
 				_, bottom := r.CutTop(leadingSize)
 				_, lead := bottom.CutBottom(leadingSize)
-				op.Position(ops, ops.End(), lead.Center(sz).Add(image.Pt(0, 12)))
+				op.Position(ops, ops.End(), lead.Center(sz))
 
 		layoutNavigation(ctx, &s.inp, ops, th, dims)
 		ctx.Frame()
