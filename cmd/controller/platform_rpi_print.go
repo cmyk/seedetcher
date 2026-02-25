@@ -29,13 +29,9 @@ func isDeviceWriteEIO(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "/dev/usb/lp0") && strings.Contains(msg, "input/output error")
 }
+
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
-
-	connected, _ := p.PrinterStatus()
-	if !connected {
-		return fmt.Errorf("printer not connected")
-	}
 
 	releaseMemory()
 	p.printing = true
@@ -626,6 +622,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 	}
 	return printer.WritePSPlates(printerDev, seedImgs, descImgs, paper, opts.DPI, extraPages, progress)
 }
+
 func estimateJobPages(desc *urtypes.OutputDescriptor, paper printer.PaperSize, opts printer.RasterOptions) int {
 	walletShares := 1
 	if desc != nil {
