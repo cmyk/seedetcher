@@ -135,11 +135,11 @@ if [ -x /bin/export-logs-to-sd ]; then
     (
         n=0
         while [ "$n" -lt 8 ]; do
-            sleep 15
             if run_log_export "boot-$n"; then
                 break
             fi
             n=$((n + 1))
+            sleep 15
         done
     ) &
     (
