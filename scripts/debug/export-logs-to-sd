@@ -1,0 +1,76 @@
+#!/bin/sh
+set -eu
+
+BOOT_DEV="${SE_LOG_EXPORT_BOOT_DEV:-/dev/mmcblk0p1}"
+MNT="${SE_LOG_EXPORT_MNT:-/mnt/boot}"
+OUT_DIR_REL="${SE_LOG_EXPORT_DIR:-seedetcher-logs}"
+TS="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown)"
+HOST="$(uname -n 2>/dev/null || echo seedetcher)"
+OUT_BASE="${HOST}-${TS}"
+
+need_cmd() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "missing required command: $1" >&2
+    exit 1
+  }
+}
+
+need_cmd tar
+need_cmd mkdir
+need_cmd cp
+
+if [ ! -b "$BOOT_DEV" ]; then
+  echo "boot device not found: $BOOT_DEV" >&2
+  exit 1
+fi
+
+mkdir -p "$MNT"
+mounted_here=0
+if ! awk -v m="$MNT" '$2==m{found=1} END{exit found?0:1}' /proc/mounts; then
+  mount -t vfat "$BOOT_DEV" "$MNT"
+  mounted_here=1
+fi
+
+cleanup() {
+  if [ "$mounted_here" = "1" ]; then
+    umount "$MNT" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup EXIT INT TERM
+
+OUT_DIR="$MNT/$OUT_DIR_REL"
+mkdir -p "$OUT_DIR"
+
+WORK="/tmp/log-export-${OUT_BASE}"
+rm -rf "$WORK"
+mkdir -p "$WORK"
+
+mkdir -p "$WORK/log" "$WORK/var-log-cups" "$WORK/proc" "$WORK/tmp"
+
+cp -a /log/. "$WORK/log/" 2>/dev/null || true
+cp -a /var/log/cups/. "$WORK/var-log-cups/" 2>/dev/null || true
+cp -a /tmp/*.err "$WORK/tmp/" 2>/dev/null || true
+cp -a /tmp/*.out "$WORK/tmp/" 2>/dev/null || true
+
+cp /proc/cmdline "$WORK/proc/cmdline" 2>/dev/null || true
+cp /proc/mounts "$WORK/proc/mounts" 2>/dev/null || true
+cp /proc/meminfo "$WORK/proc/meminfo" 2>/dev/null || true
+
+if command -v dmesg >/dev/null 2>&1; then
+  dmesg > "$WORK/dmesg.txt" 2>/dev/null || true
+fi
+
+{
+  echo "timestamp=${TS}"
+  echo "host=${HOST}"
+  echo "boot_dev=${BOOT_DEV}"
+  echo "uname=$(uname -a 2>/dev/null || true)"
+} > "$WORK/manifest.txt"
+
+ARCHIVE="$OUT_DIR/${OUT_BASE}.tar.gz"
+tar -C "$WORK" -czf "$ARCHIVE" .
+
+rm -rf "$WORK"
+sync
+echo "exported logs: $ARCHIVE"
+

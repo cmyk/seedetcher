@@ -358,6 +358,10 @@
                 chmod +x initramfs/bin/readelf
                 cp ${./scripts/debug/sd-removal-dump} initramfs/bin/sd-removal-dump
                 chmod 0755 initramfs/bin/sd-removal-dump
+                ${if debug then ''
+                cp ${./scripts/debug/export-logs-to-sd} initramfs/bin/export-logs-to-sd
+                chmod 0755 initramfs/bin/export-logs-to-sd
+                '' else ""}
 
                 # Debug output
                 echo "Verifying readelf:"
