@@ -5,8 +5,7 @@ BOOT_DEV="${SE_LOG_EXPORT_BOOT_DEV:-/dev/mmcblk0p1}"
 MNT="${SE_LOG_EXPORT_MNT:-/mnt/boot}"
 OUT_DIR_REL="${SE_LOG_EXPORT_DIR:-}"
 TS="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo unknown)"
-HOST="$(uname -n 2>/dev/null || echo seedetcher)"
-OUT_BASE="${HOST}-${TS}"
+OUT_BASE="${SE_LOG_EXPORT_BASENAME:-SE-LOGS}-${TS}"
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1 || {
