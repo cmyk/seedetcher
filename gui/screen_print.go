@@ -67,6 +67,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	printer.SetWalletLabel(label)
 	inp := &s.inp
 	state := loadPrintSetupState()
+	hbpLocked := ctx != nil && ctx.HBPRuntimeReady
 	setupSteps := make([]string, 0, 8)
 	if isSinglesigDescriptor(desc) {
 		setupSteps = append(setupSteps, "singlesig")
@@ -74,7 +75,14 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	if isCompact2of3Eligible(desc) {
 		setupSteps = append(setupSteps, "compact")
 	}
-	setupSteps = append(setupSteps, "paper", "dpi", "invert", "mirror", "stats", "printerlang")
+	setupSteps = append(setupSteps, "paper")
+	if !hbpLocked {
+		setupSteps = append(setupSteps, "dpi")
+	}
+	setupSteps = append(setupSteps, "invert", "mirror", "stats")
+	if !hbpLocked {
+		setupSteps = append(setupSteps, "printerlang")
+	}
 	stepIdx := 0
 
 	updatePrinterStatus := func() {
@@ -183,20 +191,27 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			Singlesig:   printer.SinglesigLayoutSeedWithInfo,
 			PrinterLang: printer.PrinterLangPCL,
 		}
-		if state.DPIChoice == 1 {
+		if hbpLocked {
 			opts.DPI = 600
+			opts.PrinterLang = printer.PrinterLangBrotherHBP
+			state.DPIChoice = 1
+			state.PrinterLang = 2
+		} else {
+			if state.DPIChoice == 1 {
+				opts.DPI = 600
+			}
+			if state.PrinterLang == 1 {
+				opts.PrinterLang = printer.PrinterLangPS
+			}
+			if state.PrinterLang == 2 {
+				opts.PrinterLang = printer.PrinterLangBrotherHBP
+			}
 		}
 		switch state.SinglesigChoice {
 		case 0:
 			opts.Singlesig = printer.SinglesigLayoutSeedOnly
 		case 2:
 			opts.Singlesig = printer.SinglesigLayoutSeedWithDescriptorQR
-		}
-		if state.PrinterLang == 1 {
-			opts.PrinterLang = printer.PrinterLangPS
-		}
-		if state.PrinterLang == 2 {
-			opts.PrinterLang = printer.PrinterLangBrotherHBP
 		}
 
 		updatePrinterStatus()
@@ -222,7 +237,6 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 						}
 						if printOpts.DPI != 600 {
 							printOpts.DPI = 600
-							s.showNotice(ctx, ops, th, "HBP mode uses 600 DPI.\nDPI was set to 600 for this print.")
 						}
 					}
 					if ctx != nil && ctx.HBPRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && printOpts.DPI > 600 {
@@ -637,20 +651,20 @@ func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) err
 			}
 		}
 
-			dims := ctx.Platform.DisplaySize()
-			op.ColorOp(ops, th.Background)
-			titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing HBP")
-			status := "Preparing Brother HBP runtime..."
+		dims := ctx.Platform.DisplaySize()
+		op.ColorOp(ops, th.Background)
+		titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing HBP")
+		status := "Preparing Brother HBP runtime..."
 
-			if !finished {
-				barW := dims.X - 48
-				if barW < 120 {
-					barW = dims.X - 24
-				}
-				barH := 10
-				barX := (dims.X - barW) / 2
-				barY := dims.Y/2 - barH/2
-				barRect := image.Rect(barX, barY, barX+barW, barY+barH)
+		if !finished {
+			barW := dims.X - 48
+			if barW < 120 {
+				barW = dims.X - 24
+			}
+			barH := 10
+			barX := (dims.X - barW) / 2
+			barY := dims.Y/2 - barH/2
+			barRect := image.Rect(barX, barY, barX+barW, barY+barH)
 
 			track := color.NRGBA{R: th.Text.R, G: th.Text.G, B: th.Text.B, A: 70}
 			op.ClipOp(barRect).Add(ops.Begin())
@@ -677,19 +691,19 @@ func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) err
 			fillRect := image.Rect(barX, barY, barX+fillW, barY+barH)
 			op.ClipOp(fillRect).Add(ops.Begin())
 			op.ColorOp(ops, th.Text)
-				barFill := ops.End()
-				barFill.Add(ops)
-			}
+			barFill := ops.End()
+			barFill.Add(ops)
+		}
 
-			if finished && prepErr == nil {
-				layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, "Brother HBP is ready.\nSD card can now be removed safely.")
-			} else {
-				layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, status)
-			}
+		if finished && prepErr == nil {
+			layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, "Brother HBP is ready.\nSD card can now be removed safely.")
+		} else {
+			layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, status)
+		}
 
-			if finished && prepErr != nil {
-				return prepErr
-			}
+		if finished && prepErr != nil {
+			return prepErr
+		}
 		if finished && prepErr == nil {
 			duration := ctx.Platform.Now().Sub(startedAt)
 			if duration > 0 {
@@ -822,11 +836,11 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 				label = "Sending job to printer"
 			}
 		}
-				sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
-				r := layout.Rectangle{Max: dims}
-				_, bottom := r.CutTop(leadingSize)
-				_, lead := bottom.CutBottom(leadingSize)
-				op.Position(ops, ops.End(), lead.Center(sz))
+		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
+		r := layout.Rectangle{Max: dims}
+		_, bottom := r.CutTop(leadingSize)
+		_, lead := bottom.CutBottom(leadingSize)
+		op.Position(ops, ops.End(), lead.Center(sz))
 
 		layoutNavigation(ctx, &s.inp, ops, th, dims)
 		ctx.Frame()
