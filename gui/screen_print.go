@@ -530,6 +530,7 @@ func estimateJobPages(desc *urtypes.OutputDescriptor, paper printer.PaperSize, o
 
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
 	logutil.DebugLog("showError called with error: %v", err)
+	triggerErrorLogExport(ctx, err)
 	errScr := NewErrorScreen(err)
 	for {
 		dims := ctx.Platform.DisplaySize()
