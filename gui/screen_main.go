@@ -29,18 +29,18 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			if !inp.Clicked(e.Button) {
 				continue
 			}
-				switch e.Button {
-				case Button1:
-					return s // No-op back on root
-				case Button3:
-					if ctx != nil {
-						ctx.SDRemovalPrepared = false
-					}
-					return &HBPStartupGateScreen{
+			switch e.Button {
+			case Button1:
+				return s // No-op back on root
+			case Button3:
+				if ctx != nil {
+					ctx.SDRemovalPrepared = false
+				}
+				return &HBPStartupGateScreen{
+					Theme: &singleTheme,
+					Next: &SDCardGateScreen{
 						Theme: &singleTheme,
-						Next: &SDCardGateScreen{
-							Theme: &singleTheme,
-							Next:  &ActionChoiceScreen{Theme: &singleTheme},
+						Next:  &ActionChoiceScreen{Theme: &singleTheme},
 					},
 				}
 			}
@@ -84,10 +84,11 @@ func (s *HBPStartupGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	}
 
 	choice, ok := (&ChoiceScreen{
-		Title:   "Brother HBP",
-		Lead:    "Enable experimental HBP support",
-		Choices: []string{"PCL/PS only", "Enable HBP"},
-		choice:  0,
+		Title:    "Brother HBP",
+		Lead:     "Prefer PCL/PS: faster and lower RAM.\nUse HBP (600dpi cap) only if printer lacks PCL/PS.",
+		Choices:  []string{"PCL/PS only", "Enable HBP"},
+		LeadLeft: true,
+		choice:   0,
 	}).Choose(ctx, ops, th)
 	if !ok {
 		return &MainMenuScreen{}
