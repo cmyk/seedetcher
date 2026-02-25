@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"os/exec"
 	"strings"
 	"time"
 
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/gui/widget"
+	"seedetcher.com/logutil"
 )
 
 type errDuplicateKey struct {
@@ -43,6 +45,7 @@ func NewErrorScreen(err error) *ErrorScreen {
 }
 
 func showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
+	triggerErrorLogExport(ctx, err)
 	scr := NewErrorScreen(err)
 	for {
 		dims := ctx.Platform.DisplaySize()
@@ -51,6 +54,26 @@ func showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
 		}
 		ctx.Frame()
 	}
+}
+
+func triggerErrorLogExport(ctx *Context, err error) {
+	if ctx == nil {
+		return
+	}
+	now := ctx.Platform.Now()
+	// Avoid excessive SD writes when the same failing action repeats.
+	if !ctx.LastErrorExport.IsZero() && now.Sub(ctx.LastErrorExport) < 60*time.Second {
+		return
+	}
+	ctx.LastErrorExport = now
+	go func(msg string) {
+		cmd := exec.Command("/bin/export-logs-to-sd")
+		if out, runErr := cmd.CombinedOutput(); runErr != nil {
+			logutil.DebugLog("error-export failed: %v; out=%s", runErr, strings.TrimSpace(string(out)))
+			return
+		}
+		logutil.DebugLog("error-export done for UI error: %s", msg)
+	}(err.Error())
 }
 
 type ErrorScreen struct {
