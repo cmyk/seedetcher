@@ -121,16 +121,26 @@ run_log_export() {
         return 0
     fi
     echo "log-export: reason=${reason} start" >> /log/init_debug.log
-    /bin/export-logs-to-sd >> /log/init_debug.log 2>&1 || true
-    echo "log-export: reason=${reason} done" >> /log/init_debug.log
+    if /bin/export-logs-to-sd >> /log/init_debug.log 2>&1; then
+        echo "log-export: reason=${reason} done" >> /log/init_debug.log
+        return 0
+    fi
+    echo "log-export: reason=${reason} failed" >> /log/init_debug.log
+    return 1
 }
 
 # Debug image helper: export logs once after boot and again if controller exits.
 # This ensures beta users can retrieve logs from SD without UART access.
 if [ -x /bin/export-logs-to-sd ]; then
     (
-        sleep 45
-        run_log_export "boot"
+        n=0
+        while [ "$n" -lt 8 ]; do
+            sleep 15
+            if run_log_export "boot-$n"; then
+                break
+            fi
+            n=$((n + 1))
+        done
     ) &
     (
         pid="$CONTROLLER_PID"

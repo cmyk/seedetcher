@@ -3,7 +3,8 @@
 ## Unreleased
 - Debug-image diagnostics:
   - added `export-logs-to-sd` helper to bundle `/log`, CUPS logs, temp `*.err`/`*.out`, `dmesg`, and basic `/proc` state directly on the boot partition for beta support collection (plain directory, no archive),
-  - debug images now auto-run this export once shortly after boot and again when `controller` exits, so UART/manual shell access is not required to collect logs,
+  - debug images now auto-run this export with boot-time retries and again when `controller` exits, so UART/manual shell access is not required to collect logs,
+  - default export folder name is now `SE-LOGS-<timestamp>` at boot-partition root for easy retrieval on desktop OSes,
   - wired as debug-only tooling (not shipped in non-debug images).
 - Host-mode SD-detach safety note: diagnostic export is on-demand and best-effort; if SD is detached/unavailable, printing/runtime flow is unchanged and only log export fails.
 - Printing now supports explicit host-mode printer language selection:
