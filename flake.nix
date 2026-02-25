@@ -393,7 +393,6 @@
                 echo "CUPS_SPIKE=1" > initramfs/cups-spike.env
                 echo "BRLASER_ROOT=${brlaserPkg}" >> initramfs/cups-spike.env
                 echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-spike.env
-                echo "CUPS_SPIKE_EAGER_BOOT=0" >> initramfs/cups-spike.env
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
                 cp ${cupsSpikeStoreClosure}/store-paths initramfs/cups-spike-store-paths
                 chmod 0644 initramfs/cups-spike-store-paths
