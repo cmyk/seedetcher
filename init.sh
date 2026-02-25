@@ -431,157 +431,6 @@ WebInterface No
 EOF
     fi
 
-    # Helper: print a PDF through test-hbp by pre-converting to CUPS raster.
-cat > /bin/print-hbp-pdf <<'EOF'
-#!/bin/sh
-set -eu
-SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
-QUEUE="${HBP_QUEUE:-test-hbp}"
-PDF="${1:-}"
-DPI="${2:-600}"
-if [ -z "$PDF" ] || [ ! -f "$PDF" ]; then
-  echo "usage: print-hbp-pdf /path/to/file.pdf [dpi]" >&2
-  exit 2
-fi
-case "$DPI" in
-  ''|*[!0-9]*)
-    echo "invalid dpi: '$DPI'" >&2
-    exit 2
-    ;;
-esac
-if [ "$DPI" -lt 300 ] || [ "$DPI" -gt 1200 ]; then
-  echo "dpi out of range: $DPI (expected 300..1200)" >&2
-  exit 2
-fi
-
-ensure_runtime_tools() {
-  command -v lpadmin >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1 && return 0
-
-  # Recovery path after SD detach: restore /nix from RAM-backed stage, if present.
-  if [ -d /run/hbp-ram-runtime/nix/store ]; then
-    mount --bind /run/hbp-ram-runtime/nix /nix >/dev/null 2>&1 || true
-  fi
-
-  command -v lpadmin >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1
-}
-
-if ! ensure_runtime_tools; then
-  echo "print-hbp-pdf: CUPS tools unavailable (likely /nix not mounted). Run 'cups-spike-ram-feasibility stage core' before SD removal." >&2
-  exit 4
-fi
-
-ensure_printer_connected() {
-  ls /dev/usb/lp* >/dev/null 2>&1
-}
-
-if ! ensure_printer_connected; then
-  echo "print-hbp-pdf: printer not connected (/dev/usb/lp* missing); refusing to queue job." >&2
-  exit 5
-fi
-
-ensure_hbp_queue() {
-  lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1 && return 0
-
-  URI=""
-  if lpstat -h "$SOCK" -p test >/dev/null 2>&1; then
-    URI="$(lpstat -h "$SOCK" -v 2>/dev/null | awk '$1=="device" && $3=="test:" {print $4; exit}')"
-  fi
-  if [ -z "$URI" ] && [ -x /var/cups-serverbin/lib/cups/backend/usb ]; then
-    URI="$(/var/cups-serverbin/lib/cups/backend/usb 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
-  fi
-  [ -n "$URI" ] || return 1
-
-  model_from_uri() {
-    # usb://Brother/HL-L5000D%20series?serial=... -> HL-L5000D series
-    printf '%s' "$1" | sed -n 's@^usb://Brother/\([^?]*\).*$@\1@p' | sed 's/%20/ /g'
-  }
-  MODEL_NAME="$(model_from_uri "$URI")"
-  find_brlaser_ppd() {
-    model="$1"
-    model_dir="/var/cups-data/model"
-    [ -d "$model_dir" ] || return 0
-
-    if [ -n "$model" ]; then
-      # Fast path: direct filename match.
-      ppd="$(find "$model_dir" -type f \( -iname "*${model}*.ppd" -o -iname "*${model}*.ppd.gz" \) | head -n 1)"
-      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
-
-      # ppdc-generated brlaser files are often named like brl5000d.ppd, so also match content.
-      ppd="$(grep -RilsF "ModelName: \"Brother $model\"" "$model_dir" 2>/dev/null | head -n 1)"
-      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
-
-      ppd="$(grep -RilsF "MDL:$model;" "$model_dir" 2>/dev/null | head -n 1)"
-      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
-    fi
-
-    find "$model_dir" -type f \
-      \( -iname 'brl*.ppd' -o -iname 'brl*.ppd.gz' -o -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) \
-      | head -n 1
-  }
-  run_ppdc_brlaser() {
-    out_dir="$1"
-    drv_file="$2"
-    [ -n "$out_dir" ] && [ -n "$drv_file" ] || return 1
-    set -- /bin/ppdc -d "$out_dir"
-    for inc in /var/cups-data/ppdc /var/cups-data/drv; do
-      [ -d "$inc" ] || continue
-      set -- "$@" -I "$inc"
-    done
-    CUPS_BIN_ROOT="$(readlink /bin/cupsd 2>/dev/null | sed 's#/bin/cupsd$##')"
-    if [ -n "$CUPS_BIN_ROOT" ] && [ -d "$CUPS_BIN_ROOT/share/cups/ppdc" ]; then
-      set -- "$@" -I "$CUPS_BIN_ROOT/share/cups/ppdc"
-    elif [ -n "$CUPS_BIN_ROOT" ] && [ -d "${CUPS_BIN_ROOT}-lib/share/cups/ppdc" ]; then
-      set -- "$@" -I "${CUPS_BIN_ROOT}-lib/share/cups/ppdc"
-    fi
-    set -- "$@" "$drv_file"
-    /bin/timeout 60 "$@" >/tmp/ppdc-hbp.out 2>/tmp/ppdc-hbp.err
-  }
-
-  # Prefer PPD path to avoid cups-driverd/dvr:/// dependency.
-  PPD=""
-  if [ -d /var/cups-data/model ]; then
-    PPD="$(find_brlaser_ppd "$MODEL_NAME")"
-  fi
-  if [ -z "$PPD" ] && [ -x /bin/ppdc ] && [ -f /var/cups-data/drv/brlaser.drv ]; then
-    mkdir -p /var/cups-data/model
-    run_ppdc_brlaser /var/cups-data/model /var/cups-data/drv/brlaser.drv || true
-    PPD="$(find_brlaser_ppd "$MODEL_NAME")"
-  fi
-
-  echo "print-hbp-pdf: queue='$QUEUE' model='$MODEL_NAME' uri='$URI' ppd='${PPD:-<none>}' dpi='$DPI'" >&2
-  lpadmin -h "$SOCK" -x "$QUEUE" >/dev/null 2>&1 || true
-  if [ -n "$PPD" ]; then
-    if ! lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -P "$PPD" >/tmp/lpadmin-hbp.out 2>/tmp/lpadmin-hbp.err; then
-      echo "lpadmin failed while creating '$QUEUE' (see /tmp/lpadmin-hbp.err)" >&2
-      return 1
-    fi
-  else
-    echo "no usable PPD for '$QUEUE' (ppdc may have failed; see /tmp/ppdc-hbp.err)" >&2
-    return 1
-  fi
-  if ! lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1; then
-    echo "queue '$QUEUE' still missing after lpadmin (see /tmp/lpadmin-hbp.err)" >&2
-    return 1
-  fi
-}
-
-if ! ensure_hbp_queue; then
-  echo "queue '$QUEUE' not found on $SOCK and auto-create failed" >&2
-  exit 3
-fi
-
-# SeedEtcher expects one immediate physical print, not backlog replay.
-# Clear any stale pending jobs on this queue before submitting the new one.
-if command -v cancel >/dev/null 2>&1; then
-  cancel -h "$SOCK" -a "$QUEUE" >/dev/null 2>&1 || true
-fi
-
-RAS="/tmp/print-hbp.ras"
-gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r"$DPI" -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
-lp -h "$SOCK" -d "$QUEUE" -o document-format=application/vnd.cups-raster "$RAS"
-EOF
-    chmod 755 /bin/print-hbp-pdf
-
     # RAM feasibility harness for optional SD-removal HBP mode.
     cat > /bin/cups-spike-ram-feasibility <<'EOF'
 #!/bin/sh
@@ -881,6 +730,23 @@ run_check() {
   lpstat -h "$SOCK" -p -v || true
 }
 
+stop_cupsd() {
+  if command -v killall >/dev/null 2>&1; then
+    killall cupsd >/dev/null 2>&1 || true
+  fi
+  sleep 1
+}
+
+start_cupsd() {
+  if [ -S "$SOCK" ]; then
+    return 0
+  fi
+  if [ -x /bin/cupsd ]; then
+    /bin/cupsd >/log/cups.log 2>&1 || true
+    sleep 1
+  fi
+}
+
 detach_sd() {
   src="$(awk '$2=="/nix"{print $1}' /proc/mounts | tail -n 1)"
   fstype="$(awk '$2=="/nix"{print $3}' /proc/mounts | tail -n 1)"
@@ -889,6 +755,7 @@ detach_sd() {
     return 1
   fi
 
+  stop_cupsd
   sync
   if command -v blockdev >/dev/null 2>&1 && [ -b /dev/mmcblk0 ]; then
     blockdev --flushbufs /dev/mmcblk0 >/dev/null 2>&1 || true
@@ -936,8 +803,10 @@ detach_sd() {
   if [ -n "$remain" ]; then
     echo "FAIL: mmc partitions still mounted:" >&2
     echo "$remain" >&2
+    start_cupsd
     return 1
   fi
+  start_cupsd
   echo "SD detach prep complete: no mmcblk0p* mounts remain."
 }
 
