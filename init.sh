@@ -136,7 +136,7 @@ debug_echo "Init finished. Starting shell..."
 if [ -n "$SHELL_TTY" ] && [ -c "$SHELL_TTY" ]; then
     debug_echo "Launching getty on $SHELL_TTY..."
     echo "seedetcher init: shell on $SHELL_TTY" > "$SHELL_TTY"
-    stty -F "$SHELL_TTY" sane cread clocal 115200 cs8 -parenb -cstopb -ixon -ixoff echo
+    stty -F "$SHELL_TTY" sane echo
     exec /bin/busybox getty -L -n -l /bin/sh 115200 "$SHELL_TTY"
 else
     debug_echo "No shell TTY found; exec'ing controller only"
