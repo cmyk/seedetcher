@@ -683,11 +683,7 @@ func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) err
 			if finished && prepErr == nil {
 				layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, "Brother HBP is ready.\nSD card can now be removed safely.")
 			} else {
-				r := layout.Rectangle{Max: dims}
-				_, bottom := r.CutTop(leadingSize)
-				_, lead := bottom.CutBottom(leadingSize)
-				sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", status)
-				op.Position(ops, ops.End(), lead.Center(sz))
+				layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, status)
 			}
 
 			if finished && prepErr != nil {
