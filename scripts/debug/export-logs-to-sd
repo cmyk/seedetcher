@@ -24,10 +24,12 @@ fi
 
 mounted_here=0
 mkdir -p "$MNT"
-if ! awk -v m="$MNT" '$2==m{found=1} END{exit found?0:1}' /proc/mounts; then
-  mount -t vfat "$BOOT_DEV" "$MNT"
-  mounted_here=1
+# Force /mnt to be the boot partition mount for deterministic behavior.
+if awk -v m="$MNT" '$2==m{found=1} END{exit found?0:1}' /proc/mounts; then
+  umount "$MNT" >/dev/null 2>&1 || true
 fi
+mount -t vfat "$BOOT_DEV" "$MNT"
+mounted_here=1
 
 cleanup() {
   if [ "$mounted_here" = "1" ]; then
