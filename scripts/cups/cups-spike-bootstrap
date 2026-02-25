@@ -2,11 +2,14 @@
 set -eu
 
 SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
+CUPS_SPIKE_DEBUG_TO_KMSG="${CUPS_SPIKE_DEBUG_TO_KMSG:-0}"
 
 log() {
   msg="$*"
   echo "$msg" >> /log/cups.log
-  echo "DEBUG: CUPS bootstrap: $msg" > /dev/kmsg 2>/dev/null || true
+  if [ "$CUPS_SPIKE_DEBUG_TO_KMSG" = "1" ]; then
+    echo "DEBUG: CUPS bootstrap: $msg" > /dev/kmsg 2>/dev/null || true
+  fi
 }
 
 debug_echo() {
@@ -38,6 +41,7 @@ mount_nix_from_sd() {
 if [ -f /cups-spike.env ]; then
   # shellcheck source=/dev/null
   . /cups-spike.env
+  CUPS_SPIKE_DEBUG_TO_KMSG="${CUPS_SPIKE_DEBUG_TO_KMSG:-0}"
 fi
 
 BRLASER_DROPIN_ROOT=""
