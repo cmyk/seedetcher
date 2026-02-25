@@ -22,20 +22,23 @@ if ! exec 3<>"$DEV"; then
   exit 0
 fi
 
-query() {
-  name="$1"
-  body="$2"
-  out="$OUT_DIR/pjl_${name}.txt"
-  err="$OUT_DIR/pjl_${name}.err"
-  printf '\033%%-12345X%s\r\n\033%%-12345X' "$body" >&3 || true
-  sleep 1
-  timeout "$READ_TIMEOUT" cat <&3 > "$out" 2> "$err" || true
-}
+out="$OUT_DIR/pjl_variables.txt"
+err="$OUT_DIR/pjl_variables.err"
+printf '\033%%-12345X@PJL INFO VARIABLES\r\n\033%%-12345X' >&3 || true
+sleep 1
+timeout "$READ_TIMEOUT" cat <&3 > "$out" 2> "$err" || true
 
-query "variables" "@PJL INFO VARIABLES"
-query "config" "@PJL INFO CONFIG"
-query "status" "@PJL INFO STATUS"
-query "resolution" "@PJL INQUIRE RESOLUTION"
+# Derive clean RESOLUTION block from INFO VARIABLES payload.
+awk '
+  /^RESOLUTION=/ {capture=1}
+  capture {print}
+  capture && /^[^[:space:]]/ && $0 !~ /^RESOLUTION=/ {exit}
+' "$out" | sed '$d' > "$OUT_DIR/pjl_resolution.txt" 2>/dev/null || true
+
+# Keep a compact one-line summary for quick triage.
+awk '
+  /^RESOLUTION=/ {print; exit}
+' "$out" > "$OUT_DIR/pjl_summary.txt" 2>/dev/null || true
 
 exec 3>&-
 exec 3<&-
