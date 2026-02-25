@@ -192,7 +192,7 @@ func (p *Platform) Printer() io.Writer {
 	// usblp can disconnect/re-enumerate between jobs; always reopen fresh in host mode
 	// to avoid writing through a stale file descriptor.
 	if p.printerCached != nil && p.supportsPCL {
-		if f, ok := p.printerCached.(*os.File); ok && f != os.Stderr {
+		if f, ok := p.printerCached.(*os.File); ok {
 			_ = f.Close()
 		}
 		p.printerCached = nil
@@ -205,7 +205,7 @@ func (p *Platform) Printer() io.Writer {
 			return p.printerCached
 		}
 		if _, err := os.Stat("/dev/usb/lp0"); err == nil {
-			if f, ok := p.printerCached.(*os.File); ok && f != os.Stderr {
+			if f, ok := p.printerCached.(*os.File); ok {
 				_ = f.Close()
 			}
 			p.printerCached = nil
@@ -232,8 +232,8 @@ func (p *Platform) Printer() io.Writer {
 		logutil.DebugLog("Printer initialized: dev=%s PCL=%v", dev, p.supportsPCL)
 		return printer
 	}
-	p.printerCached = os.Stderr
-	return p.printerCached
+	p.printerCached = nil
+	return nil
 }
 
 func mountFS() error {
