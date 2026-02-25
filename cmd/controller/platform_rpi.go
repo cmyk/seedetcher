@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"image"
 	"image/draw"
@@ -78,7 +79,19 @@ type Platform struct {
 	printerCached      io.Writer
 	supportsPCL        bool
 	supportsPostScript bool
+	hostPCLForce600    bool
 	printing           bool // Add flag to track printing state
+}
+
+func isDeviceWriteEIO(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.EIO) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "/dev/usb/lp0") && strings.Contains(msg, "input/output error")
 }
 
 func Init() (*Platform, error) {
@@ -625,7 +638,12 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		return p.createPlatesPostScript(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
 	}
 	if p.supportsPCL {
+		if p.hostPCLForce600 && opts.DPI > 600 {
+			logutil.DebugLog("PCL host path: forcing 600 DPI due to prior 1200 write failure")
+			opts.DPI = 600
+		}
 		// Host-mode PCL path: render and send in page-sized batches to reduce peak RAM.
+	retryPCL:
 		totalShares := len(mnemonics)
 		if descForHost != nil && len(descForHost.Keys) > 0 && !isSinglesigDesc {
 			totalShares = len(descForHost.Keys)
@@ -781,6 +799,16 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				progress(printer.StageSend, sendDone, sendTotal)
 			}
 			if err := printer.WritePCLPlates(printerDev, seedBatch, descBatch, opts.DPI, paper, batchProgress); err != nil {
+				if sendDone == 0 && opts.DPI > 600 && isDeviceWriteEIO(err) {
+					logutil.DebugLog("PCL host path: write failed at %.0fdpi with EIO; retrying at 600dpi", opts.DPI)
+					p.hostPCLForce600 = true
+					opts.DPI = 600
+					printerDev = p.Printer()
+					if printerDev == nil {
+						return fmt.Errorf("no printer available after 1200->600 fallback")
+					}
+					goto retryPCL
+				}
 				return fmt.Errorf("pcl: write batch %d-%d: %w", start+1, end, err)
 			}
 			sendDone += sendBatchBytes
@@ -1223,12 +1251,14 @@ func (p *Platform) initPrinterNotifier() error {
 					model := readPrinterModel()
 					p.printerCached = nil
 					p.supportsPCL = false
+					p.hostPCLForce600 = false
 					logutil.DebugLog("Printer event: connected model=%s", model)
 					p.events <- gui.PrinterEvent{Connected: true, Model: model}.Event()
 					p.Wakeup()
 				case evt.Mask&unix.IN_DELETE != 0:
 					p.printerCached = nil
 					p.supportsPCL = false
+					p.hostPCLForce600 = false
 					logutil.DebugLog("Printer event: disconnected")
 					p.events <- gui.PrinterEvent{Connected: false}.Event()
 					p.Wakeup()
@@ -1246,6 +1276,7 @@ func (p *Platform) initPrinterNotifier() error {
 				prevConnected, prevModel = connected, model
 				p.printerCached = nil
 				p.supportsPCL = false
+				p.hostPCLForce600 = false
 				logutil.DebugLog("Printer poll: connected=%v model=%s", connected, model)
 				p.events <- gui.PrinterEvent{Connected: connected, Model: model}.Event()
 				p.Wakeup()
