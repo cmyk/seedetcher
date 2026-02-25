@@ -115,16 +115,29 @@ debug_echo "Starting controller..."
 /controller < "$CTRL_TTY" >> /log/debug.log 2>> /log/debug.log &
 CONTROLLER_PID=$!
 
-# Debug image helper: if controller exits, export logs to SD automatically
-# so beta users can retrieve diagnostics without UART access.
+run_log_export() {
+    reason="$1"
+    if [ ! -x /bin/export-logs-to-sd ]; then
+        return 0
+    fi
+    echo "log-export: reason=${reason} start" >> /log/init_debug.log
+    /bin/export-logs-to-sd >> /log/init_debug.log 2>&1 || true
+    echo "log-export: reason=${reason} done" >> /log/init_debug.log
+}
+
+# Debug image helper: export logs once after boot and again if controller exits.
+# This ensures beta users can retrieve logs from SD without UART access.
 if [ -x /bin/export-logs-to-sd ]; then
+    (
+        sleep 45
+        run_log_export "boot"
+    ) &
     (
         pid="$CONTROLLER_PID"
         while kill -0 "$pid" 2>/dev/null; do
             sleep 1
         done
-        echo "controller-exit: pid=$pid, exporting logs to SD..." >> /log/init_debug.log
-        /bin/export-logs-to-sd >> /log/init_debug.log 2>&1 || true
+        run_log_export "controller-exit"
     ) &
 fi
 
