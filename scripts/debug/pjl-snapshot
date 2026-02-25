@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+OUT_DIR="${1:-}"
+DEV="${PJL_DEV:-/dev/usb/lp0}"
+READ_TIMEOUT="${PJL_READ_TIMEOUT:-2}"
+
+if [ -z "$OUT_DIR" ]; then
+  echo "usage: pjl-snapshot /path/to/outdir" >&2
+  exit 2
+fi
+
+mkdir -p "$OUT_DIR"
+
+if [ ! -c "$DEV" ]; then
+  echo "device not found: $DEV" > "$OUT_DIR/pjl.error"
+  exit 0
+fi
+
+if ! exec 3<>"$DEV"; then
+  echo "device busy/unavailable: $DEV" > "$OUT_DIR/pjl.error"
+  exit 0
+fi
+
+out="$OUT_DIR/pjl_variables.txt"
+err="$OUT_DIR/pjl_variables.err"
+printf '\033%%-12345X@PJL INFO VARIABLES\r\n\033%%-12345X' >&3 || true
+sleep 1
+timeout "$READ_TIMEOUT" cat <&3 > "$out" 2> "$err" || true
+
+# Derive clean RESOLUTION block from INFO VARIABLES payload.
+awk '
+  /^RESOLUTION=/ {capture=1}
+  capture {print}
+  capture && /^[^[:space:]]/ && $0 !~ /^RESOLUTION=/ {exit}
+' "$out" | sed '$d' > "$OUT_DIR/pjl_resolution.txt" 2>/dev/null || true
+
+# Keep a compact one-line summary for quick triage.
+awk '
+  /^RESOLUTION=/ {print; exit}
+' "$out" > "$OUT_DIR/pjl_summary.txt" 2>/dev/null || true
+
+exec 3>&-
+exec 3<&-
+
+exit 0

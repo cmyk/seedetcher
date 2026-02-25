@@ -2,6 +2,7 @@
 set -eu
 SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
 QUEUE="${HBP_QUEUE:-test-hbp}"
+GADGET_DEV="${HBP_GADGET_DEV:-/dev/ttyGS1}"
 PDF="${1:-}"
 DPI="${2:-600}"
 if [ -z "$PDF" ] || [ ! -f "$PDF" ]; then
@@ -38,9 +39,22 @@ ensure_runtime_tools() {
   command -v lpadmin >/dev/null 2>&1 && command -v lpstat >/dev/null 2>&1
 }
 
-if ! ensure_runtime_tools; then
-  echo "print-hbp-pdf: CUPS tools unavailable (likely /nix not mounted). Run 'cups-spike-ram-feasibility stage core' before SD removal." >&2
-  exit 4
+OUTPUT_MODE=""
+detect_output_mode() {
+  if ls /dev/usb/lp* >/dev/null 2>&1; then
+    OUTPUT_MODE="cups"
+    return 0
+  fi
+  if [ -c "$GADGET_DEV" ]; then
+    OUTPUT_MODE="gadget"
+    return 0
+  fi
+  return 1
+}
+
+if ! detect_output_mode; then
+  echo "print-hbp-pdf: no printer path available (/dev/usb/lp* or ${GADGET_DEV})" >&2
+  exit 5
 fi
 
 ensure_cupsd_running() {
@@ -53,20 +67,6 @@ ensure_cupsd_running() {
   fi
   [ -S "$SOCK" ]
 }
-
-if ! ensure_cupsd_running; then
-  echo "print-hbp-pdf: cupsd socket '$SOCK' not available" >&2
-  exit 4
-fi
-
-ensure_printer_connected() {
-  ls /dev/usb/lp* >/dev/null 2>&1
-}
-
-if ! ensure_printer_connected; then
-  echo "print-hbp-pdf: printer not connected (/dev/usb/lp* missing); refusing to queue job." >&2
-  exit 5
-fi
 
 ensure_hbp_queue() {
   lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1 && return 0
@@ -154,11 +154,6 @@ ensure_hbp_queue() {
   fi
 }
 
-if ! ensure_hbp_queue; then
-  echo "queue '$QUEUE' not found on $SOCK and auto-create failed" >&2
-  exit 3
-fi
-
 ensure_queue_ready() {
   lpadmin -h "$SOCK" -p "$QUEUE" -E >/dev/null 2>&1 || true
   if command -v cupsenable >/dev/null 2>&1; then
@@ -169,6 +164,31 @@ ensure_queue_ready() {
   fi
 }
 
+RAS="/tmp/print-hbp.ras"
+gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r"$EFFECTIVE_DPI" -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
+
+if [ "$OUTPUT_MODE" = "gadget" ]; then
+  if [ ! -s "$RAS" ]; then
+    echo "print-hbp-pdf: generated raster is empty" >&2
+    exit 6
+  fi
+  echo "print-hbp-pdf: writing CUPS raster to gadget device ${GADGET_DEV}" >&2
+  cat "$RAS" > "$GADGET_DEV"
+  exit $?
+fi
+
+if ! ensure_runtime_tools; then
+  echo "print-hbp-pdf: CUPS tools unavailable (likely /nix not mounted). Run 'cups-spike-ram-feasibility stage core' before SD removal." >&2
+  exit 4
+fi
+if ! ensure_cupsd_running; then
+  echo "print-hbp-pdf: cupsd socket '$SOCK' not available" >&2
+  exit 4
+fi
+if ! ensure_hbp_queue; then
+  echo "queue '$QUEUE' not found on $SOCK and auto-create failed" >&2
+  exit 3
+fi
 ensure_queue_ready
 
 # SeedEtcher expects one immediate physical print, not backlog replay.
@@ -177,8 +197,6 @@ if command -v cancel >/dev/null 2>&1; then
   cancel -h "$SOCK" -a "$QUEUE" >/dev/null 2>&1 || true
 fi
 
-RAS="/tmp/print-hbp.ras"
-gs -q -dSAFER -dBATCH -dNOPAUSE -sDEVICE=cups -sOutputFile="$RAS" -r"$EFFECTIVE_DPI" -dDEVICEWIDTHPOINTS=595 -dDEVICEHEIGHTPOINTS=842 -dFIXEDMEDIA -dPDFFitPage "$PDF"
 lp -h "$SOCK" -d "$QUEUE" \
   -o media=A4 \
   -o Resolution="${EFFECTIVE_DPI}dpi" \

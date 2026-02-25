@@ -47,7 +47,7 @@ func (s *SDCardGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	}
 	// In PCL/PS-only mode we still mount SD-backed runtime at boot in spike images.
 	// Detach those mounts before asking the user to physically pull the card.
-	if ctx != nil && !ctx.HBPRuntimeReady {
+	if ctx != nil && !ctx.HBPRuntimeReady && !ctx.SDRemovalPrepared {
 		if !s.prepStarted {
 			s.prepStarted = true
 			s.prepCh = make(chan error, 1)
@@ -63,11 +63,14 @@ func (s *SDCardGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			default:
 			}
 		}
-		if s.prepDone && s.prepErr != nil {
-			showError(ctx, ops, th, fmt.Errorf("SD removal prep failed: %v", s.prepErr))
-			return &MainMenuScreen{}
-		}
-		if !s.prepDone {
+			if s.prepDone && s.prepErr != nil {
+				showError(ctx, ops, th, fmt.Errorf("SD removal prep failed: %v", s.prepErr))
+				return &MainMenuScreen{}
+			}
+			if s.prepDone && s.prepErr == nil {
+				ctx.SDRemovalPrepared = true
+			}
+			if !s.prepDone {
 			dims := ctx.Platform.DisplaySize()
 			op.ColorOp(ops, th.Background)
 			titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing SD removal")

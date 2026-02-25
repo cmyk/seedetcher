@@ -358,6 +358,12 @@
                 chmod +x initramfs/bin/readelf
                 cp ${./scripts/debug/sd-removal-dump} initramfs/bin/sd-removal-dump
                 chmod 0755 initramfs/bin/sd-removal-dump
+                ${if debug then ''
+                cp ${./scripts/debug/export-logs-to-sd} initramfs/bin/export-logs-to-sd
+                cp ${./scripts/debug/pjl-snapshot} initramfs/bin/pjl-snapshot
+                chmod 0755 initramfs/bin/export-logs-to-sd
+                chmod 0755 initramfs/bin/pjl-snapshot
+                '' else ""}
 
                 # Debug output
                 echo "Verifying readelf:"
@@ -393,7 +399,6 @@
                 echo "CUPS_SPIKE=1" > initramfs/cups-spike.env
                 echo "BRLASER_ROOT=${brlaserPkg}" >> initramfs/cups-spike.env
                 echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-spike.env
-                echo "CUPS_SPIKE_EAGER_BOOT=0" >> initramfs/cups-spike.env
                 ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
                 cp ${cupsSpikeStoreClosure}/store-paths initramfs/cups-spike-store-paths
                 chmod 0644 initramfs/cups-spike-store-paths
@@ -901,6 +906,8 @@ EOF
             image-gadget-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; };
             image-cups-spike = self.lib.${system}.mkimage { debug = false; usbMode = "host"; cupsSpike = true; };
             image-cups-spike-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; cupsSpike = true; };
+            image-cups-spike-gadget = self.lib.${system}.mkimage { debug = false; usbMode = "gadget"; cupsSpike = true; };
+            image-cups-spike-gadget-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; cupsSpike = true; };
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "reload" ''
               #!/bin/sh

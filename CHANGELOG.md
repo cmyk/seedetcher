@@ -1,10 +1,22 @@
 # Changelog
 
 ## Unreleased
+- Debug-image diagnostics:
+  - added `export-logs-to-sd` helper to write a privacy-first, plain-directory snapshot on the boot partition (`SE-LOGS-LATEST`),
+  - export payload is now strict allowlist only: `init_debug.log`, CUPS logs, `dmesg`, and manifest metadata (no `/proc`/`/tmp` dump),
+  - export now attempts a best-effort PJL capability snapshot from `INFO VARIABLES` when printer access is available (skipped for boot-triggered exports),
+  - UI error screens now trigger best-effort SD log export (rate-limited) to improve field-debug capture on failures,
+  - debug images now auto-run this export with boot-time retries and again when `controller` exits, so UART/manual shell access is not required to collect logs,
+  - default export folder name is now `SE-LOGS-<timestamp>` at boot-partition root for easy retrieval on desktop OSes,
+  - wired as debug-only tooling (not shipped in non-debug images).
+- Host-mode SD-detach safety note: diagnostic export is on-demand and best-effort; if SD is detached/unavailable, printing/runtime flow is unchanged and only log export fails.
 - Printing now supports explicit host-mode printer language selection:
   - `PCL` (default) or `PS` (PostScript) from print settings UI.
   - guidance shown in UI: if `PCL` prints blank pages, try `PS`.
 - Added native PostScript writer path for host mode (`/dev/usb/lp0`) with no external `gs`/`pdftops` dependency on device.
+- Host-mode PCL robustness:
+  - when a `1200 DPI` send fails with `/dev/usb/lp0` `EIO`, controller now auto-retries the job once at `600 DPI`,
+  - after such a failure, host PCL stays on `600 DPI` for the current printer session (reset on replug) to avoid repeated hard failures.
 - PostScript pipeline fixes and performance improvements:
   - corrected PS `imagemask` geometry/polarity behavior to match canonical page layout,
   - optimized PS streaming on Pi Zero (buffered writes + fast row hex encoding),

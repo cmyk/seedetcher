@@ -27,18 +27,20 @@ type Context struct {
 	// Global UI state.
 	Version string
 	// PrintProgress, if set, receives stage progress updates (current, total).
-	PrintProgress    func(stage printer.PrintStage, current, total int64)
-	Calibrated       bool
-	EmptySDSlot      bool
-	PrinterConnected bool
-	PrinterModel     string
-	HBPRuntimeReady  bool
-	RotateCamera     bool
-	LastDescriptor   *urtypes.OutputDescriptor
-	Keystores        map[uint32]bip39.Mnemonic // Fingerprint -> Mnemonic
-	events           []Event
-	toasts           []toastMsg
-	dirty            bool
+	PrintProgress     func(stage printer.PrintStage, current, total int64)
+	Calibrated        bool
+	EmptySDSlot       bool
+	PrinterConnected  bool
+	PrinterModel      string
+	HBPRuntimeReady   bool
+	SDRemovalPrepared bool
+	LastErrorExport   time.Time
+	RotateCamera      bool
+	LastDescriptor    *urtypes.OutputDescriptor
+	Keystores         map[uint32]bip39.Mnemonic // Fingerprint -> Mnemonic
+	events            []Event
+	toasts            []toastMsg
+	dirty             bool
 }
 
 type toastMsg struct {
@@ -273,7 +275,7 @@ func (b Button) String() string {
 }
 
 // mintues to screensaver activation
-const idleTimeout = 2 * time.Minute
+const idleTimeout = 3 * time.Minute
 
 func Run(pl Platform, version string) func(yield func() bool) {
 	return func(yield func() bool) {
