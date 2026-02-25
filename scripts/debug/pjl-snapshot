@@ -1,0 +1,43 @@
+#!/bin/sh
+set -eu
+
+OUT_DIR="${1:-}"
+DEV="${PJL_DEV:-/dev/usb/lp0}"
+READ_TIMEOUT="${PJL_READ_TIMEOUT:-2}"
+
+if [ -z "$OUT_DIR" ]; then
+  echo "usage: pjl-snapshot /path/to/outdir" >&2
+  exit 2
+fi
+
+mkdir -p "$OUT_DIR"
+
+if [ ! -c "$DEV" ]; then
+  echo "device not found: $DEV" > "$OUT_DIR/pjl.error"
+  exit 0
+fi
+
+if ! exec 3<>"$DEV"; then
+  echo "device busy/unavailable: $DEV" > "$OUT_DIR/pjl.error"
+  exit 0
+fi
+
+query() {
+  name="$1"
+  body="$2"
+  out="$OUT_DIR/pjl_${name}.txt"
+  err="$OUT_DIR/pjl_${name}.err"
+  printf '\033%%-12345X%s\r\n\033%%-12345X' "$body" >&3 || true
+  sleep 1
+  timeout "$READ_TIMEOUT" cat <&3 > "$out" 2> "$err" || true
+}
+
+query "variables" "@PJL INFO VARIABLES"
+query "config" "@PJL INFO CONFIG"
+query "status" "@PJL INFO STATUS"
+query "resolution" "@PJL INQUIRE RESOLUTION"
+
+exec 3>&-
+exec 3<&-
+
+exit 0
