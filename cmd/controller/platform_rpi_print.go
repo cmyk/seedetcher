@@ -213,11 +213,6 @@ func buildStatsPageFromRows(statsRows []printer.EtchPlateStat, dpi float64, pape
 	return printer.RenderEtchStatsPage(report, paper, dpi)
 }
 
-type hostBatchRunResult struct {
-	numBatches int
-	statsRows  []printer.EtchPlateStat
-}
-
 func runHostRenderBatches(
 	mnemonics []bip39.Mnemonic,
 	seedInfoDesc *urtypes.OutputDescriptor,
@@ -228,13 +223,10 @@ func runHostRenderBatches(
 	progress func(stage printer.PrintStage, current, total int64),
 	collectStats bool,
 	onBatch func(batch hostRenderedBatch, start, end, batchIndex, numBatches int) error,
-) (hostBatchRunResult, error) {
+) ([]printer.EtchPlateStat, error) {
 	totalShares := plan.totalShares
 	sharesPerBatch := hostSharesPerBatch(plan)
-	numBatches := (totalShares + sharesPerBatch - 1) / sharesPerBatch
-	if numBatches < 1 {
-		numBatches = 1
-	}
+	numBatches := hostBatchCount(totalShares, sharesPerBatch)
 	prepareDone := int64(0)
 	prepareTotal := hostPrepareTotal(plan, totalShares)
 	var statsRows []printer.EtchPlateStat
@@ -263,7 +255,7 @@ func runHostRenderBatches(
 			collectStats,
 		)
 		if err != nil {
-			return hostBatchRunResult{}, err
+			return nil, err
 		}
 		if collectStats {
 			statsRows = append(statsRows, batch.statsRows...)
@@ -271,15 +263,11 @@ func runHostRenderBatches(
 		batchIndex++
 		if onBatch != nil {
 			if err := onBatch(batch, start, end, batchIndex, numBatches); err != nil {
-				return hostBatchRunResult{}, err
+				return nil, err
 			}
 		}
 	}
-
-	return hostBatchRunResult{
-		numBatches: numBatches,
-		statsRows:  statsRows,
-	}, nil
+	return statsRows, nil
 }
 
 type pclNeed600RetryError struct {
@@ -382,7 +370,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		sendDone := int64(0)
 		sendTotal := int64(0)
 		sendBatchBytes := int64(-1)
-		runResult, err := runHostRenderBatches(
+		statsRows, err := runHostRenderBatches(
 			mnemonics,
 			desc,
 			plan,
@@ -453,7 +441,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			composeMarked = true
 		}
 		if opts.EtchStatsPage {
-			statsPage, err := buildStatsPageFromRows(runResult.statsRows, opts.DPI, paper)
+			statsPage, err := buildStatsPageFromRows(statsRows, opts.DPI, paper)
 			if err != nil {
 				return fmt.Errorf("stats: build/render page: %w", err)
 			}
@@ -529,9 +517,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	return nil
 }
 
-func (p *Platform) createPlatesHBP(ctx *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
-	_ = ctx
-	_ = keyIdx
+func (p *Platform) createPlatesHBP(_ *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, _ int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
 	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
 	singlesigWithDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithDescriptorQR
 	singlesigWithInfo := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithInfo
@@ -675,8 +661,7 @@ func (p *Platform) createPlatesHBP(ctx *gui.Context, mnemonics []bip39.Mnemonic,
 	return nil
 }
 
-func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
-	_ = keyIdx
+func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, _ int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
 	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
 	singlesigWithDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithDescriptorQR
 	singlesigWithInfo := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithInfo
@@ -702,7 +687,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		sendTotal++
 	}
 
-	runResult, err := runHostRenderBatches(
+	statsRows, err := runHostRenderBatches(
 		mnemonics,
 		desc,
 		plan,
@@ -740,7 +725,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		composeMarked = true
 	}
 	if opts.EtchStatsPage {
-		statsPage, err := buildStatsPageFromRows(runResult.statsRows, opts.DPI, paper)
+		statsPage, err := buildStatsPageFromRows(statsRows, opts.DPI, paper)
 		if err != nil {
 			return fmt.Errorf("stats: build/render page: %w", err)
 		}
@@ -771,44 +756,4 @@ func hostBatchCount(totalShares, sharesPerBatch int) int {
 		return 1
 	}
 	return n
-}
-
-func estimateJobPages(desc *urtypes.OutputDescriptor, paper printer.PaperSize, opts printer.RasterOptions) int {
-	walletShares := 1
-	if desc != nil {
-		walletShares = len(desc.Keys)
-	}
-	maxSlotsPerPage := 6
-	if paper == printer.PaperLetter {
-		maxSlotsPerPage = 4
-	}
-	slotsPerShare := 2
-	if desc == nil {
-		slotsPerShare = 1
-	}
-	compactSingleSided := desc != nil &&
-		printer.CompactDescriptor2of3Enabled() &&
-		desc.Type == urtypes.SortedMulti &&
-		desc.Threshold == 2 &&
-		len(desc.Keys) == 3
-	if compactSingleSided {
-		slotsPerShare = 1
-	}
-	isSinglesig := desc != nil && desc.Type == urtypes.Singlesig && len(desc.Keys) == 1
-	if isSinglesig && opts.SinglesigLayout != printer.SinglesigLayoutSeedWithDescriptorQR {
-		slotsPerShare = 1
-	}
-	sharesPerPage := maxSlotsPerPage / slotsPerShare
-	if sharesPerPage < 1 {
-		sharesPerPage = 1
-	}
-	totalPages := (walletShares + sharesPerPage - 1) / sharesPerPage
-	if totalPages < 1 {
-		totalPages = 1
-	}
-	if opts.EtchStatsPage {
-		totalPages++
-	}
-	return totalPages
-
 }
