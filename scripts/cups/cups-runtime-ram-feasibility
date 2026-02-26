@@ -12,16 +12,16 @@ trap 'rm -f "$TMP_RAW" "$TMP_LIST" "$TMP_DONE_FILES"' EXIT INT TERM
 usage() {
   cat <<USAGE
 usage:
-  cups-spike-ram-feasibility estimate [core|full]
-  cups-spike-ram-feasibility stage [core|full]
-  cups-spike-ram-feasibility check
-  cups-spike-ram-feasibility status
-  cups-spike-ram-feasibility detach-sd
-  cups-spike-ram-feasibility unstage
+  cups-runtime-ram-feasibility estimate [core|full]
+  cups-runtime-ram-feasibility stage [core|full]
+  cups-runtime-ram-feasibility check
+  cups-runtime-ram-feasibility status
+  cups-runtime-ram-feasibility detach-sd
+  cups-runtime-ram-feasibility unstage
 
 notes:
   - core: curated runtime roots for HBP print path.
-  - full: all paths from /cups-spike-store-paths (requires latest image build).
+  - full: all paths from /cups-runtime-store-paths (requires latest image build).
   - env:
       HBP_RAM_ROOT=/run/hbp-ram-runtime
       HBP_RAM_SIZE=<tmpfs size, e.g. 320m>   (stage only)
@@ -159,9 +159,9 @@ collect_core_roots() {
     rp="$(readlink -f "$p" 2>/dev/null || true)"
     [ -n "$rp" ] && collect_file_deps "$rp"
   done
-  if [ -f /cups-spike.env ]; then
+  if [ -f /cups-runtime.env ]; then
     # shellcheck source=/dev/null
-    . /cups-spike.env
+    . /cups-runtime.env
     add_root "${BRLASER_ROOT:-}"
     add_root "${CUPS_FILTERS_ROOT:-}"
   fi
@@ -182,8 +182,8 @@ collect_core_roots() {
 
 collect_full_roots() {
   : > "$TMP_RAW"
-  if [ ! -f /cups-spike-store-paths ]; then
-    echo "error: /cups-spike-store-paths missing (rebuild with latest flake/initramfs)" >&2
+  if [ ! -f /cups-runtime-store-paths ]; then
+    echo "error: /cups-runtime-store-paths missing (rebuild with latest flake/initramfs)" >&2
     exit 1
   fi
   while read -r p; do
@@ -191,7 +191,7 @@ collect_full_roots() {
     case "$p" in
       /nix/store/*) add_root "$p" ;;
     esac
-  done < /cups-spike-store-paths
+  done < /cups-runtime-store-paths
   sort -u "$TMP_RAW" > "$TMP_LIST"
 }
 

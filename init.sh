@@ -34,9 +34,9 @@ fi
 INIT_DEBUG_TO_KMSG="${INIT_DEBUG_TO_KMSG:-0}"
 INIT_DEBUG_TO_TTY="${INIT_DEBUG_TO_TTY:-0}"
 DEBUG_TTY="${INIT_DEBUG_TTY:-/dev/null}"
-if [ -f /cups-spike.env ]; then
+if [ -f /cups-runtime.env ]; then
     # shellcheck source=/dev/null
-    . /cups-spike.env
+    . /cups-runtime.env
     INIT_DEBUG_TO_KMSG="${INIT_DEBUG_TO_KMSG:-0}"
     INIT_DEBUG_TO_TTY="${INIT_DEBUG_TO_TTY:-0}"
     DEBUG_TTY="${INIT_DEBUG_TTY:-$DEBUG_TTY}"
@@ -89,8 +89,8 @@ wait_for "$SHELL_TTY" 30
 wait_for "$CTRL_TTY" 30
 
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
-if [ -f /cups-spike.env ]; then
-    debug_echo "CUPS spike: lazy bootstrap mode (boot init skipped)"
+if [ -f /cups-runtime.env ]; then
+    debug_echo "CUPS runtime: lazy bootstrap mode (boot init skipped)"
 fi
 
 # Fix DRM framebuffer permissions

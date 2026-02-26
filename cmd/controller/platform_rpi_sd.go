@@ -219,14 +219,14 @@ func detachSDCardMountsFallback(restoreRAMNix bool) error {
 }
 
 func (p *Platform) PrepareHBPForSDRemoval() error {
-	if _, err := os.Stat("/bin/cups-spike-bootstrap"); err != nil {
-		return fmt.Errorf("missing /bin/cups-spike-bootstrap: %w", err)
+	if _, err := os.Stat("/bin/cups-runtime-bootstrap"); err != nil {
+		return fmt.Errorf("missing /bin/cups-runtime-bootstrap: %w", err)
 	}
-	if _, err := os.Stat("/bin/cups-spike-ram-feasibility"); err != nil {
-		return fmt.Errorf("missing /bin/cups-spike-ram-feasibility: %w", err)
+	if _, err := os.Stat("/bin/cups-runtime-ram-feasibility"); err != nil {
+		return fmt.Errorf("missing /bin/cups-runtime-ram-feasibility: %w", err)
 	}
 
-	out, err := runCommandWithOutput("/bin/cups-spike-bootstrap")
+	out, err := runCommandWithOutput("/bin/cups-runtime-bootstrap")
 	if out != "" {
 		logutil.DebugLog("HBP bootstrap output:\n%s", out)
 	}
@@ -234,7 +234,7 @@ func (p *Platform) PrepareHBPForSDRemoval() error {
 		return err
 	}
 
-	out, err = runCommandWithOutput("/bin/cups-spike-ram-feasibility", "stage", "core")
+	out, err = runCommandWithOutput("/bin/cups-runtime-ram-feasibility", "stage", "core")
 	if out != "" {
 		logutil.DebugLog("HBP prep stage output:\n%s", out)
 	}
@@ -242,7 +242,7 @@ func (p *Platform) PrepareHBPForSDRemoval() error {
 		return err
 	}
 
-	out, err = runCommandWithOutput("/bin/cups-spike-ram-feasibility", "detach-sd")
+	out, err = runCommandWithOutput("/bin/cups-runtime-ram-feasibility", "detach-sd")
 	if out != "" {
 		logutil.DebugLog("HBP prep detach output:\n%s", out)
 	}

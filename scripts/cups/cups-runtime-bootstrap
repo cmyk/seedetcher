@@ -2,12 +2,12 @@
 set -eu
 
 SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
-CUPS_SPIKE_DEBUG_TO_KMSG="${CUPS_SPIKE_DEBUG_TO_KMSG:-0}"
+CUPS_RUNTIME_DEBUG_TO_KMSG="${CUPS_RUNTIME_DEBUG_TO_KMSG:-0}"
 
 log() {
   msg="$*"
   echo "$msg" >> /log/cups.log
-  if [ "$CUPS_SPIKE_DEBUG_TO_KMSG" = "1" ]; then
+  if [ "$CUPS_RUNTIME_DEBUG_TO_KMSG" = "1" ]; then
     echo "DEBUG: CUPS bootstrap: $msg" > /dev/kmsg 2>/dev/null || true
   fi
 }
@@ -32,16 +32,16 @@ mount_nix_from_sd() {
     tries=$((tries - 1))
   done
   if [ ! -b /dev/mmcblk0p2 ]; then
-    echo "cups-spike-bootstrap: /dev/mmcblk0p2 not found" >&2
+    echo "cups-runtime-bootstrap: /dev/mmcblk0p2 not found" >&2
     return 1
   fi
   mount -t ext4 /dev/mmcblk0p2 /nix >> /log/cups.log 2>&1
 }
 
-if [ -f /cups-spike.env ]; then
+if [ -f /cups-runtime.env ]; then
   # shellcheck source=/dev/null
-  . /cups-spike.env
-  CUPS_SPIKE_DEBUG_TO_KMSG="${CUPS_SPIKE_DEBUG_TO_KMSG:-0}"
+  . /cups-runtime.env
+  CUPS_RUNTIME_DEBUG_TO_KMSG="${CUPS_RUNTIME_DEBUG_TO_KMSG:-0}"
 fi
 
 BRLASER_DROPIN_ROOT=""
@@ -49,7 +49,7 @@ mkdir -p /mnt/boot /var/cups-extra
 BRLASER_RUNTIME_ROOT=/var/cups-extra/brlaser-runtime
 mkdir -p "$BRLASER_RUNTIME_ROOT/filter" "$BRLASER_RUNTIME_ROOT/lib"
 SHOULD_LOAD_DROPIN=0
-case "${CUPS_SPIKE_LOAD_DROPIN:-auto}" in
+case "${CUPS_RUNTIME_LOAD_DROPIN:-auto}" in
   1|yes|true|on)
     SHOULD_LOAD_DROPIN=1
     ;;
@@ -232,7 +232,7 @@ CUPS_RUNTIME_DATA=/var/cups-data
 rm -rf "$CUPS_RUNTIME_DATA"
 mkdir -p "$CUPS_RUNTIME_DATA"
 if [ -d "${CUPS_DATA_ROOT}/share/cups" ]; then
-  if [ "${CUPS_SPIKE_DATA_COPY:-minimal}" = "full" ]; then
+  if [ "${CUPS_RUNTIME_DATA_COPY:-minimal}" = "full" ]; then
     cp -a "${CUPS_DATA_ROOT}/share/cups/." "$CUPS_RUNTIME_DATA/" 2>/dev/null || true
   else
     for d in mime usb drv ppdc; do
@@ -266,7 +266,7 @@ mkdir -p "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA
 chown root:root "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" "$CUPS_RUNTIME_DATA/ppdc" 2>/dev/null || true
 chmod 755 "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" "$CUPS_RUNTIME_DATA/ppdc" 2>/dev/null || true
 
-if [ "${CUPS_SPIKE_REPAIR_ALL_FILTERS:-0}" = "1" ] && [ -d /var/cups-serverbin/lib/cups/filter ]; then
+if [ "${CUPS_RUNTIME_REPAIR_ALL_FILTERS:-0}" = "1" ] && [ -d /var/cups-serverbin/lib/cups/filter ]; then
   for f in /var/cups-serverbin/lib/cups/filter/*; do
     [ -f "$f" ] || continue
     repair_elf_runtime "$f"
@@ -300,7 +300,7 @@ run_ppdc_brlaser() {
 }
 
 BRLASER_DRV="$CUPS_RUNTIME_DATA/drv/brlaser.drv"
-if [ "${CUPS_SPIKE_ENABLE_PPDC:-0}" = "1" ] && [ -f "$BRLASER_DRV" ] && [ -x /bin/ppdc ]; then
+if [ "${CUPS_RUNTIME_ENABLE_PPDC:-0}" = "1" ] && [ -f "$BRLASER_DRV" ] && [ -x /bin/ppdc ]; then
   mkdir -p "$CUPS_RUNTIME_DATA/model"
   run_ppdc_brlaser "$CUPS_RUNTIME_DATA/model" "$BRLASER_DRV" 10 >/dev/null 2>&1 || debug_echo "ppdc model generation timed out/failed"
 fi
@@ -428,7 +428,7 @@ provision_hbp_queue() {
 maybe_provision_hbp_async() {
   queue_uri="$1"
   [ -n "$queue_uri" ] || return 0
-  if [ "${CUPS_SPIKE_HBP_ASYNC:-1}" = "1" ]; then
+  if [ "${CUPS_RUNTIME_HBP_ASYNC:-1}" = "1" ]; then
     (
       provision_hbp_queue "$queue_uri"
     ) &
@@ -461,7 +461,7 @@ provision_spike_queue() {
 
 if /bin/cupsd >> /log/cups.log 2>&1; then
   if ! provision_spike_queue; then
-    if [ "${CUPS_SPIKE_QUEUE_RETRY:-0}" = "1" ]; then
+    if [ "${CUPS_RUNTIME_QUEUE_RETRY:-0}" = "1" ]; then
       debug_echo "no printer URI discovered; starting retry loop"
       (
         retries=90

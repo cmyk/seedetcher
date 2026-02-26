@@ -45,7 +45,7 @@ func (s *SDCardGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	if th == nil {
 		th = &singleTheme
 	}
-	// In PCL/PS-only mode we still mount SD-backed runtime at boot in spike images.
+	// In PCL/PS-only mode we still mount SD-backed runtime at boot in host images.
 	// Detach those mounts before asking the user to physically pull the card.
 	if ctx != nil && !ctx.HBPRuntimeReady && !ctx.SDRemovalPrepared {
 		if !s.prepStarted {

@@ -134,7 +134,7 @@
 
                 ./scripts/config --set-str EXTRA_FIRMWARE panel.bin
                 ./scripts/config --set-str EXTRA_FIRMWARE_DIR ${panel-firmware}
-                # Enable minimal networking/socket support (needed for CUPS spike).
+                # Enable minimal networking/socket support (needed for CUPS runtime).
                 ./scripts/config --enable NET
                 ./scripts/config --enable INET
                 ./scripts/config --enable UNIX
@@ -146,7 +146,7 @@
                 ./scripts/config --disable SECURITY
                 # Disable sound support.
                 ./scripts/config --disable SOUND
-                # Keep ext4 enabled (used by experimental SD-rootfs spikes).
+                # Keep ext4 enabled (used by SD-rootfs CUPS runtime).
                 ./scripts/config --enable EXT4_FS
                 ./scripts/config --disable F2FS_FS
                 ./scripts/config --disable PSTORE
@@ -272,7 +272,7 @@
                 ${pkgs.python3}/bin/python3 ${firmware-converter} $out/panel.bin ${firmware}
               '';
             };
-          mkinitramfs = { debug, cupsSpike ? false }:
+          mkinitramfs = { debug, cupsRuntime ? false }:
             let
               pkgs = hostPkgs;
               busyboxStatic = crossPkgs.pkgsStatic.busybox;
@@ -284,7 +284,7 @@
               ghostscriptPkg = crossPkgs.ghostscript;
               popplerUtilsPkg = crossPkgs.poppler_utils;
               brlaserPkg = self.packages.${system}.brlaser-se-runtime;
-              cupsSpikeStoreClosure = pkgs.closureInfo {
+              cupsRuntimeStoreClosure = pkgs.closureInfo {
                 rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils brlaserPkg ];
               };
 
@@ -374,8 +374,8 @@
                 cp -L --no-preserve=mode "$target" initramfs/bin/readelf || echo "Failed to copy readelf"
                 chmod +x initramfs/bin/readelf 2>/dev/null || echo "Warning: Could not change permissions of readelf"
 
-                # Optional CUPS/Ghostscript tooling for experimental spike images.
-                ${if cupsSpike then ''
+                # Optional CUPS/Ghostscript tooling for HBP runtime support.
+                ${if cupsRuntime then ''
                 mkdir -p initramfs/etc/cups initramfs/var/spool/cups initramfs/var/run/cups initramfs/nix/store
                 if [ -d ${cupsPkg}/etc/cups ]; then
                   cp -a ${cupsPkg}/etc/cups/* initramfs/etc/cups/
@@ -391,17 +391,17 @@
                 if [ -x ${popplerUtilsPkg}/bin/pdftops ]; then
                   ln -sf ${popplerUtilsPkg}/bin/pdftops initramfs/bin/pdftops
                 fi
-                cp ${./scripts/cups/cups-spike-bootstrap} initramfs/bin/cups-spike-bootstrap
-                cp ${./scripts/cups/cups-spike-ram-feasibility} initramfs/bin/cups-spike-ram-feasibility
+                cp ${./scripts/cups/cups-runtime-bootstrap} initramfs/bin/cups-runtime-bootstrap
+                cp ${./scripts/cups/cups-runtime-ram-feasibility} initramfs/bin/cups-runtime-ram-feasibility
                 cp ${./scripts/cups/print-hbp-pdf} initramfs/bin/print-hbp-pdf
-                chmod 0755 initramfs/bin/cups-spike-bootstrap initramfs/bin/cups-spike-ram-feasibility initramfs/bin/print-hbp-pdf
-                echo "CUPS_SPIKE=1" > initramfs/cups-spike.env
-                echo "BRLASER_ROOT=${brlaserPkg}" >> initramfs/cups-spike.env
-                echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-spike.env
-                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike.env
-                cp ${cupsSpikeStoreClosure}/store-paths initramfs/cups-spike-store-paths
-                chmod 0644 initramfs/cups-spike-store-paths
-                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-spike-store-paths
+                chmod 0755 initramfs/bin/cups-runtime-bootstrap initramfs/bin/cups-runtime-ram-feasibility initramfs/bin/print-hbp-pdf
+                echo "CUPS_RUNTIME=1" > initramfs/cups-runtime.env
+                echo "BRLASER_ROOT=${brlaserPkg}" >> initramfs/cups-runtime.env
+                echo "CUPS_FILTERS_ROOT=${cupsFiltersPkg}" >> initramfs/cups-runtime.env
+                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-runtime.env
+                cp ${cupsRuntimeStoreClosure}/store-paths initramfs/cups-runtime-store-paths
+                chmod 0644 initramfs/cups-runtime-store-paths
+                ${pkgs.coreutils}/bin/touch -d '${timestamp}' initramfs/cups-runtime-store-paths
                 '' else ""}
 
 
@@ -438,7 +438,7 @@
 
               allowedReferences = [ ];
             };
-          mkimage = { debug, usbMode ? "gadget", cupsSpike ? false }:
+          mkimage = { debug, usbMode ? "gadget", cupsRuntime ? false }:
             let
               pkgs = hostPkgs;
               firmware = self.packages.${system}.firmware;
@@ -448,16 +448,15 @@
                 else
                   self.packages.${system}.kernel;
 
-              initramfs = self.lib.${system}.mkinitramfs { inherit debug cupsSpike; };
-              cupsSpikeStoreClosure = pkgs.closureInfo {
+              initramfs = self.lib.${system}.mkinitramfs { inherit debug cupsRuntime; };
+              cupsRuntimeStoreClosure = pkgs.closureInfo {
                 rootPaths = [ crossPkgs.cups crossPkgs.cups-filters crossPkgs.ghostscript crossPkgs.poppler_utils self.packages.${system}.brlaser-se-runtime ];
               };
               img-name =
                 let
                   modeBase = if usbMode == "host" then "seedetcher" else "seedetcher-gadget";
-                  base = if cupsSpike then "${modeBase}-cups-spike" else modeBase;
                 in
-                if debug then "${base}-debug.img" else "${base}.img";
+                if debug then "${modeBase}-debug.img" else "${modeBase}.img";
               imageSizeMB = 64;
 
               cmdlinetxt =
@@ -511,14 +510,14 @@
                 }
 
                 # Create disk image.
-                ${if cupsSpike then ''
+                ${if cupsRuntime then ''
                 # Auto-size rootfs partition from closure size to avoid huge sparse images.
                 CLOSURE_BYTES=0
                 while IFS= read -r p; do
                   [ -e "$p" ] || continue
                   sz="$(${pkgs.coreutils}/bin/du -sb "$p" | ${pkgs.coreutils}/bin/cut -f1)"
                   CLOSURE_BYTES=$((CLOSURE_BYTES + sz))
-                done < ${cupsSpikeStoreClosure}/store-paths
+                done < ${cupsRuntimeStoreClosure}/store-paths
 
                 # Add overhead for filesystem metadata + runtime writable paths.
                 ROOTFS_BYTES_EST=$(( (CLOSURE_BYTES * 130) / 100 + 128 * 1024 * 1024 ))
@@ -581,7 +580,7 @@
                 ${pkgs.mtools}/bin/mcopy -bpm -i "boot.vfat@@$OFFSET" overlays/* ::overlays
                 dd if=boot.vfat of=disk.img bs=512 seek="$START1" conv=notrunc status=none
 
-                ${if cupsSpike then ''
+                ${if cupsRuntime then ''
                 START2=$(echo "$PART_INFO" | awk '$1=="disk.img2"{print $2}')
                 SECTORS2=$(echo "$PART_INFO" | awk '$1=="disk.img2"{print $3}')
                 mkdir -p rootfsdir/store rootfsdir/etc/cups rootfsdir/var/run/cups rootfsdir/var/spool/cups rootfsdir/var/log/cups
@@ -589,7 +588,7 @@
                   rel="''${p#/nix}"
                   mkdir -p "rootfsdir$(dirname "$rel")"
                   cp -a "$p" "rootfsdir$rel"
-                done < ${cupsSpikeStoreClosure}/store-paths
+                done < ${cupsRuntimeStoreClosure}/store-paths
                 if [ -d ${crossPkgs.cups}/etc/cups ]; then
                   cp -a ${crossPkgs.cups}/etc/cups/* rootfsdir/etc/cups/
                 fi
@@ -605,7 +604,7 @@
                 cp disk.img $out/${img-name}
               '';
 
-              allowedReferences = if cupsSpike then null else [ ];
+              allowedReferences = if cupsRuntime then null else [ ];
             };
           mkcontroller = debug:
             let
@@ -890,18 +889,13 @@ EOF
               sparseCheckout = [ "boot" ];
               hash = "sha256-rSZ3sUnSmBcsIqc+K91GDs5qlqiP+j9zf9gM2lqzr8w=";
             };
-            initramfs = self.lib.${system}.mkinitramfs { debug = false; };
-            initramfs-debug = self.lib.${system}.mkinitramfs { debug = true; };
-            initramfs-cups-spike = self.lib.${system}.mkinitramfs { debug = false; cupsSpike = true; };
-            initramfs-cups-spike-debug = self.lib.${system}.mkinitramfs { debug = true; cupsSpike = true; };
-            image = self.lib.${system}.mkimage { debug = false; usbMode = "host"; };
-            image-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; };
-            image-gadget = self.lib.${system}.mkimage { debug = false; usbMode = "gadget"; };
-            image-gadget-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; };
-            image-cups-spike = self.lib.${system}.mkimage { debug = false; usbMode = "host"; cupsSpike = true; };
-            image-cups-spike-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; cupsSpike = true; };
-            image-cups-spike-gadget = self.lib.${system}.mkimage { debug = false; usbMode = "gadget"; cupsSpike = true; };
-            image-cups-spike-gadget-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; cupsSpike = true; };
+            # Release-integrated defaults: all main initramfs/images include HBP/CUPS runtime.
+            initramfs = self.lib.${system}.mkinitramfs { debug = false; cupsRuntime = true; };
+            initramfs-debug = self.lib.${system}.mkinitramfs { debug = true; cupsRuntime = true; };
+            image = self.lib.${system}.mkimage { debug = false; usbMode = "host"; cupsRuntime = true; };
+            image-debug = self.lib.${system}.mkimage { debug = true; usbMode = "host"; cupsRuntime = true; };
+            image-gadget = self.lib.${system}.mkimage { debug = false; usbMode = "gadget"; cupsRuntime = true; };
+            image-gadget-debug = self.lib.${system}.mkimage { debug = true; usbMode = "gadget"; cupsRuntime = true; };
             # reload the controller binary to a running seedetcher debug image.
             reload = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "reload" ''
               #!/bin/sh

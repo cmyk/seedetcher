@@ -20,6 +20,9 @@ Build directly if needed: `nix build .#controller` or `nix build .#controller-de
 | `image-gadget`             | `controller`       | Gadget (`dwc2,g_serial`)         | Console on `ttyGS0`/HDMI; no debug hooks.                     |
 | `image-gadget-debug`       | `controller-debug` | Gadget (`dwc2,g_serial`)         | Adds serial console + reload flow via `/dev/ttyGS1`.          |
 
+All four image outputs above include the integrated HBP/CUPS runtime support.
+Separate CUPS-runtime-specific image variants are no longer needed.
+
 Build commands (examples):
 - `nix build .#image` → `result/seedetcher.img`
 - `nix build .#image-debug` → `result/seedetcher-debug.img`

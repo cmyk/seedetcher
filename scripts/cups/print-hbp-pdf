@@ -178,7 +178,7 @@ if [ "$OUTPUT_MODE" = "gadget" ]; then
 fi
 
 if ! ensure_runtime_tools; then
-  echo "print-hbp-pdf: CUPS tools unavailable (likely /nix not mounted). Run 'cups-spike-ram-feasibility stage core' before SD removal." >&2
+  echo "print-hbp-pdf: CUPS tools unavailable (likely /nix not mounted). Run 'cups-runtime-ram-feasibility stage core' before SD removal." >&2
   exit 4
 fi
 if ! ensure_cupsd_running; then
