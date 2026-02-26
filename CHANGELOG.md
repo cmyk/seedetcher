@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+- HBP runtime integration is now part of the standard image outputs (`image`, `image-debug`, `image-gadget`, `image-gadget-debug`); separate runtime/spike image variants are removed.
+- Internal CUPS/HBP runtime naming was normalized from `cups-spike` to `cups-runtime` across flake wiring, init/runtime env, helper scripts, and controller call sites.
+- Runtime helper/script names are now:
+  - `cups-runtime-bootstrap`
+  - `cups-runtime-ram-feasibility`
+  - `/cups-runtime.env`
+  - `/cups-runtime-store-paths`
+- Added release-focused HBP operations doc: `docs/dev/hbp-runtime.md` and removed the old feasibility spike diary doc.
+- Added `docs/printers.md` as a consolidated Brother printer capability reference used for HBP/PCL/PS field validation and support triage.
+- Added a debug-only `Load Test Wallet` action flow in UI to inject fixture wallets without repeated scan loops during print/recovery testing.
+- HBP-enabled startup path now locks print flow to Brother HBP at `600 DPI` and bypasses language/DPI choice screens for that session.
+- Print progress behavior was stabilized across `PCL`/`PS`/`HBP`, including correct etch-stats page accounting and stage ordering.
+- Gadget-mode HBP capture path was restored and `scripts/capture_print.sh` now supports replay/conversion flow for captured CUPS raster jobs.
+- HBP bootstrap/runtime path is lazy on-demand (not eager at boot) and SD-detach handling was hardened for both HBP and PCL/PS flows.
+- Build/runtime no longer depends on an external `brlaser-root.tar.gz` artifact; integrated packaged runtime is used by default with optional drop-in fallback.
+- Added developer utility scripts: `scripts/analyze-go-bloat.sh` and `scripts/cleanup-nix-images.sh`.
 - Debug-image diagnostics:
   - added `export-logs-to-sd` helper to write a privacy-first, plain-directory snapshot on the boot partition (`SE-LOGS-LATEST`),
   - export payload is now strict allowlist only: `init_debug.log`, CUPS logs, `dmesg`, and manifest metadata (no `/proc`/`/tmp` dump),
