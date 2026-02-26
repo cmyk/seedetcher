@@ -6,7 +6,11 @@ USBDEV="/dev/ttyACM1"  # Default USB device
 VERBOSE=false
 REPLAY_QUEUE="${REPLAY_QUEUE:-}"
 REPLAY_SERVER="${REPLAY_SERVER:-}"
-IDLE_TIMEOUT_SEC="${IDLE_TIMEOUT_SEC:-3}"
+# HBP gadget prints are often sent as multiple batches with render gaps between
+# writes. Use a short idle window, but require multiple consecutive idle windows
+# before stopping capture.
+IDLE_TIMEOUT_SEC="${IDLE_TIMEOUT_SEC:-10}"
+IDLE_WINDOWS_REQUIRED="${IDLE_WINDOWS_REQUIRED:-3}"
 CONVERT_RAS_TO_PDF="${CONVERT_RAS_TO_PDF:-1}"
 
 # Parse command-line options
@@ -48,6 +52,66 @@ convert_ras_to_pdf() {
     return 0
 }
 
+split_concat_raster_streams() {
+    ras_file="$1"
+    out_prefix="$2"
+
+    # CUPS raster magic:
+    # - little-endian: RaS3
+    # - big-endian:    3SaR
+    offsets_tmp="$(mktemp /tmp/capture_print.XXXXXX.offsets)"
+    parts_tmp="$(mktemp /tmp/capture_print.XXXXXX.parts)"
+    trap 'rm -f "$offsets_tmp" "$parts_tmp"' RETURN
+
+    {
+        LC_ALL=C grep -abo "RaS3" "$ras_file" 2>/dev/null | cut -d: -f1 || true
+        LC_ALL=C grep -abo "3SaR" "$ras_file" 2>/dev/null | cut -d: -f1 || true
+    } | sort -n | awk 'BEGIN{last=-1} {if($1!=last){print $1; last=$1}}' > "$offsets_tmp"
+
+    # Not concatenated (or no recognizable header offsets): keep single stream.
+    if [ ! -s "$offsets_tmp" ] || [ "$(wc -l < "$offsets_tmp")" -le 1 ]; then
+        echo "$ras_file" > "$parts_tmp"
+        cat "$parts_tmp"
+        return 0
+    fi
+
+    mapfile -t offs < "$offsets_tmp"
+    total_bytes=$(stat -c%s "$ras_file")
+    part_idx=1
+    emitted=0
+
+    for i in "${!offs[@]}"; do
+        start="${offs[$i]}"
+        if [ "$start" -ge "$total_bytes" ]; then
+            continue
+        fi
+        if [ "$i" -lt "$((${#offs[@]} - 1))" ]; then
+            next="${offs[$((i + 1))]}"
+            count=$((next - start))
+        else
+            count=$((total_bytes - start))
+        fi
+        if [ "$count" -le 0 ]; then
+            continue
+        fi
+
+        part_file="${out_prefix}-part${part_idx}.ras"
+        dd if="$ras_file" of="$part_file" bs=1 skip="$start" count="$count" status=none
+        if file "$part_file" 2>/dev/null | grep -qi "Cups\? Raster"; then
+            echo "$part_file" >> "$parts_tmp"
+            part_idx=$((part_idx + 1))
+            emitted=$((emitted + 1))
+        else
+            rm -f "$part_file"
+        fi
+    done
+
+    if [ "$emitted" -eq 0 ]; then
+        echo "$ras_file" > "$parts_tmp"
+    fi
+    cat "$parts_tmp"
+}
+
 # Enable debugging only if verbose mode is enabled
 if [ "$VERBOSE" = true ]; then
     set -x
@@ -85,6 +149,7 @@ CAPTURE_PID=$!
 # Monitor file growth and stop only after sustained idle period.
 LAST_SIZE=0
 IDLE_TICKS=0
+IDLE_WINDOWS=0
 IDLE_LIMIT=$((IDLE_TIMEOUT_SEC * 2))
 while true; do
     sleep 0.5
@@ -93,12 +158,18 @@ while true; do
     if [ "$CURRENT_SIZE" -eq "$LAST_SIZE" ] && [ "$CURRENT_SIZE" -gt 0 ]; then
         IDLE_TICKS=$((IDLE_TICKS + 1))
         if [ "$IDLE_TICKS" -ge "$IDLE_LIMIT" ]; then
-            echo "No more data received for ${IDLE_TIMEOUT_SEC}s, stopping capture."
-            kill "$CAPTURE_PID" 2>/dev/null
-            break
+            IDLE_WINDOWS=$((IDLE_WINDOWS + 1))
+            IDLE_TICKS=0
+            if [ "$IDLE_WINDOWS" -ge "$IDLE_WINDOWS_REQUIRED" ]; then
+                total_idle=$((IDLE_TIMEOUT_SEC * IDLE_WINDOWS_REQUIRED))
+                echo "No more data received for ${total_idle}s (${IDLE_WINDOWS_REQUIRED}x${IDLE_TIMEOUT_SEC}s), stopping capture."
+                kill "$CAPTURE_PID" 2>/dev/null
+                break
+            fi
         fi
     else
         IDLE_TICKS=0
+        IDLE_WINDOWS=0
     fi
     LAST_SIZE=$CURRENT_SIZE
 done
@@ -142,7 +213,31 @@ if [ -s "$OUTPUT_FILE" ]; then
     echo "Saved as $FINAL_FILE"
 
     if [ "$EXT" = "ras" ] && [ "$CONVERT_RAS_TO_PDF" != "0" ]; then
-        convert_ras_to_pdf "$FINAL_FILE" "${FINAL_FILE%.ras}-from-ras.pdf"
+        mapfile -t ras_parts < <(split_concat_raster_streams "$FINAL_FILE" "${FINAL_FILE%.ras}")
+
+        if [ "${#ras_parts[@]}" -gt 1 ]; then
+            echo "Detected concatenated raster streams: ${#ras_parts[@]} parts."
+            pdf_parts=()
+            part_num=1
+            for p in "${ras_parts[@]}"; do
+                out_pdf="${FINAL_FILE%.ras}-from-ras-part${part_num}.pdf"
+                convert_ras_to_pdf "$p" "$out_pdf"
+                if [ -s "$out_pdf" ]; then
+                    pdf_parts+=("$out_pdf")
+                fi
+                part_num=$((part_num + 1))
+            done
+            if [ "${#pdf_parts[@]}" -gt 1 ] && command -v pdfunite >/dev/null 2>&1; then
+                merged="${FINAL_FILE%.ras}-from-ras.pdf"
+                if pdfunite "${pdf_parts[@]}" "$merged"; then
+                    echo "Merged raster PDF saved as $merged"
+                fi
+            elif [ "${#pdf_parts[@]}" -eq 1 ]; then
+                cp "${pdf_parts[0]}" "${FINAL_FILE%.ras}-from-ras.pdf"
+            fi
+        else
+            convert_ras_to_pdf "$FINAL_FILE" "${FINAL_FILE%.ras}-from-ras.pdf"
+        fi
     fi
 
     if [ "$EXT" = "ras" ] && [ -n "$REPLAY_QUEUE" ]; then

@@ -3,6 +3,7 @@ set -eu
 SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
 QUEUE="${HBP_QUEUE:-test-hbp}"
 GADGET_DEV="${HBP_GADGET_DEV:-/dev/ttyGS1}"
+GADGET_WRITE_TIMEOUT_SEC="${HBP_GADGET_WRITE_TIMEOUT_SEC:-45}"
 PDF="${1:-}"
 DPI="${2:-600}"
 if [ -z "$PDF" ] || [ ! -f "$PDF" ]; then
@@ -173,8 +174,11 @@ if [ "$OUTPUT_MODE" = "gadget" ]; then
     exit 6
   fi
   echo "print-hbp-pdf: writing CUPS raster to gadget device ${GADGET_DEV}" >&2
-  cat "$RAS" > "$GADGET_DEV"
-  exit $?
+  if ! /bin/timeout "$GADGET_WRITE_TIMEOUT_SEC" sh -c "cat \"$RAS\" > \"$GADGET_DEV\""; then
+    echo "print-hbp-pdf: gadget write timed out after ${GADGET_WRITE_TIMEOUT_SEC}s (is host capture active?)" >&2
+    exit 7
+  fi
+  exit 0
 fi
 
 if ! ensure_runtime_tools; then
