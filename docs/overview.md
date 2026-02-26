@@ -34,4 +34,4 @@ Seed generation is **not** included — only processing of existing seeds.
 - `printer/raster.go` – canonical plate bitmap rendering.
 - `printer/pcl.go` – PCL output writer.
 - `printer/pdf_raster.go` – PDF writer from raster pages.
-- `printer/printer.go` – legacy/deprecated helpers (kept for compatibility).
+- `printer/printer.go` – shared print primitives (paper constants, descriptor QR payload, font loading).

@@ -12,10 +12,14 @@ func (s *ActionChoiceScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	if th == nil {
 		th = &singleTheme
 	}
+	choices := []string{"BACKUP WALLET", "RECOVER DESCR."}
+	if debugLoadTestWalletEnabled(ctx) {
+		choices = append(choices, "LOAD TEST WALLET")
+	}
 	cs := &ChoiceScreen{
 		Title:   "Action",
 		Lead:    "Choose action",
-		Choices: []string{"BACKUP WALLET", "RECOVER DESCR."},
+		Choices: choices,
 	}
 	choice, ok := cs.Choose(ctx, ops, th)
 	if !ok {
@@ -26,6 +30,11 @@ func (s *ActionChoiceScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		return &BackupFlowScreen{Theme: th}
 	case 1:
 		return &RecoverDescriptorFlowScreen{Theme: th}
+	case 2:
+		if debugLoadTestWalletEnabled(ctx) {
+			return newLoadTestWalletScreen(th)
+		}
+		return &MainMenuScreen{}
 	default:
 		return &MainMenuScreen{}
 	}

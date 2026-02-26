@@ -27,16 +27,37 @@ if [ -w /proc/sys/kernel/sysrq ]; then
     echo "SysRq=$(cat /proc/sys/kernel/sysrq 2>/dev/null)" >> /log/init_debug.log
 fi
 
-# Pick a debug sink as early as possible
-DEBUG_TTY="/dev/ttyAMA0"
-[ -c /dev/ttyGS0 ] && DEBUG_TTY="/dev/ttyGS0"
-[ -c /dev/tty1 ] && [ ! -c "$DEBUG_TTY" ] && DEBUG_TTY="/dev/tty1"
+# Quiet-by-default debug policy:
+# - always log to /log/init_debug.log
+# - only mirror to /dev/kmsg when INIT_DEBUG_TO_KMSG=1
+# - only mirror to a TTY when INIT_DEBUG_TO_TTY=1
+INIT_DEBUG_TO_KMSG="${INIT_DEBUG_TO_KMSG:-0}"
+INIT_DEBUG_TO_TTY="${INIT_DEBUG_TO_TTY:-0}"
+DEBUG_TTY="${INIT_DEBUG_TTY:-/dev/null}"
+if [ -f /cups-runtime.env ]; then
+    # shellcheck source=/dev/null
+    . /cups-runtime.env
+    INIT_DEBUG_TO_KMSG="${INIT_DEBUG_TO_KMSG:-0}"
+    INIT_DEBUG_TO_TTY="${INIT_DEBUG_TO_TTY:-0}"
+    DEBUG_TTY="${INIT_DEBUG_TTY:-$DEBUG_TTY}"
+fi
+if [ "$INIT_DEBUG_TO_TTY" = "1" ] && [ "$DEBUG_TTY" = "/dev/null" ]; then
+    if [ -c /dev/ttyGS0 ]; then
+        DEBUG_TTY="/dev/ttyGS0"
+    elif [ -c /dev/tty1 ]; then
+        DEBUG_TTY="/dev/tty1"
+    elif [ -c /dev/ttyAMA0 ]; then
+        DEBUG_TTY="/dev/ttyAMA0"
+    fi
+fi
 
 debug_echo() {
     msg="DEBUG: $1"
     echo "$msg" >> /log/init_debug.log
-    echo "$msg" > /dev/kmsg
-    if [ -c "$DEBUG_TTY" ]; then
+    if [ "$INIT_DEBUG_TO_KMSG" = "1" ]; then
+        echo "$msg" > /dev/kmsg 2>/dev/null || true
+    fi
+    if [ "$INIT_DEBUG_TO_TTY" = "1" ] && [ -c "$DEBUG_TTY" ]; then
         echo "$msg" > "$DEBUG_TTY"
     fi
 }
@@ -68,6 +89,9 @@ wait_for "$SHELL_TTY" 30
 wait_for "$CTRL_TTY" 30
 
 debug_echo "Shell TTY: ${SHELL_TTY:-none}, Controller TTY: ${CTRL_TTY:-none}"
+if [ -f /cups-runtime.env ]; then
+    debug_echo "CUPS runtime: lazy bootstrap mode (boot init skipped)"
+fi
 
 # Fix DRM framebuffer permissions
 debug_echo "Fixing /dev/dri permissions..."
@@ -85,10 +109,47 @@ fi
 
 debug_echo "Checking /controller existence and permissions..."
 ls -l /controller >> /log/init_debug.log 2>&1
-file /controller >> /log/init_debug.log 2>&1
+[ -x /bin/file ] && file /controller >> /log/init_debug.log 2>&1
 debug_echo "Starting controller..."
 # Ensure controller’s stdout/stderr go to log; stdin from controller TTY if present
 /controller < "$CTRL_TTY" >> /log/debug.log 2>> /log/debug.log &
+CONTROLLER_PID=$!
+
+run_log_export() {
+    reason="$1"
+    if [ ! -x /bin/export-logs-to-sd ]; then
+        return 0
+    fi
+    echo "log-export: reason=${reason} start" >> /log/init_debug.log
+    if /bin/export-logs-to-sd "$reason" >> /log/init_debug.log 2>&1; then
+        echo "log-export: reason=${reason} done" >> /log/init_debug.log
+        return 0
+    fi
+    echo "log-export: reason=${reason} failed" >> /log/init_debug.log
+    return 1
+}
+
+# Debug image helper: export logs once after boot and again if controller exits.
+# This ensures beta users can retrieve logs from SD without UART access.
+if [ -x /bin/export-logs-to-sd ]; then
+    (
+        n=0
+        while [ "$n" -lt 8 ]; do
+            if run_log_export "boot-$n"; then
+                break
+            fi
+            n=$((n + 1))
+            sleep 15
+        done
+    ) &
+    (
+        pid="$CONTROLLER_PID"
+        while kill -0 "$pid" 2>/dev/null; do
+            sleep 1
+        done
+        run_log_export "controller-exit"
+    ) &
+fi
 
 # Wait until the controller process is fully running
 while ! pidof controller > /dev/null; do
@@ -112,7 +173,7 @@ debug_echo "Init finished. Starting shell..."
 if [ -n "$SHELL_TTY" ] && [ -c "$SHELL_TTY" ]; then
     debug_echo "Launching getty on $SHELL_TTY..."
     echo "seedetcher init: shell on $SHELL_TTY" > "$SHELL_TTY"
-    stty -F "$SHELL_TTY" sane cread clocal 115200 cs8 -parenb -cstopb -ixon -ixoff -echo
+    stty -F "$SHELL_TTY" sane echo
     exec /bin/busybox getty -L -n -l /bin/sh 115200 "$SHELL_TTY"
 else
     debug_echo "No shell TTY found; exec'ing controller only"

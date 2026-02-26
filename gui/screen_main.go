@@ -33,9 +33,15 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			case Button1:
 				return s // No-op back on root
 			case Button3:
-				return &SDCardGateScreen{
+				if ctx != nil {
+					ctx.SDRemovalPrepared = false
+				}
+				return &HBPStartupGateScreen{
 					Theme: &singleTheme,
-					Next:  &ActionChoiceScreen{Theme: &singleTheme},
+					Next: &SDCardGateScreen{
+						Theme: &singleTheme,
+						Next:  &ActionChoiceScreen{Theme: &singleTheme},
+					},
 				}
 			}
 		}
@@ -57,6 +63,64 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		}...)
 		ctx.Frame()
 	}
+}
+
+// HBPStartupGateScreen runs before SD removal and allows optional Brother runtime prep.
+type HBPStartupGateScreen struct {
+	Theme *Colors
+	Next  Screen
+}
+
+func (s *HBPStartupGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
+	th := s.Theme
+	if th == nil {
+		th = &singleTheme
+	}
+	if ctx != nil && ctx.HBPRuntimeReady {
+		if s.Next != nil {
+			return s.Next
+		}
+		return &MainMenuScreen{}
+	}
+
+	choice, ok := (&ChoiceScreen{
+		Title:    "Brother HBP",
+		Lead:     "Prefer PCL/PS: faster and lower RAM.\nUse HBP (600dpi cap) only if printer lacks PCL/PS.",
+		Choices:  []string{"PCL/PS only", "Enable HBP"},
+		LeadLeft: true,
+		choice:   0,
+	}).Choose(ctx, ops, th)
+	if !ok {
+		return &MainMenuScreen{}
+	}
+	if choice == 0 {
+		if ctx != nil {
+			ctx.HBPRuntimeReady = false
+			if err := ctx.Platform.PrepareSDForRemoval(); err != nil {
+				showError(ctx, ops, th, fmt.Errorf("SD removal prep failed: %v", err))
+				return &MainMenuScreen{}
+			}
+			ctx.SDRemovalPrepared = true
+		}
+		if s.Next != nil {
+			return s.Next
+		}
+		return &MainMenuScreen{}
+	}
+
+	prep := &HBPRuntimePrepareScreen{}
+	if err := prep.Show(ctx, ops, th); err != nil {
+		showError(ctx, ops, th, err)
+		return &MainMenuScreen{}
+	}
+	if ctx != nil {
+		ctx.HBPRuntimeReady = true
+		ctx.SDRemovalPrepared = false
+	}
+	if s.Next != nil {
+		return s.Next
+	}
+	return &MainMenuScreen{}
 }
 
 // BackupFlowScreen drives backup and print stages in the Screen loop.
@@ -291,18 +355,13 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			}
 			job = FromDescriptor(desc, ctx.Keystores[desc.Keys[0].MasterFingerprint], s.confirmKeyIdx, label)
 		}
-		if s.desc != nil {
-			printer.SetDescriptorShardSetID(&s.shardSetID)
-		}
 		return &PrintFlowScreen{
 			Theme: th,
 			Job:   job,
 			OnSuccess: func() Screen {
-				printer.SetDescriptorShardSetID(nil)
 				return &MainMenuScreen{}
 			},
 			OnRetry: func() Screen {
-				printer.SetDescriptorShardSetID(nil)
 				s.stage = stageLabel
 				return s
 			},

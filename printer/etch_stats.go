@@ -52,25 +52,39 @@ func BuildEtchStatsReport(seedPlates, descPlates []*image.Paletted, dpi float64,
 	if len(seedPlates) == 0 {
 		return EtchStatsReport{}, fmt.Errorf("no seed plates")
 	}
-	r := EtchStatsReport{
-		DPI:         dpi,
-		Paper:       paper,
-		MaskAreaMM2: maskAreaMM2,
-		SteelAreaMM2: steelAreaMM2,
-	}
+	stats := make([]EtchPlateStat, 0, len(seedPlates)*2)
 	for i, sp := range seedPlates {
 		if sp != nil {
-			r.Stats = append(r.Stats, plateStat(sp, i+1, "seed", dpi))
+			stats = append(stats, plateStat(sp, i+1, "seed", dpi))
 		}
 		if len(descPlates) > 0 && i < len(descPlates) {
 			p := descPlates[i]
 			if p == nil {
 				continue
 			}
-			r.Stats = append(r.Stats, plateStat(p, i+1, "descriptor", dpi))
+			stats = append(stats, plateStat(p, i+1, "descriptor", dpi))
 		}
 	}
+	return BuildEtchStatsReportFromStats(stats, dpi, paper)
+}
+
+func BuildEtchStatsReportFromStats(stats []EtchPlateStat, dpi float64, paper PaperSize) (EtchStatsReport, error) {
+	if len(stats) == 0 {
+		return EtchStatsReport{}, fmt.Errorf("no plate stats")
+	}
+	r := EtchStatsReport{
+		DPI:          dpi,
+		Paper:        paper,
+		MaskAreaMM2:  maskAreaMM2,
+		SteelAreaMM2: steelAreaMM2,
+		Stats:        make([]EtchPlateStat, len(stats)),
+	}
+	copy(r.Stats, stats)
 	return r, nil
+}
+
+func ComputeEtchPlateStat(p *image.Paletted, plateIdx int, side string, dpi float64) EtchPlateStat {
+	return plateStat(p, plateIdx, side, dpi)
 }
 
 func plateStat(p *image.Paletted, plateIdx int, side string, dpi float64) EtchPlateStat {

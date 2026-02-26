@@ -1,0 +1,486 @@
+#!/bin/sh
+set -eu
+
+SOCK="${CUPS_SERVER_SOCK:-/var/run/cups/cups.sock}"
+CUPS_RUNTIME_DEBUG_TO_KMSG="${CUPS_RUNTIME_DEBUG_TO_KMSG:-0}"
+
+log() {
+  msg="$*"
+  echo "$msg" >> /log/cups.log
+  if [ "$CUPS_RUNTIME_DEBUG_TO_KMSG" = "1" ]; then
+    echo "DEBUG: CUPS bootstrap: $msg" > /dev/kmsg 2>/dev/null || true
+  fi
+}
+
+debug_echo() {
+  log "$*"
+}
+
+is_mounted() {
+  mnt="$1"
+  awk -v m="$mnt" '$2==m{found=1} END{exit found?0:1}' /proc/mounts
+}
+
+mount_nix_from_sd() {
+  mkdir -p /nix
+  if is_mounted /nix; then
+    return 0
+  fi
+  tries=10
+  while [ "$tries" -gt 0 ] && [ ! -b /dev/mmcblk0p2 ]; do
+    sleep 1
+    tries=$((tries - 1))
+  done
+  if [ ! -b /dev/mmcblk0p2 ]; then
+    echo "cups-runtime-bootstrap: /dev/mmcblk0p2 not found" >&2
+    return 1
+  fi
+  mount -t ext4 /dev/mmcblk0p2 /nix >> /log/cups.log 2>&1
+}
+
+if [ -f /cups-runtime.env ]; then
+  # shellcheck source=/dev/null
+  . /cups-runtime.env
+  CUPS_RUNTIME_DEBUG_TO_KMSG="${CUPS_RUNTIME_DEBUG_TO_KMSG:-0}"
+fi
+
+BRLASER_DROPIN_ROOT=""
+mkdir -p /mnt/boot /var/cups-extra
+BRLASER_RUNTIME_ROOT=/var/cups-extra/brlaser-runtime
+mkdir -p "$BRLASER_RUNTIME_ROOT/filter" "$BRLASER_RUNTIME_ROOT/lib"
+SHOULD_LOAD_DROPIN=0
+case "${CUPS_RUNTIME_LOAD_DROPIN:-auto}" in
+  1|yes|true|on)
+    SHOULD_LOAD_DROPIN=1
+    ;;
+  0|no|false|off)
+    SHOULD_LOAD_DROPIN=0
+    ;;
+  *)
+    [ -z "${BRLASER_ROOT:-}" ] && SHOULD_LOAD_DROPIN=1
+    ;;
+esac
+if [ "$SHOULD_LOAD_DROPIN" -eq 1 ] && [ -b /dev/mmcblk0p1 ]; then
+  mount -t vfat /dev/mmcblk0p1 /mnt/boot >/dev/null 2>&1 || true
+  for cand in /mnt/boot/brlaser-root.tar.gz /mnt/boot/brlaser-root.tgz /mnt/boot/brlaser-root.tar; do
+    if [ -f "$cand" ]; then
+      rm -rf /var/cups-extra/brlaser-root
+      mkdir -p /var/cups-extra/brlaser-root
+      if tar -xf "$cand" -C /var/cups-extra/brlaser-root >/dev/null 2>&1; then
+        BRLASER_DROPIN_ROOT=/var/cups-extra/brlaser-root
+        if [ -d /var/cups-extra/brlaser-root/brlaser-root ]; then
+          BRLASER_DROPIN_ROOT=/var/cups-extra/brlaser-root/brlaser-root
+        fi
+        debug_echo "loaded brlaser drop-in from $(basename "$cand")"
+      else
+        debug_echo "failed to extract brlaser drop-in $(basename "$cand")"
+      fi
+      break
+    fi
+  done
+  umount /mnt/boot >/dev/null 2>&1 || true
+elif [ "$SHOULD_LOAD_DROPIN" -eq 0 ]; then
+  debug_echo "drop-in loading disabled"
+else
+  debug_echo "no boot partition for drop-in loading"
+fi
+
+# Minimal identity DB expected by cupsd in initramfs.
+if [ ! -f /etc/group ]; then
+  cat > /etc/group <<'EOF_GROUP'
+root:x:0:
+sys:x:3:
+lp:x:7:
+lpadmin:x:19:
+EOF_GROUP
+fi
+if [ ! -f /etc/passwd ]; then
+  cat > /etc/passwd <<'EOF_PASSWD'
+root:x:0:0:root:/root:/bin/sh
+lp:x:7:7:CUPS:/var/spool/cups:/bin/false
+EOF_PASSWD
+fi
+grep -q '^lpadmin:' /etc/group || echo 'lpadmin:x:19:' >> /etc/group
+grep -q '^lp:' /etc/group || echo 'lp:x:7:' >> /etc/group
+grep -q '^sys:' /etc/group || echo 'sys:x:3:' >> /etc/group
+grep -q '^root:' /etc/group || echo 'root:x:0:' >> /etc/group
+grep -q '^lp:' /etc/passwd || echo 'lp:x:7:7:CUPS:/var/spool/cups:/bin/false' >> /etc/passwd
+
+mkdir -p /etc/cups /var/cache/cups /var/spool/cups/tmp /run/cups /var/run/cups /var/log/cups
+chmod 1777 /var/spool/cups/tmp
+
+mount_nix_from_sd
+
+CUPS_BIN_ROOT="$(readlink /bin/cupsd 2>/dev/null | sed 's#/bin/cupsd$##')"
+[ -z "$CUPS_BIN_ROOT" ] && CUPS_BIN_ROOT="/nix/store"
+CUPS_DATA_ROOT="$CUPS_BIN_ROOT"
+if [ ! -d "${CUPS_DATA_ROOT}/share/cups" ] && [ -d "${CUPS_BIN_ROOT}-lib/share/cups" ]; then
+  CUPS_DATA_ROOT="${CUPS_BIN_ROOT}-lib"
+fi
+
+repair_elf_runtime() {
+  elf_bin="$1"
+  [ -x "$elf_bin" ] || return 0
+  [ -x /bin/readelf ] || return 0
+
+  interp_path="$(/bin/readelf -l "$elf_bin" 2>/dev/null | sed -n 's@.*Requesting program interpreter: \(.*\)]@\1@p' | head -n 1)"
+  if [ -n "$interp_path" ] && [ ! -e "$interp_path" ] && [ -e /lib/ld-musl-armhf.so.1 ]; then
+    mkdir -p "$(dirname "$interp_path")"
+    ln -snf /lib/ld-musl-armhf.so.1 "$interp_path" 2>/dev/null || true
+    debug_echo "repaired interp for $(basename "$elf_bin") -> $interp_path"
+  fi
+
+  runpaths="$(/bin/readelf -d "$elf_bin" 2>/dev/null | sed -n 's@.*Library runpath: \[\(.*\)\]@\1@p' | head -n 1)"
+  [ -n "$runpaths" ] || return 0
+
+  gcc_lib_path="$(find /nix/store -path '*gcc*lib*/armv6l-unknown-linux-musleabihf/lib' 2>/dev/null | head -n 1)"
+  cups_lib_path=""
+  if [ -d "${CUPS_BIN_ROOT}/lib" ]; then
+    cups_lib_path="${CUPS_BIN_ROOT}/lib"
+  elif [ -d "${CUPS_BIN_ROOT}-lib/lib" ]; then
+    cups_lib_path="${CUPS_BIN_ROOT}-lib/lib"
+  fi
+
+  oldifs="$IFS"
+  IFS=':'
+  for rp in $runpaths; do
+    [ -n "$rp" ] || continue
+    [ -e "$rp" ] && continue
+    target=""
+    case "$rp" in
+      *musl*"/lib") target="/lib" ;;
+      *cups*"/lib") target="$cups_lib_path" ;;
+      *gcc*"/armv6l-unknown-linux-musleabihf/lib") target="$gcc_lib_path" ;;
+    esac
+    if [ -n "$target" ] && [ -d "$target" ]; then
+      mkdir -p "$(dirname "$rp")"
+      rm -rf "$rp" 2>/dev/null || true
+      ln -snf "$target" "$rp" 2>/dev/null || true
+      debug_echo "repaired runpath for $(basename "$elf_bin") -> $rp"
+    fi
+  done
+  IFS="$oldifs"
+}
+
+install_brlaser_wrapper() {
+  filter_bin="/var/cups-serverbin/lib/cups/filter/rastertobrlaser"
+  runtime_filter="$BRLASER_RUNTIME_ROOT/filter/rastertobrlaser.real"
+  [ -x "$filter_bin" ] || return 0
+
+  cp -a "$filter_bin" "$runtime_filter" 2>/dev/null || return 0
+
+  cat > "$filter_bin" <<'EOF_WRAP'
+#!/bin/sh
+RUNTIME_ROOT="/var/cups-extra/brlaser-runtime"
+REAL_FILTER="$RUNTIME_ROOT/filter/rastertobrlaser.real"
+[ -x "$REAL_FILTER" ] || exit 127
+LD_PATHS="$RUNTIME_ROOT/lib:/lib:/usr/lib"
+if [ -n "${BRLASER_LD_LIBRARY_PATH:-}" ]; then
+  LD_PATHS="$BRLASER_LD_LIBRARY_PATH:$LD_PATHS"
+fi
+if [ -n "${LD_LIBRARY_PATH:-}" ]; then
+  LD_PATHS="$LD_LIBRARY_PATH:$LD_PATHS"
+fi
+export LD_LIBRARY_PATH="$LD_PATHS"
+exec "$REAL_FILTER" "$@"
+EOF_WRAP
+  chmod 555 "$filter_bin" 2>/dev/null || true
+  debug_echo "installed brlaser wrapper at $filter_bin"
+}
+
+# Copy CUPS serverbin to writable storage.
+mkdir -p /var/cups-serverbin/lib
+rm -rf /var/cups-serverbin/lib/cups
+if [ -d "${CUPS_BIN_ROOT}/lib/cups" ]; then
+  cp -a "${CUPS_BIN_ROOT}/lib/cups" /var/cups-serverbin/lib/
+fi
+for extra_root in "$BRLASER_DROPIN_ROOT" "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
+  [ -n "$extra_root" ] || continue
+  if [ -d "$extra_root/lib/cups" ]; then
+    cp -a "$extra_root/lib/cups/." /var/cups-serverbin/lib/cups/ 2>/dev/null || true
+  fi
+  if [ -d "$extra_root/lib" ]; then
+    find "$extra_root/lib" -maxdepth 2 -type f \( -name '*.so' -o -name '*.so.*' \) -exec cp -a {} "$BRLASER_RUNTIME_ROOT/lib/" \; 2>/dev/null || true
+  fi
+done
+if [ -d /var/cups-serverbin/lib/cups ]; then
+  chown root:root /var/cups-serverbin/lib/cups 2>/dev/null || true
+  chown root:root /var/cups-serverbin/lib/cups/backend 2>/dev/null || true
+  chown root:root /var/cups-serverbin/lib/cups/filter 2>/dev/null || true
+  chown root:root /var/cups-serverbin/lib/cups/driver 2>/dev/null || true
+  chown root:root /var/cups-serverbin/lib/cups/daemon 2>/dev/null || true
+  chmod 755 /var/cups-serverbin/lib/cups 2>/dev/null || true
+  chmod 755 /var/cups-serverbin/lib/cups/backend 2>/dev/null || true
+  chmod 755 /var/cups-serverbin/lib/cups/filter 2>/dev/null || true
+  chmod 755 /var/cups-serverbin/lib/cups/driver 2>/dev/null || true
+  chmod 755 /var/cups-serverbin/lib/cups/daemon 2>/dev/null || true
+  chown root:root /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
+  chown root:root /var/cups-serverbin/lib/cups/filter/* 2>/dev/null || true
+  chown root:root /var/cups-serverbin/lib/cups/driver/* 2>/dev/null || true
+  chown root:root /var/cups-serverbin/lib/cups/daemon/* 2>/dev/null || true
+  chmod 555 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
+  chmod 555 /var/cups-serverbin/lib/cups/filter/* 2>/dev/null || true
+  chmod 555 /var/cups-serverbin/lib/cups/driver/* 2>/dev/null || true
+  chmod 555 /var/cups-serverbin/lib/cups/daemon/* 2>/dev/null || true
+fi
+if [ -d /var/cups-serverbin/lib/cups/backend ]; then
+  chmod 700 /var/cups-serverbin/lib/cups/backend/* 2>/dev/null || true
+fi
+
+# Build writable CUPS data dir and merge optional models/PPDs.
+CUPS_RUNTIME_DATA=/var/cups-data
+rm -rf "$CUPS_RUNTIME_DATA"
+mkdir -p "$CUPS_RUNTIME_DATA"
+if [ -d "${CUPS_DATA_ROOT}/share/cups" ]; then
+  if [ "${CUPS_RUNTIME_DATA_COPY:-minimal}" = "full" ]; then
+    cp -a "${CUPS_DATA_ROOT}/share/cups/." "$CUPS_RUNTIME_DATA/" 2>/dev/null || true
+  else
+    for d in mime usb drv ppdc; do
+      if [ -d "${CUPS_DATA_ROOT}/share/cups/$d" ]; then
+        mkdir -p "$CUPS_RUNTIME_DATA/$d"
+        cp -a "${CUPS_DATA_ROOT}/share/cups/$d/." "$CUPS_RUNTIME_DATA/$d/" 2>/dev/null || true
+      fi
+    done
+  fi
+fi
+for extra_root in "$BRLASER_DROPIN_ROOT" "${BRLASER_ROOT:-}" "${CUPS_FILTERS_ROOT:-}"; do
+  [ -n "$extra_root" ] || continue
+  if [ -d "$extra_root/share/cups/drv" ]; then
+    mkdir -p "$CUPS_RUNTIME_DATA/drv"
+    cp -a "$extra_root/share/cups/drv/." "$CUPS_RUNTIME_DATA/drv/" 2>/dev/null || true
+  fi
+  if [ -d "$extra_root/share/cups/model" ]; then
+    mkdir -p "$CUPS_RUNTIME_DATA/model"
+    cp -a "$extra_root/share/cups/model/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
+  fi
+  if [ -d "$extra_root/share/cups/ppdc" ]; then
+    mkdir -p "$CUPS_RUNTIME_DATA/ppdc"
+    cp -a "$extra_root/share/cups/ppdc/." "$CUPS_RUNTIME_DATA/ppdc/" 2>/dev/null || true
+  fi
+  if [ -d "$extra_root/share/ppd" ]; then
+    mkdir -p "$CUPS_RUNTIME_DATA/model"
+    cp -a "$extra_root/share/ppd/." "$CUPS_RUNTIME_DATA/model/" 2>/dev/null || true
+  fi
+done
+mkdir -p "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" "$CUPS_RUNTIME_DATA/ppdc"
+chown root:root "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" "$CUPS_RUNTIME_DATA/ppdc" 2>/dev/null || true
+chmod 755 "$CUPS_RUNTIME_DATA" "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv" "$CUPS_RUNTIME_DATA/usb" "$CUPS_RUNTIME_DATA/mime" "$CUPS_RUNTIME_DATA/ppdc" 2>/dev/null || true
+
+if [ "${CUPS_RUNTIME_REPAIR_ALL_FILTERS:-0}" = "1" ] && [ -d /var/cups-serverbin/lib/cups/filter ]; then
+  for f in /var/cups-serverbin/lib/cups/filter/*; do
+    [ -f "$f" ] || continue
+    repair_elf_runtime "$f"
+  done
+  if [ -d /var/cups-serverbin/lib/cups/driver ]; then
+    for f in /var/cups-serverbin/lib/cups/driver/*; do
+      [ -f "$f" ] || continue
+      repair_elf_runtime "$f"
+    done
+  fi
+else
+  repair_elf_runtime /var/cups-serverbin/lib/cups/filter/rastertobrlaser
+  repair_elf_runtime /var/cups-serverbin/lib/cups/driver/drv
+  repair_elf_runtime /var/cups-serverbin/lib/cups/driver/cups-driverd
+fi
+install_brlaser_wrapper
+
+run_ppdc_brlaser() {
+  out_dir="$1"
+  drv_file="$2"
+  timeout_secs="${3:-10}"
+  [ -n "$out_dir" ] && [ -n "$drv_file" ] || return 1
+
+  set -- /bin/ppdc -d "$out_dir"
+  for inc in "$CUPS_RUNTIME_DATA/ppdc" "$CUPS_RUNTIME_DATA/drv" "$CUPS_DATA_ROOT/share/cups/ppdc"; do
+    [ -d "$inc" ] || continue
+    set -- "$@" -I "$inc"
+  done
+  set -- "$@" "$drv_file"
+  /bin/timeout "$timeout_secs" "$@"
+}
+
+BRLASER_DRV="$CUPS_RUNTIME_DATA/drv/brlaser.drv"
+if [ "${CUPS_RUNTIME_ENABLE_PPDC:-0}" = "1" ] && [ -f "$BRLASER_DRV" ] && [ -x /bin/ppdc ]; then
+  mkdir -p "$CUPS_RUNTIME_DATA/model"
+  run_ppdc_brlaser "$CUPS_RUNTIME_DATA/model" "$BRLASER_DRV" 10 >/dev/null 2>&1 || debug_echo "ppdc model generation timed out/failed"
+fi
+
+cat > /etc/cups/cups-files.conf <<EOF_CFG
+SystemGroup root lpadmin
+FileDevice Yes
+RequestRoot /var/spool/cups
+ServerRoot /etc/cups
+CacheDir /var/cache/cups
+DataDir ${CUPS_RUNTIME_DATA}
+ServerBin /var/cups-serverbin/lib/cups
+EOF_CFG
+
+if [ ! -f /etc/cups/cupsd.conf ]; then
+  cat > /etc/cups/cupsd.conf <<'EOF_CUPSD'
+LogLevel warn
+Listen 0.0.0.0:631
+Browsing Off
+DefaultAuthType None
+WebInterface No
+<Location />
+  Order allow,deny
+  Allow all
+</Location>
+EOF_CUPSD
+fi
+
+BRLASER_BLOCK_REASON=""
+brlaser_filter_usable() {
+  filter_bin="/var/cups-serverbin/lib/cups/filter/rastertobrlaser"
+  BRLASER_BLOCK_REASON=""
+  [ -x "$filter_bin" ] || { BRLASER_BLOCK_REASON="filter missing/not executable"; return 1; }
+  [ -x /bin/readelf ] || { BRLASER_BLOCK_REASON="readelf unavailable for probe"; return 1; }
+
+  interp_path="$(/bin/readelf -l "$filter_bin" 2>/dev/null | sed -n 's@.*Requesting program interpreter: \(.*\)]@\1@p' | head -n 1)"
+  if [ -n "$interp_path" ] && [ ! -e "$interp_path" ]; then
+    BRLASER_BLOCK_REASON="missing interpreter: $interp_path"
+    return 1
+  fi
+
+  runpaths="$(/bin/readelf -d "$filter_bin" 2>/dev/null | sed -n 's@.*Library runpath: \[\(.*\)\]@\1@p' | head -n 1)"
+  needed_libs="$(/bin/readelf -d "$filter_bin" 2>/dev/null | sed -n 's@.*Shared library: \[\(.*\)\]@\1@p')"
+  search_paths="$runpaths:/lib:/usr/lib"
+  for lib in $needed_libs; do
+    found=""
+    for p in $(echo "$search_paths" | tr ':' '\n'); do
+      [ -n "$p" ] || continue
+      if [ -e "$p/$lib" ]; then
+        found=1
+        break
+      fi
+    done
+    if [ -z "$found" ]; then
+      BRLASER_BLOCK_REASON="missing shared lib: $lib"
+      return 1
+    fi
+  done
+
+  probe_err="/tmp/brlaser-probe.err"
+  : > "$probe_err"
+  /bin/timeout 2 "$filter_bin" >/dev/null 2>"$probe_err"
+  rc="$?"
+  if grep -q -E "Error loading shared library|Error relocating|not found" "$probe_err"; then
+    BRLASER_BLOCK_REASON="ABI mismatch (relocation/shared-lib errors)"
+    return 1
+  fi
+  if [ "$rc" -eq 126 ] || [ "$rc" -eq 127 ]; then
+    BRLASER_BLOCK_REASON="filter failed to execute (rc=$rc)"
+    return 1
+  fi
+  return 0
+}
+
+find_runtime_brlaser_ppd() {
+  model="$1"
+  model_dir="$CUPS_RUNTIME_DATA/model"
+  [ -d "$model_dir" ] || return 0
+
+  if [ -n "$model" ]; then
+    ppd="$(find "$model_dir" -type f \( -iname "*${model}*.ppd" -o -iname "*${model}*.ppd.gz" \) | head -n 1)"
+    [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+
+    ppd="$(grep -RilsF "ModelName: \"Brother $model\"" "$model_dir" 2>/dev/null | head -n 1)"
+    [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+
+    ppd="$(grep -RilsF "MDL:$model;" "$model_dir" 2>/dev/null | head -n 1)"
+    [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+  fi
+
+  find "$model_dir" -type f \
+    \( -iname 'brl*.ppd' -o -iname 'brl*.ppd.gz' -o -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) \
+    | head -n 1
+}
+
+provision_hbp_queue() {
+  queue_uri="$1"
+  [ -n "$queue_uri" ] || return 1
+
+  if ! brlaser_filter_usable; then
+    debug_echo "HBP blocked: skipping test-hbp queue (${BRLASER_BLOCK_REASON})"
+    return 0
+  fi
+
+  ppd=""
+  model_name="$(printf '%s' "$queue_uri" | sed -n 's@^usb://Brother/\([^?]*\).*$@\1@p' | sed 's/%20/ /g')"
+  if [ -d "$CUPS_RUNTIME_DATA/model" ]; then
+    ppd="$(find_runtime_brlaser_ppd "$model_name")"
+  fi
+  if [ -z "$ppd" ] && [ -x /bin/ppdc ] && [ -f "$CUPS_RUNTIME_DATA/drv/brlaser.drv" ]; then
+    mkdir -p "$CUPS_RUNTIME_DATA/model"
+    run_ppdc_brlaser "$CUPS_RUNTIME_DATA/model" "$CUPS_RUNTIME_DATA/drv/brlaser.drv" 10 >/dev/null 2>&1 || true
+    ppd="$(find_runtime_brlaser_ppd "$model_name")"
+  fi
+
+  if [ -n "$ppd" ]; then
+    /bin/lpadmin -h "$SOCK" -x test-hbp >/dev/null 2>&1 || true
+    /bin/lpadmin -h "$SOCK" -p test-hbp -E -v "$queue_uri" -P "$ppd" >> /log/cups.log 2>&1 || true
+    debug_echo "queue test-hbp configured ppd=$ppd"
+  else
+    debug_echo "no brlaser PPD found for non-raw queue"
+  fi
+}
+
+maybe_provision_hbp_async() {
+  queue_uri="$1"
+  [ -n "$queue_uri" ] || return 0
+  if [ "${CUPS_RUNTIME_HBP_ASYNC:-1}" = "1" ]; then
+    (
+      provision_hbp_queue "$queue_uri"
+    ) &
+    debug_echo "scheduling test-hbp provisioning in background"
+  else
+    provision_hbp_queue "$queue_uri"
+  fi
+}
+
+provision_runtime_queue() {
+  [ -x /bin/lpadmin ] || return 1
+  [ -S "$SOCK" ] || return 1
+
+  queue_uri=""
+  usb_backend="/var/cups-serverbin/lib/cups/backend/usb"
+  if [ -x "$usb_backend" ]; then
+    queue_uri="$($usb_backend 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
+  fi
+  if [ -z "$queue_uri" ] && [ -c /dev/usb/lp0 ]; then
+    queue_uri="file:///dev/usb/lp0"
+  fi
+  [ -n "$queue_uri" ] || return 1
+
+  /bin/lpadmin -h "$SOCK" -x test >/dev/null 2>&1 || true
+  /bin/lpadmin -h "$SOCK" -p test -E -v "$queue_uri" -m raw >> /log/cups.log 2>&1 || return 1
+  debug_echo "queue test configured uri=$queue_uri (raw)"
+  maybe_provision_hbp_async "$queue_uri"
+  return 0
+}
+
+if /bin/cupsd >> /log/cups.log 2>&1; then
+  if ! provision_runtime_queue; then
+    if [ "${CUPS_RUNTIME_QUEUE_RETRY:-0}" = "1" ]; then
+      debug_echo "no printer URI discovered; starting retry loop"
+      (
+        retries=90
+        while [ "$retries" -gt 0 ]; do
+          sleep 2
+          if provision_runtime_queue; then
+            exit 0
+          fi
+          retries=$((retries - 1))
+        done
+        debug_echo "queue provisioning timed out (no URI discovered)"
+      ) &
+    else
+      debug_echo "no printer URI discovered; retry loop disabled"
+    fi
+  fi
+  debug_echo "scheduler started"
+else
+  debug_echo "failed to start cupsd"
+fi
+
+log "bootstrap complete"

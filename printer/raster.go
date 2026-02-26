@@ -39,6 +39,7 @@ type PrinterLanguage uint8
 const (
 	PrinterLangPCL PrinterLanguage = iota
 	PrinterLangPS
+	PrinterLangBrotherHBP
 )
 
 type SinglesigLayoutMode uint8
@@ -94,10 +95,8 @@ var (
 	faceMuMedium       sync.Mutex
 	faceCacheMedium    = make(map[[2]float64]font.Face) // key: {sizePt, dpi}
 
-	shardSetMu     sync.RWMutex
-	forcedShardSet *[16]byte
-	compactMu      sync.RWMutex
-	compact2of3On  bool
+	compactMu     sync.RWMutex
+	compact2of3On bool
 )
 
 // CreatePlateBitmaps renders seed/descriptor plates to 1-bit bitmaps using the existing layout.
@@ -162,6 +161,12 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		descImgs = nil
 	}
 
+	prepareTotal := int64(totalShares)
+	if hasDesc && !compactSingleSided {
+		prepareTotal *= 2
+	}
+	prepareDone := int64(0)
+
 	for i := 0; i < totalShares; i++ {
 		mnemonic := mnemonics[i%len(mnemonics)]
 		seedImg, err := renderSeedPlateBitmapWithLayout(mnemonic, i+1, totalShares, opts, seedLayout)
@@ -180,6 +185,10 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 			}
 		}
 		seedImgs[i] = seedImg
+		prepareDone++
+		if progress != nil && prepareTotal > 0 {
+			progress(StagePrepare, prepareDone, prepareTotal)
+		}
 
 		if hasDesc && !compactSingleSided {
 			descKeyIdx := i % len(desc.Keys)
@@ -192,10 +201,10 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 				return nil, nil, err
 			}
 			descImgs[i] = descImg
-		}
-
-		if progress != nil {
-			progress(StagePrepare, int64(i+1), int64(totalShares))
+			prepareDone++
+			if progress != nil && prepareTotal > 0 {
+				progress(StagePrepare, prepareDone, prepareTotal)
+			}
 		}
 	}
 
@@ -225,28 +234,6 @@ func DescriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 // given share index. UR/XOR families such as 3-of-5 return two payloads.
 func DescriptorShardQRPayloadsForShare(desc *urtypes.OutputDescriptor, totalShares, keyIdx int) ([]string, error) {
 	return descriptorShardQRPayloadsForShare(desc, totalShares, keyIdx)
-}
-
-// SetDescriptorShardSetID forces the descriptor shard set_id used during plate
-// generation. Pass nil to clear and return to random per-job set IDs.
-func SetDescriptorShardSetID(id *[16]byte) {
-	shardSetMu.Lock()
-	defer shardSetMu.Unlock()
-	if id == nil {
-		forcedShardSet = nil
-		return
-	}
-	v := *id
-	forcedShardSet = &v
-}
-
-func forcedDescriptorShardSetID() ([16]byte, bool) {
-	shardSetMu.RLock()
-	defer shardSetMu.RUnlock()
-	if forcedShardSet == nil {
-		return [16]byte{}, false
-	}
-	return *forcedShardSet, true
 }
 
 // SetCompactDescriptor2of3Enabled toggles compact single-sided 2-of-3 plate rendering.

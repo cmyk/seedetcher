@@ -25,9 +25,13 @@ import (
 
 // SDCardGateScreen enforces SD-card removal before entering sensitive flows.
 type SDCardGateScreen struct {
-	Theme *Colors
-	Next  Screen
-	warn  *ConfirmWarningScreen
+	Theme       *Colors
+	Next        Screen
+	warn        *ConfirmWarningScreen
+	prepStarted bool
+	prepDone    bool
+	prepErr     error
+	prepCh      chan error
 }
 
 func (s *SDCardGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
@@ -40,6 +44,41 @@ func (s *SDCardGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	th := s.Theme
 	if th == nil {
 		th = &singleTheme
+	}
+	// In PCL/PS-only mode we still mount SD-backed runtime at boot in host images.
+	// Detach those mounts before asking the user to physically pull the card.
+	if ctx != nil && !ctx.HBPRuntimeReady && !ctx.SDRemovalPrepared {
+		if !s.prepStarted {
+			s.prepStarted = true
+			s.prepCh = make(chan error, 1)
+			go func() {
+				s.prepCh <- ctx.Platform.PrepareSDForRemoval()
+			}()
+		}
+		if !s.prepDone {
+			select {
+			case err := <-s.prepCh:
+				s.prepDone = true
+				s.prepErr = err
+			default:
+			}
+		}
+		if s.prepDone && s.prepErr != nil {
+			showError(ctx, ops, th, fmt.Errorf("SD removal prep failed: %v", s.prepErr))
+			return &MainMenuScreen{}
+		}
+		if s.prepDone && s.prepErr == nil {
+			ctx.SDRemovalPrepared = true
+		}
+		if !s.prepDone {
+			dims := ctx.Platform.DisplaySize()
+			op.ColorOp(ops, th.Background)
+			titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing SD removal")
+			layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, "Detaching SD-backed runtime.\nPlease wait...")
+			ctx.WakeupAt(ctx.Platform.Now().Add(200 * time.Millisecond))
+			ctx.Frame()
+			return s
+		}
 	}
 	if s.warn == nil {
 		s.warn = &ConfirmWarningScreen{
@@ -649,8 +688,7 @@ func buildDescriptorText(payload []byte) string {
 }
 
 func formatDescriptorText(desc urtypes.OutputDescriptor) string {
-	var wrap func(urtypes.Script, string) string
-	wrap = func(script urtypes.Script, inner string) string {
+	wrap := func(script urtypes.Script, inner string) string {
 		switch script {
 		case urtypes.P2WSH:
 			return "wsh(" + inner + ")"

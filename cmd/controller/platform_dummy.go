@@ -55,9 +55,17 @@ func (p *Platform) CameraFrame(dims image.Point) {
 }
 
 func (p *Platform) ScanQR(img *image.Gray) ([][]byte, error) {
-	return nil, errors.New("ScanQR not implemented")
+	return nil, errors.New("scan qr not implemented")
+}
+
+func (p *Platform) PrepareHBPForSDRemoval() error {
+	return errors.New("brother hbp runtime prep is not supported on this platform")
+}
+
+func (p *Platform) PrepareSDForRemoval() error {
+	return nil
 }
 
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
-	return errors.New("CreatePlates not implemented")
+	return errors.New("create plates not implemented")
 }

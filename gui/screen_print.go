@@ -3,6 +3,7 @@ package gui
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"time"
 
 	"seedetcher.com/bc/urtypes"
@@ -66,6 +67,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	printer.SetWalletLabel(label)
 	inp := &s.inp
 	state := loadPrintSetupState()
+	hbpLocked := ctx != nil && ctx.HBPRuntimeReady
 	setupSteps := make([]string, 0, 8)
 	if isSinglesigDescriptor(desc) {
 		setupSteps = append(setupSteps, "singlesig")
@@ -73,7 +75,14 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 	if isCompact2of3Eligible(desc) {
 		setupSteps = append(setupSteps, "compact")
 	}
-	setupSteps = append(setupSteps, "paper", "dpi", "invert", "mirror", "stats", "printerlang")
+	setupSteps = append(setupSteps, "paper")
+	if !hbpLocked {
+		setupSteps = append(setupSteps, "dpi")
+	}
+	setupSteps = append(setupSteps, "invert", "mirror", "stats")
+	if !hbpLocked {
+		setupSteps = append(setupSteps, "printerlang")
+	}
 	stepIdx := 0
 
 	updatePrinterStatus := func() {
@@ -145,7 +154,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				}
 			case "printerlang":
 				var next int
-				next, ok = chooseWithInitial("Printer Language", "If PCL prints blank pages,\ntry PS.", []string{"PCL", "PS"}, state.PrinterLang)
+				next, ok = choosePrinterLanguageOption(ctx, ops, th, state.PrinterLang, ctx != nil && ctx.HBPRuntimeReady)
 				if ok {
 					state.PrinterLang = next
 				}
@@ -182,8 +191,21 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 			Singlesig:   printer.SinglesigLayoutSeedWithInfo,
 			PrinterLang: printer.PrinterLangPCL,
 		}
-		if state.DPIChoice == 1 {
+		if hbpLocked {
 			opts.DPI = 600
+			opts.PrinterLang = printer.PrinterLangBrotherHBP
+			state.DPIChoice = 1
+			state.PrinterLang = 2
+		} else {
+			if state.DPIChoice == 1 {
+				opts.DPI = 600
+			}
+			if state.PrinterLang == 1 {
+				opts.PrinterLang = printer.PrinterLangPS
+			}
+			if state.PrinterLang == 2 {
+				opts.PrinterLang = printer.PrinterLangBrotherHBP
+			}
 		}
 		switch state.SinglesigChoice {
 		case 0:
@@ -191,11 +213,9 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		case 2:
 			opts.Singlesig = printer.SinglesigLayoutSeedWithDescriptorQR
 		}
-		if state.PrinterLang == 1 {
-			opts.PrinterLang = printer.PrinterLangPS
-		}
 
 		updatePrinterStatus()
+	printPreviewLoop:
 		for {
 			e, ok := inp.Next(ctx, Button1, Button3)
 			if !ok {
@@ -206,12 +226,22 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				if inp.Clicked(e.Button) {
 					inSetup = true
 					stepIdx = len(setupSteps) - 1
-					break
+					break printPreviewLoop
 				}
 			case Button3:
 				if inp.Clicked(e.Button) {
+					printOpts := opts
+					if opts.PrinterLang == printer.PrinterLangBrotherHBP {
+						if ctx == nil || !ctx.HBPRuntimeReady {
+							s.showError(ctx, ops, th, fmt.Errorf("Brother HBP runtime is not prepared.\nReturn to start screen and enable HBP before SD removal"))
+							continue
+						}
+						if printOpts.DPI != 600 {
+							printOpts.DPI = 600
+						}
+					}
 					progress := &PrintProgressScreen{}
-					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper, opts)
+					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper, printOpts)
 					if err != nil && err.Error() != "print canceled" {
 						s.showError(ctx, ops, th, err)
 					}
@@ -246,7 +276,16 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		}
 		showCompactLine := isCompact2of3Eligible(desc)
 		showSinglesigLine := isSinglesigDescriptor(desc)
-		lead := fmt.Sprintf("%s\nPaper:%s @%d dpi\nInvert: %s, Mirror: %s\nEtch stats page: %s\nPrinter lang: %s", status, selectedPaper, opts.DPI, onOff(opts.Invert), onOff(opts.Mirror), onOff(opts.EtchStats), printerLangLabel(opts.PrinterLang))
+		effectiveDPI := opts.DPI
+		if opts.PrinterLang == printer.PrinterLangBrotherHBP {
+			effectiveDPI = 600
+		} else if ctx != nil && ctx.HBPRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && opts.DPI > 600 {
+			pages := estimateJobPages(desc, selectedPaper, opts)
+			if pages > 1 {
+				effectiveDPI = 600
+			}
+		}
+		lead := fmt.Sprintf("%s\nPaper:%s @%d dpi\nInvert: %s, Mirror: %s\nEtch stats page: %s\nPrinter lang: %s", status, selectedPaper, effectiveDPI, onOff(opts.Invert), onOff(opts.Mirror), onOff(opts.EtchStats), printerLangLabel(opts.PrinterLang))
 		if showCompactLine {
 			lead += fmt.Sprintf("\nCompact 2/3: %s", onOff(opts.Compact2of3))
 		}
@@ -404,6 +443,24 @@ func chooseSinglesigLayoutOption(ctx *Context, ops op.Ctx, th *Colors, initialCh
 	}
 }
 
+func choosePrinterLanguageOption(ctx *Context, ops op.Ctx, th *Colors, initialChoice int, hbpReady bool) (int, bool) {
+	choices := []string{"PCL", "PS"}
+	if hbpReady {
+		choices = append(choices, "Brother HBP")
+	}
+	choice := initialChoice
+	if choice < 0 || choice >= len(choices) {
+		choice = 0
+	}
+	cs := &ChoiceScreen{
+		Title:   "Printer Language",
+		Lead:    "Choose language",
+		Choices: choices,
+		choice:  choice,
+	}
+	return cs.Choose(ctx, ops, th)
+}
+
 func isCompact2of3Eligible(desc *urtypes.OutputDescriptor) bool {
 	if desc == nil {
 		return false
@@ -440,11 +497,48 @@ func printerLangLabel(lang printer.PrinterLanguage) string {
 	if lang == printer.PrinterLangPS {
 		return "PS"
 	}
+	if lang == printer.PrinterLangBrotherHBP {
+		return "HBP"
+	}
 	return "PCL"
+}
+
+func estimateJobPages(desc *urtypes.OutputDescriptor, paper printer.PaperSize, opts printOptions) int {
+	walletShares := 1
+	if desc != nil {
+		walletShares = len(desc.Keys)
+	}
+	maxSlotsPerPage := 6
+	if paper == printer.PaperLetter {
+		maxSlotsPerPage = 4
+	}
+	slotsPerShare := 2
+	if desc == nil {
+		slotsPerShare = 1
+	}
+	if isCompact2of3Eligible(desc) && opts.Compact2of3 {
+		slotsPerShare = 1
+	}
+	if isSinglesigDescriptor(desc) && opts.Singlesig != printer.SinglesigLayoutSeedWithDescriptorQR {
+		slotsPerShare = 1
+	}
+	sharesPerPage := maxSlotsPerPage / slotsPerShare
+	if sharesPerPage < 1 {
+		sharesPerPage = 1
+	}
+	totalPages := (walletShares + sharesPerPage - 1) / sharesPerPage
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if opts.EtchStats {
+		totalPages++
+	}
+	return totalPages
 }
 
 func (s *PrintSeedScreen) showError(ctx *Context, ops op.Ctx, th *Colors, err error) {
 	logutil.DebugLog("showError called with error: %v", err)
+	triggerErrorLogExport(ctx, err)
 	errScr := NewErrorScreen(err)
 	for {
 		dims := ctx.Platform.DisplaySize()
@@ -500,6 +594,324 @@ type PrintProgressScreen struct {
 	inp InputTracker
 }
 
+type HBPRuntimePrepareScreen struct {
+	inp InputTracker
+}
+
+var lastHBPPrepareDuration = 32 * time.Second
+
+func (s *HBPRuntimePrepareScreen) Show(ctx *Context, ops op.Ctx, th *Colors) error {
+	if ctx == nil {
+		return fmt.Errorf("missing UI context")
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ctx.Platform.PrepareHBPForSDRemoval()
+	}()
+
+	var (
+		finished bool
+		prepErr  error
+	)
+	startedAt := ctx.Platform.Now()
+	for {
+		if !finished {
+			select {
+			case prepErr = <-done:
+				finished = true
+			default:
+			}
+		}
+
+		for {
+			e, ok := s.inp.Next(ctx, Button3)
+			if !ok {
+				break
+			}
+			if finished && prepErr == nil && s.inp.Clicked(e.Button) {
+				return nil
+			}
+		}
+
+		dims := ctx.Platform.DisplaySize()
+		op.ColorOp(ops, th.Background)
+		titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing HBP")
+		status := "Preparing Brother HBP runtime..."
+
+		if !finished {
+			barW := dims.X - 48
+			if barW < 120 {
+				barW = dims.X - 24
+			}
+			barH := 10
+			barX := (dims.X - barW) / 2
+			barY := dims.Y/2 - barH/2
+			barRect := image.Rect(barX, barY, barX+barW, barY+barH)
+
+			track := color.NRGBA{R: th.Text.R, G: th.Text.G, B: th.Text.B, A: 70}
+			op.ClipOp(barRect).Add(ops.Begin())
+			op.ColorOp(ops, track)
+			barBg := ops.End()
+			barBg.Add(ops)
+
+			eta := lastHBPPrepareDuration
+			if eta < 5*time.Second {
+				eta = 5 * time.Second
+			}
+			elapsed := ctx.Platform.Now().Sub(startedAt)
+			progress := float32(elapsed) / float32(eta)
+			if progress > 0.95 {
+				progress = 0.95
+			}
+			if progress < 0 {
+				progress = 0
+			}
+			fillW := int(float32(barW) * progress)
+			if fillW < 4 {
+				fillW = 4
+			}
+			fillRect := image.Rect(barX, barY, barX+fillW, barY+barH)
+			op.ClipOp(fillRect).Add(ops.Begin())
+			op.ColorOp(ops, th.Text)
+			barFill := ops.End()
+			barFill.Add(ops)
+		}
+
+		if finished && prepErr == nil {
+			layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, "Brother HBP is ready.\nSD card can now be removed safely.")
+		} else {
+			layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, status)
+		}
+
+		if finished && prepErr != nil {
+			return prepErr
+		}
+		if finished && prepErr == nil {
+			duration := ctx.Platform.Now().Sub(startedAt)
+			if duration > 0 {
+				lastHBPPrepareDuration = duration
+			}
+			layoutNavigation(ctx, &s.inp, ops, th, dims, []NavButton{
+				{Button: Button3, Style: StylePrimary, Icon: assets.IconCheckmark},
+			}...)
+		}
+		if !finished {
+			ctx.WakeupAt(ctx.Platform.Now().Add(200 * time.Millisecond))
+		}
+		ctx.Frame()
+	}
+}
+
+type printProgressUpdate struct {
+	stage   printer.PrintStage
+	current int64
+	total   int64
+}
+
+type printProgressDisplay struct {
+	buildFrac       float32
+	sendFrac        float32
+	buildLabel      string
+	sendLabelTitle  string
+	sendLabelDetail string
+}
+
+var printProgressStageOrder = [...]printer.PrintStage{
+	printer.StagePrepare,
+	printer.StageCompose,
+	printer.StageSend,
+}
+
+const (
+	sendProgressByteThreshold int64 = 8192
+	sendProgressCoalesceMin   int64 = 64 * 1024
+	sendProgressCoalesceDiv   int64 = 120
+)
+
+func clampPrintProgressCount(cur, total int64) int64 {
+	if total <= 0 {
+		return 0
+	}
+	if cur < 0 {
+		return 0
+	}
+	if cur > total {
+		return total
+	}
+	return cur
+}
+
+func formatPrintProgressBytes(v int64) string {
+	if v < 1024 {
+		return fmt.Sprintf("%d B", v)
+	}
+	if v < 1024*1024 {
+		return fmt.Sprintf("%.1f KB", float64(v)/1024.0)
+	}
+	return fmt.Sprintf("%.1f MB", float64(v)/(1024.0*1024.0))
+}
+
+func shouldDropPrintSendUpdate(current, total int64, lastCurrent, lastTotal *int64) bool {
+	if total < sendProgressByteThreshold {
+		return false
+	}
+	if total != *lastTotal {
+		*lastTotal = total
+		*lastCurrent = -1
+	}
+	step := total / sendProgressCoalesceDiv
+	if step < sendProgressCoalesceMin {
+		step = sendProgressCoalesceMin
+	}
+	if current < total && *lastCurrent >= 0 && (current-*lastCurrent) < step {
+		return true
+	}
+	*lastCurrent = current
+	return false
+}
+
+func drawPrintProgressBar(ops op.Ctx, rect image.Rectangle, frac float32, text color.NRGBA) {
+	if frac < 0 {
+		frac = 0
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	track := color.NRGBA{R: text.R, G: text.G, B: text.B, A: 70}
+	op.ClipOp(rect).Add(ops.Begin())
+	op.ColorOp(ops, track)
+	bg := ops.End()
+	bg.Add(ops)
+	fillW := int(float32(rect.Dx()) * frac)
+	if fillW < 0 {
+		fillW = 0
+	}
+	if fillW > rect.Dx() {
+		fillW = rect.Dx()
+	}
+	if fillW == 0 && frac > 0 {
+		fillW = 1
+	}
+	fillRect := image.Rect(rect.Min.X, rect.Min.Y, rect.Min.X+fillW, rect.Max.Y)
+	op.ClipOp(fillRect).Add(ops.Begin())
+	op.ColorOp(ops, text)
+	fg := ops.End()
+	fg.Add(ops)
+}
+
+func drainPrintProgressUpdates(progressCh <-chan printProgressUpdate, stageState map[printer.PrintStage]printProgressUpdate, lastBuildStage *printer.PrintStage) {
+	for {
+		select {
+		case p := <-progressCh:
+			if prev, ok := stageState[p.stage]; ok {
+				// Keep stage counters monotonic to avoid UI regressions under bursty updates.
+				if p.total < prev.total {
+					p.total = prev.total
+				}
+				if p.current < prev.current {
+					p.current = prev.current
+				}
+			}
+			stageState[p.stage] = p
+			if p.stage == printer.StagePrepare || p.stage == printer.StageCompose {
+				*lastBuildStage = p.stage
+			}
+			// Mark earlier stages complete when we reach a later stage.
+			for _, st := range printProgressStageOrder {
+				if st == p.stage {
+					break
+				}
+				if _, ok := stageState[st]; !ok {
+					stageState[st] = printProgressUpdate{stage: st, current: 1, total: 1}
+				}
+			}
+		default:
+			return
+		}
+	}
+}
+
+func buildPrintProgressDisplay(stageState map[printer.PrintStage]printProgressUpdate, printOpts printOptions, lastBuildStage *printer.PrintStage, finished bool) printProgressDisplay {
+	prepareUpd := stageState[printer.StagePrepare]
+	composeUpd := stageState[printer.StageCompose]
+	sendUpd := stageState[printer.StageSend]
+
+	buildCurrent := int64(0)
+	buildTotal := int64(0)
+	if prepareUpd.total > 0 {
+		buildCurrent += clampPrintProgressCount(prepareUpd.current, prepareUpd.total)
+		buildTotal += prepareUpd.total
+	}
+	if composeUpd.total > 0 {
+		buildCurrent += clampPrintProgressCount(composeUpd.current, composeUpd.total)
+		buildTotal += composeUpd.total
+	}
+	buildFrac := float32(0)
+	if buildTotal > 0 {
+		buildFrac = float32(buildCurrent) / float32(buildTotal)
+	}
+	if buildFrac > 1 {
+		buildFrac = 1
+	}
+
+	sendFrac := float32(0)
+	if sendUpd.total > 0 {
+		sendFrac = float32(clampPrintProgressCount(sendUpd.current, sendUpd.total)) / float32(sendUpd.total)
+		if sendFrac > 1 {
+			sendFrac = 1
+		}
+	}
+	if finished {
+		buildFrac = 1
+		sendFrac = 1
+	}
+
+	buildLabel := "Preparing print job"
+	switch *lastBuildStage {
+	case printer.StagePrepare:
+		if prepareUpd.total > 0 {
+			buildLabel = fmt.Sprintf("Creating plates %d/%d", clampPrintProgressCount(prepareUpd.current, prepareUpd.total), prepareUpd.total)
+		}
+		if prepareUpd.total > 0 && clampPrintProgressCount(prepareUpd.current, prepareUpd.total) >= prepareUpd.total && composeUpd.total > 0 {
+			*lastBuildStage = printer.StageCompose
+		}
+	case printer.StageCompose:
+		if composeUpd.total > 0 {
+			composeCur := clampPrintProgressCount(composeUpd.current, composeUpd.total)
+			if printOpts.EtchStats && composeUpd.total > 1 && composeCur >= composeUpd.total {
+				buildLabel = "Created stats page"
+			} else {
+				buildLabel = fmt.Sprintf("Created pages %d/%d", composeCur, composeUpd.total)
+			}
+		}
+	}
+	if finished {
+		buildLabel = "Creation complete"
+	}
+
+	sendLabelTitle := "Sending to printer"
+	sendLabelDetail := "Waiting to send..."
+	if sendUpd.total > 0 {
+		sendCur := clampPrintProgressCount(sendUpd.current, sendUpd.total)
+		if sendUpd.total >= sendProgressByteThreshold {
+			sendLabelDetail = fmt.Sprintf("%s / %s", formatPrintProgressBytes(sendCur), formatPrintProgressBytes(sendUpd.total))
+		} else {
+			sendLabelDetail = fmt.Sprintf("%d / %d", sendCur, sendUpd.total)
+		}
+	} else if finished {
+		sendLabelDetail = "Complete"
+	}
+
+	return printProgressDisplay{
+		buildFrac:       buildFrac,
+		sendFrac:        sendFrac,
+		buildLabel:      buildLabel,
+		sendLabelTitle:  sendLabelTitle,
+		sendLabelDetail: sendLabelDetail,
+	}
+}
+
 func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paperFormat printer.PaperSize, printOpts printOptions) (bool, error) {
 	var (
 		printErr error
@@ -507,22 +919,21 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 	)
 	finished := false
 	var finishedAt time.Time
-	type progressUpdate struct {
-		stage   printer.PrintStage
-		current int64
-		total   int64
-	}
-	progressCh := make(chan progressUpdate, 8)
-	stageState := make(map[printer.PrintStage]progressUpdate)
-	progressVal := float32(0)
-	lastStage := printer.StagePrepare
+	progressCh := make(chan printProgressUpdate, 64)
+	stageState := make(map[printer.PrintStage]printProgressUpdate)
+	lastBuildStage := printer.StagePrepare
 	if ctx != nil {
+		lastSendCurrent := int64(-1)
+		lastSendTotal := int64(0)
 		ctx.PrintProgress = func(stage printer.PrintStage, current, total int64) {
 			if total <= 0 {
 				return
 			}
+			if stage == printer.StageSend && shouldDropPrintSendUpdate(current, total, &lastSendCurrent, &lastSendTotal) {
+				return
+			}
 			select {
-			case progressCh <- progressUpdate{stage: stage, current: current, total: total}:
+			case progressCh <- printProgressUpdate{stage: stage, current: current, total: total}:
 			default:
 			}
 		}
@@ -546,76 +957,45 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 	for {
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
-		layoutTitle(ctx, ops, dims.X, th.Text, "Printing")
+		titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Printing")
 
 		if !finished {
 			select {
 			case <-done:
 				finished = true
 				finishedAt = ctx.Platform.Now()
-				if progressVal < 1 {
-					progressVal = 1
-				}
 			default:
 			}
 		}
 
-		select {
-		case p := <-progressCh:
-			stageState[p.stage] = p
-			lastStage = p.stage
-			// Mark earlier stages complete if we reached a later stage.
-			ordered := []printer.PrintStage{printer.StagePrepare, printer.StageCompose, printer.StageSend}
-			for _, st := range ordered {
-				if st == p.stage {
-					break
-				}
-				if _, ok := stageState[st]; !ok {
-					stageState[st] = progressUpdate{stage: st, current: 1, total: 1}
-				}
-			}
-			// Compute overall progress as the average of stage fractions.
-			sum := float32(0)
-			for _, st := range ordered {
-				if upd, ok := stageState[st]; ok && upd.total > 0 {
-					f := float32(upd.current) / float32(upd.total)
-					if f < 0 {
-						f = 0
-					}
-					if f > 1 {
-						f = 1
-					}
-					sum += f
-				}
-			}
-			if len(ordered) > 0 {
-				progressVal = sum / float32(len(ordered))
-			}
-		default:
-		}
-
+		drainPrintProgressUpdates(progressCh, stageState, &lastBuildStage)
 		ctx.WakeupAt(ctx.Platform.Now().Add(100 * time.Millisecond))
+		display := buildPrintProgressDisplay(stageState, printOpts, &lastBuildStage, finished)
 
-		content := layout.Rectangle{Max: dims}.Shrink(leadingSize, 0, leadingSize, 0)
-		op.Offset(ops, content.Center(assets.ProgressCircle.Bounds().Size()))
-		(&ProgressImage{Progress: progressVal, Src: assets.ProgressCircle}).Add(ops)
-		op.ColorOp(ops, th.Text)
-		percentLabel := fmt.Sprintf("%d%%", int(progressVal*100+0.5))
-		pctSz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, assets.ProgressCircle.Bounds().Dx(), th.Text, "%s", percentLabel)
-		op.Position(ops, ops.End(), content.Center(pctSz))
-		label := "Preparing..."
-		if upd, ok := stageState[lastStage]; ok {
-			switch lastStage {
-			case printer.StagePrepare:
-				label = fmt.Sprintf("Rendering plates %d/%d", upd.current, upd.total)
-			case printer.StageCompose:
-				label = "Composing pages..."
-			case printer.StageSend:
-				label = "Sending to printer..."
-			}
+		left := 16
+		right := dims.X - 16
+		if right-left < 120 {
+			left = 8
+			right = dims.X - 8
 		}
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
-		op.Position(ops, ops.End(), content.Center(sz).Add(image.Pt(0, assets.ProgressCircle.Bounds().Dy()/2+17)))
+		barH := 10
+		y := titleRect.Max.Y + 16
+
+		label1 := widget.Labelwf(ops.Begin(), ctx.Styles.lead, right-left, th.Text, "%s", display.buildLabel)
+		op.Position(ops, ops.End(), image.Pt(left, y))
+		y += label1.Y + 6
+		bar1 := image.Rect(left, y, right, y+barH)
+		drawPrintProgressBar(ops, bar1, display.buildFrac, th.Text)
+		y = bar1.Max.Y + 16
+
+		label2a := widget.Labelwf(ops.Begin(), ctx.Styles.lead, right-left, th.Text, "%s", display.sendLabelTitle)
+		op.Position(ops, ops.End(), image.Pt(left, y))
+		y += label2a.Y + 2
+		label2b := widget.Labelwf(ops.Begin(), ctx.Styles.lead, right-left, th.Text, "%s", display.sendLabelDetail)
+		op.Position(ops, ops.End(), image.Pt(left, y))
+		y += label2b.Y + 6
+		bar2 := image.Rect(left, y, right, y+barH)
+		drawPrintProgressBar(ops, bar2, display.sendFrac, th.Text)
 
 		layoutNavigation(ctx, &s.inp, ops, th, dims)
 		ctx.Frame()
