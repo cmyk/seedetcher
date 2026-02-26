@@ -15,7 +15,7 @@ Therefore:
 - DW = duplex, wireless
 
 
-This table is primarily generated from `spike/brlaser-root.tar.gz` (`brlaser.drv`) and kept as one list ordered by model name.
+This table is primarily generated from (`brlaser.drv`) and kept as one list ordered by model name.
 Capabilities are initially derived from brlaser data (including 1284DeviceID CMD tokens) and then manually corrected where verified by vendor specs or real-world testing.
 Some rows are manual additions for known models not present in the current `brlaser.drv` export.
 `PCL`/`PS`/`HBP` may be manually corrected for models with known support not reflected in `CMD:`.

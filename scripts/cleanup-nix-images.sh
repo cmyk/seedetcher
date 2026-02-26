@@ -148,7 +148,7 @@ if [[ $FAILED -gt 0 ]]; then
   echo "  nix-store --query --referrers <path>"
   echo
   echo "If outputs still refuse deletion, run as root to include daemon-owned roots:"
-  echo "  sudo nix-collect-garbage -d"
+  echo "  nix-collect-garbage -d"
 fi
 
 echo "Done."
