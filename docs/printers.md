@@ -1,8 +1,10 @@
 # Supported Printers
 
 **Important:** For SeedEtcher a laser printer MUST have USB. All printers in this list do.
-PCL capability is preferable, since you won't need to load the extra HBP support (which is heavy on a zero).
+***PCL capability is preferable***, since you won't need to load the extra HBP (Brother's Host Based Printer) support (which is heavy on a zero).
 A printer without Wi-Fi is preferable (air-gapped security). Wi-Fi can be shut off, however.
+
+## Brother
 
 Brother's suffix meanings:
 D = Duplex
@@ -75,13 +77,13 @@ Some rows are manual additions for known models not present in the current `brla
 | Brother | HL-L2335D series | 🟢 | 🔴 | 🔴 | 🟢 | 🔴 |
 | Brother | HL-L2340D series | 🟢 | 🔴 | 🔴 | 🟢 | 🔴 |
 | Brother | HL-L2350DW series | 🟢 | 🔴 | 🔴 | 🟢 | 🔴 |
-| Brother | HL-L2360D series | 🟢 | 🟢 | 🔴 | 🟢 | 🔴 |
+| Brother | HL-L2360D series | 🟢 | 🔴 | 🔴 | 🟢 | 🟢 |
 | Brother | HL-L2370DN series | 🟢 | 🟢 | 🔴 | 🟢 | 🔴 |
 | Brother | HL-L2375DW series | 🟢 | 🟢 | 🔴 | 🟢 | 🔴 |
 | Brother | HL-L2380DW series | 🟢 | 🟢 | 🔴 | 🟢 | 🔴 |
 | Brother | HL-L2390DW | 🟢 | 🔴 | 🔴 | 🟢 | 🔴 |
-| Brother | HL-L2400D (alias of HL-L2400DW) | 🟢 | 🔴 | 🔴 | 🟢 | 🔴 |
-| Brother | HL-L2400DW | 🟢 | 🔴 | 🔴 | 🟢 | 🔴 |
+| Brother | HL-L2400D (alias of HL-L2400DW) | 🟢 | 🔴 | 🔴 | 🟢 | 🟢 |
+| Brother | HL-L2400DW | 🟢 | 🔴 | 🔴 | 🟢 | 🟢 |
 | Brother | HL-L2402D | 🟢 | 🔴 | 🔴 | 🟢 | 🔴 |
 | Brother | HL-L2405W | 🟢 | 🔴 | 🔴 | 🟢 | 🔴 |
 | Brother | HL-L5000D series | 🟢 | 🟢 | 🟢 | 🟢 | 🟢 |
@@ -109,3 +111,6 @@ Some rows are manual additions for known models not present in the current `brla
 | Brother | MFC-L2710DW series | 🟢 | 🔴 | 🔴 | 🟢 | 🔴 |
 | Brother | MFC-L2750DW series | 🟢 | 🟢 | 🔴 | 🟢 | 🔴 |
 
+## Other Printers
+
+For now, only printers with true PCL and PostScript are supported.
