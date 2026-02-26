@@ -178,6 +178,41 @@ func renderHostBatch(
 	return out, nil
 }
 
+func hostSharesPerBatch(plan hostRenderPlan) int {
+	sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
+	if plan.descForHost == nil || plan.compactSingleSided {
+		sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
+	}
+	if sharesPerBatch < 1 {
+		return 1
+	}
+	return sharesPerBatch
+}
+
+func hostPrepareTotal(plan hostRenderPlan, totalShares int) int64 {
+	prepareTotal := int64(totalShares)
+	if plan.descForHost != nil && !plan.compactSingleSided {
+		prepareTotal *= 2
+	}
+	return prepareTotal
+}
+
+func hostStatsCap(plan hostRenderPlan, totalShares int) int {
+	statsCap := totalShares
+	if plan.descForHost != nil && !plan.compactSingleSided {
+		statsCap *= 2
+	}
+	return statsCap
+}
+
+func buildStatsPageFromRows(statsRows []printer.EtchPlateStat, dpi float64, paper printer.PaperSize) (*image.Paletted, error) {
+	report, err := printer.BuildEtchStatsReportFromStats(statsRows, dpi, paper)
+	if err != nil {
+		return nil, err
+	}
+	return printer.RenderEtchStatsPage(report, paper, dpi)
+}
+
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 
@@ -256,33 +291,20 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			return err
 		}
 		totalShares := plan.totalShares
-		sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
-		if plan.descForHost == nil || plan.compactSingleSided {
-			sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
-		}
-		if sharesPerBatch < 1 {
-			sharesPerBatch = 1
-		}
+		sharesPerBatch := hostSharesPerBatch(plan)
 		numBatches := (totalShares + sharesPerBatch - 1) / sharesPerBatch
 		if numBatches < 1 {
 			numBatches = 1
 		}
 		prepareDone := int64(0)
-		prepareTotal := int64(totalShares)
-		if plan.descForHost != nil && !plan.compactSingleSided {
-			prepareTotal *= 2
-		}
+		prepareTotal := hostPrepareTotal(plan, totalShares)
 		composeMarked := false
 		sendDone := int64(0)
 		sendTotal := int64(0)
 		sendBatchBytes := int64(-1)
 		var statsRows []printer.EtchPlateStat
 		if opts.EtchStatsPage {
-			statsCap := totalShares
-			if plan.descForHost != nil && !plan.compactSingleSided {
-				statsCap *= 2
-			}
-			statsRows = make([]printer.EtchPlateStat, 0, statsCap)
+			statsRows = make([]printer.EtchPlateStat, 0, hostStatsCap(plan, totalShares))
 		}
 		for start := 0; start < totalShares; start += sharesPerBatch {
 			end := start + sharesPerBatch
@@ -361,13 +383,9 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			composeMarked = true
 		}
 		if opts.EtchStatsPage {
-			report, err := printer.BuildEtchStatsReportFromStats(statsRows, opts.DPI, paper)
+			statsPage, err := buildStatsPageFromRows(statsRows, opts.DPI, paper)
 			if err != nil {
-				return fmt.Errorf("stats: build report: %w", err)
-			}
-			statsPage, err := printer.RenderEtchStatsPage(report, paper, opts.DPI)
-			if err != nil {
-				return fmt.Errorf("stats: render page: %w", err)
+				return fmt.Errorf("stats: build/render page: %w", err)
 			}
 			if err := printer.WritePCL(printerDev, []*image.Paletted{statsPage}, opts.DPI, paper, progress); err != nil {
 				return fmt.Errorf("stats: write pcl page: %w", err)
@@ -675,13 +693,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 	}
 	totalShares := plan.totalShares
 
-	sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
-	if plan.descForHost == nil || plan.compactSingleSided {
-		sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
-	}
-	if sharesPerBatch < 1 {
-		sharesPerBatch = 1
-	}
+	sharesPerBatch := hostSharesPerBatch(plan)
 	numBatches := (totalShares + sharesPerBatch - 1) / sharesPerBatch
 	if numBatches < 1 {
 		numBatches = 1
@@ -693,10 +705,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 	}
 
 	prepareDone := int64(0)
-	prepareTotal := int64(totalShares)
-	if plan.descForHost != nil && !plan.compactSingleSided {
-		prepareTotal *= 2
-	}
+	prepareTotal := hostPrepareTotal(plan, totalShares)
 	composeMarked := false
 	sendDone := int64(0)
 	sendTotal := int64(numBatches)
@@ -705,11 +714,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 	}
 	var statsRows []printer.EtchPlateStat
 	if opts.EtchStatsPage {
-		statsCap := totalShares
-		if plan.descForHost != nil && !plan.compactSingleSided {
-			statsCap *= 2
-		}
-		statsRows = make([]printer.EtchPlateStat, 0, statsCap)
+		statsRows = make([]printer.EtchPlateStat, 0, hostStatsCap(plan, totalShares))
 	}
 
 	for start := 0; start < totalShares; start += sharesPerBatch {
@@ -762,13 +767,9 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		composeMarked = true
 	}
 	if opts.EtchStatsPage {
-		report, err := printer.BuildEtchStatsReportFromStats(statsRows, opts.DPI, paper)
+		statsPage, err := buildStatsPageFromRows(statsRows, opts.DPI, paper)
 		if err != nil {
-			return fmt.Errorf("stats: build report: %w", err)
-		}
-		statsPage, err := printer.RenderEtchStatsPage(report, paper, opts.DPI)
-		if err != nil {
-			return fmt.Errorf("stats: render page: %w", err)
+			return fmt.Errorf("stats: build/render page: %w", err)
 		}
 		if progress != nil && sendTotal > 0 {
 			progress(printer.StageSend, sendDone, sendTotal)
