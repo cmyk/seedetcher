@@ -172,13 +172,13 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		sendDone := int64(0)
 		sendTotal := int64(0)
 		sendBatchBytes := int64(-1)
-		var statsSeedImgs []*image.Paletted
-		var statsDescImgs []*image.Paletted
+		var statsRows []printer.EtchPlateStat
 		if opts.EtchStatsPage {
-			statsSeedImgs = make([]*image.Paletted, 0, totalShares)
+			statsCap := totalShares
 			if descForHost != nil && !compactSingleSided {
-				statsDescImgs = make([]*image.Paletted, 0, totalShares)
+				statsCap *= 2
 			}
+			statsRows = make([]printer.EtchPlateStat, 0, statsCap)
 		}
 		for start := 0; start < totalShares; start += sharesPerBatch {
 			end := start + sharesPerBatch
@@ -218,7 +218,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				}
 				seedBatch = append(seedBatch, seedImg)
 				if opts.EtchStatsPage {
-					statsSeedImgs = append(statsSeedImgs, seedImg)
+					statsRows = append(statsRows, printer.ComputeEtchPlateStat(seedImg, i+1, "seed", opts.DPI))
 				}
 				prepareDone++
 				if progress != nil && prepareTotal > 0 {
@@ -236,7 +236,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 					}
 					descBatch = append(descBatch, descImg)
 					if opts.EtchStatsPage {
-						statsDescImgs = append(statsDescImgs, descImg)
+						statsRows = append(statsRows, printer.ComputeEtchPlateStat(descImg, i+1, "descriptor", opts.DPI))
 					}
 					prepareDone++
 					if progress != nil && prepareTotal > 0 {
@@ -296,7 +296,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			composeMarked = true
 		}
 		if opts.EtchStatsPage {
-			report, err := printer.BuildEtchStatsReport(statsSeedImgs, statsDescImgs, opts.DPI, paper)
+			report, err := printer.BuildEtchStatsReportFromStats(statsRows, opts.DPI, paper)
 			if err != nil {
 				return fmt.Errorf("stats: build report: %w", err)
 			}
