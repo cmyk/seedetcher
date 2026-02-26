@@ -75,20 +75,12 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	if opts.DPI <= 0 {
 		opts.DPI = 1200
 	}
-	hbpRuntimeReady := ctx != nil && ctx.HBPRuntimeReady
 	if opts.PrinterLang == printer.PrinterLangBrotherHBP {
 		if opts.DPI != 600 {
 			logutil.DebugLog("HBP path: forcing 600 DPI")
 		}
 		opts.DPI = 600
 		return p.createPlatesHBP(ctx, mnemonics, desc, keyIdx, paper, opts, progress)
-	}
-	if hbpRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && opts.DPI > 600 {
-		// PS rendering currently holds full raster pages in memory.
-		if estimateJobPages(desc, paper, opts) > 1 {
-			logutil.DebugLog("PS path: forcing 600 DPI for multi-page job (HBP runtime enabled)")
-			opts.DPI = 600
-		}
 	}
 
 	printerDev := p.Printer()
@@ -599,13 +591,182 @@ func (p *Platform) createPlatesHBPLegacy(ctx *gui.Context, mnemonics []bip39.Mne
 }
 
 func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions, progress func(stage printer.PrintStage, current, total int64)) error {
-	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
-	if err != nil {
-		return fmt.Errorf("render: plate bitmaps: %w", err)
+	_ = keyIdx
+	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
+	singlesigWithDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithDescriptorQR
+	singlesigWithInfo := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithInfo
+	isSinglesigJob := desc == nil || isSinglesigDesc
+	descForHost := desc
+	if isSinglesigDesc && !singlesigWithDescriptorSide {
+		// Singlesig descriptor is seed-side metadata only; no descriptor-side plates.
+		descForHost = nil
 	}
-	var extraPages []*image.Paletted
+	totalShares := len(mnemonics)
+	if descForHost != nil && len(descForHost.Keys) > 0 && !isSinglesigDesc {
+		totalShares = len(descForHost.Keys)
+	}
+	if totalShares <= 0 {
+		return fmt.Errorf("no shares to print")
+	}
+
+	compactSingleSided := descForHost != nil &&
+		printer.CompactDescriptor2of3Enabled() &&
+		descForHost.Type == urtypes.SortedMulti &&
+		descForHost.Threshold == 2 &&
+		len(descForHost.Keys) == 3 &&
+		totalShares == 3
+	var shardQRPayloads [][]string
+	var err error
+	if descForHost != nil && len(descForHost.Keys) > 0 {
+		if isSinglesigDesc && singlesigWithDescriptorSide {
+			qrPayload := printer.DescriptorQRPayload(descForHost)
+			if qrPayload == "" {
+				return fmt.Errorf("render: empty singlesig descriptor qr payload")
+			}
+			shardQRPayloads = make([][]string, totalShares)
+			for i := range shardQRPayloads {
+				shardQRPayloads[i] = []string{qrPayload}
+			}
+		} else {
+			shardQRPayloads = make([][]string, totalShares)
+			for i := 0; i < totalShares; i++ {
+				descKeyIdx := i % len(descForHost.Keys)
+				shardQRPayloads[i], err = printer.DescriptorShardQRPayloadsForShare(descForHost, totalShares, descKeyIdx)
+				if err != nil {
+					return fmt.Errorf("render: descriptor shard qrs: %w", err)
+				}
+			}
+		}
+	}
+
+	sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
+	if descForHost == nil || compactSingleSided {
+		sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
+	}
+	if sharesPerBatch < 1 {
+		sharesPerBatch = 1
+	}
+	numBatches := (totalShares + sharesPerBatch - 1) / sharesPerBatch
+	if numBatches < 1 {
+		numBatches = 1
+	}
+
+	printerDev := p.Printer()
+	if printerDev == nil {
+		return fmt.Errorf("no printer available")
+	}
+
+	prepareDone := int64(0)
+	prepareTotal := int64(totalShares)
+	if descForHost != nil && !compactSingleSided {
+		prepareTotal *= 2
+	}
+	composeMarked := false
+	sendDone := int64(0)
+	sendTotal := int64(numBatches)
 	if opts.EtchStatsPage {
-		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, paper)
+		sendTotal++
+	}
+	var statsRows []printer.EtchPlateStat
+	if opts.EtchStatsPage {
+		statsCap := totalShares
+		if descForHost != nil && !compactSingleSided {
+			statsCap *= 2
+		}
+		statsRows = make([]printer.EtchPlateStat, 0, statsCap)
+	}
+
+	for start := 0; start < totalShares; start += sharesPerBatch {
+		end := start + sharesPerBatch
+		if end > totalShares {
+			end = totalShares
+		}
+		batchSize := end - start
+		seedBatch := make([]*image.Paletted, 0, batchSize)
+		var descBatch []*image.Paletted
+		if descForHost != nil && !compactSingleSided {
+			descBatch = make([]*image.Paletted, 0, batchSize)
+		}
+
+		for i := start; i < end; i++ {
+			m := mnemonics[i%len(mnemonics)]
+			seedShareNum, seedShareTotal := i+1, totalShares
+			if isSinglesigJob {
+				seedShareNum, seedShareTotal = 1, 1
+			}
+			seedDesc := (*urtypes.OutputDescriptor)(nil)
+			if singlesigWithInfo {
+				seedDesc = desc
+			}
+			seedImg, err := printer.RenderSeedPlateBitmapWithDescriptor(m, seedShareNum, seedShareTotal, seedDesc, opts)
+			if err != nil {
+				return fmt.Errorf("render: seed plate %d: %w", i+1, err)
+			}
+			if compactSingleSided {
+				descKeyIdx := i % len(descForHost.Keys)
+				descQR := ""
+				if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
+					descQR = shardQRPayloads[i][0]
+				}
+				seedImg, err = printer.RenderCompact2of3PlateBitmap(m, descForHost, descKeyIdx, opts, descQR)
+				if err != nil {
+					return fmt.Errorf("render: compact plate %d: %w", i+1, err)
+				}
+			}
+			seedBatch = append(seedBatch, seedImg)
+			if opts.EtchStatsPage {
+				statsRows = append(statsRows, printer.ComputeEtchPlateStat(seedImg, i+1, "seed", opts.DPI))
+			}
+			prepareDone++
+			if progress != nil && prepareTotal > 0 {
+				progress(printer.StagePrepare, prepareDone, prepareTotal)
+			}
+			if descForHost != nil && !compactSingleSided {
+				descKeyIdx := i % len(descForHost.Keys)
+				var descQRs []string
+				if i < len(shardQRPayloads) {
+					descQRs = shardQRPayloads[i]
+				}
+				descImg, err := printer.RenderDescriptorPlateBitmap(descForHost, descKeyIdx, i+1, totalShares, opts, descQRs)
+				if err != nil {
+					return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
+				}
+				descBatch = append(descBatch, descImg)
+				if opts.EtchStatsPage {
+					statsRows = append(statsRows, printer.ComputeEtchPlateStat(descImg, i+1, "descriptor", opts.DPI))
+				}
+				prepareDone++
+				if progress != nil && prepareTotal > 0 {
+					progress(printer.StagePrepare, prepareDone, prepareTotal)
+				}
+			}
+		}
+
+		if !composeMarked && progress != nil {
+			progress(printer.StageCompose, 1, 1)
+			composeMarked = true
+		}
+		if progress != nil && sendTotal > 0 {
+			progress(printer.StageSend, sendDone, sendTotal)
+		}
+		if err := printer.WritePSPlates(printerDev, seedBatch, descBatch, paper, opts.DPI, nil, nil); err != nil {
+			return fmt.Errorf("ps: write batch %d-%d: %w", start+1, end, err)
+		}
+		sendDone++
+		if sendDone > sendTotal {
+			sendDone = sendTotal
+		}
+		if progress != nil && sendTotal > 0 {
+			progress(printer.StageSend, sendDone, sendTotal)
+		}
+	}
+
+	if progress != nil && !composeMarked {
+		progress(printer.StageCompose, 1, 1)
+		composeMarked = true
+	}
+	if opts.EtchStatsPage {
+		report, err := printer.BuildEtchStatsReportFromStats(statsRows, opts.DPI, paper)
 		if err != nil {
 			return fmt.Errorf("stats: build report: %w", err)
 		}
@@ -613,14 +774,22 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		if err != nil {
 			return fmt.Errorf("stats: render page: %w", err)
 		}
-		extraPages = append(extraPages, statsPage)
+		if progress != nil && sendTotal > 0 {
+			progress(printer.StageSend, sendDone, sendTotal)
+		}
+		if err := printer.WritePS(printerDev, []*image.Paletted{statsPage}, paper, nil); err != nil {
+			return fmt.Errorf("stats: write ps page: %w", err)
+		}
+		sendDone++
+		if sendDone > sendTotal {
+			sendDone = sendTotal
+		}
+		if progress != nil && sendTotal > 0 {
+			progress(printer.StageSend, sendDone, sendTotal)
+		}
 	}
-
-	printerDev := p.Printer()
-	if printerDev == nil {
-		return fmt.Errorf("no printer available")
-	}
-	return printer.WritePSPlates(printerDev, seedImgs, descImgs, paper, opts.DPI, extraPages, progress)
+	logutil.DebugLog("PS write complete (shares=%d dpi=%.0f, batched)", totalShares, opts.DPI)
+	return nil
 }
 
 func estimateJobPages(desc *urtypes.OutputDescriptor, paper printer.PaperSize, opts printer.RasterOptions) int {

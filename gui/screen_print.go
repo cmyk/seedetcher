@@ -239,13 +239,6 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 							printOpts.DPI = 600
 						}
 					}
-					if ctx != nil && ctx.HBPRuntimeReady && opts.PrinterLang == printer.PrinterLangPS && printOpts.DPI > 600 {
-						pages := estimateJobPages(desc, selectedPaper, printOpts)
-						if pages > 1 {
-							printOpts.DPI = 600
-							s.showNotice(ctx, ops, th, fmt.Sprintf("PS 1200 DPI is currently limited to one-page jobs.\nThis job has %d pages, so DPI was set to 600.", pages))
-						}
-					}
 					progress := &PrintProgressScreen{}
 					success, err := progress.Show(ctx, ops, th, mnemonic, desc, keyIdx, selectedPaper, printOpts)
 					if err != nil && err.Error() != "print canceled" {
