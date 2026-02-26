@@ -30,6 +30,62 @@ func isDeviceWriteEIO(err error) bool {
 	return strings.Contains(msg, "/dev/usb/lp0") && strings.Contains(msg, "input/output error")
 }
 
+type hostRenderPlan struct {
+	descForHost        *urtypes.OutputDescriptor
+	totalShares        int
+	compactSingleSided bool
+	shardQRPayloads    [][]string
+}
+
+func prepareHostRenderPlan(desc *urtypes.OutputDescriptor, totalMnemonicCount int, isSinglesigDesc, singlesigWithDescriptorSide bool) (hostRenderPlan, error) {
+	plan := hostRenderPlan{
+		descForHost: desc,
+		totalShares: totalMnemonicCount,
+	}
+	if isSinglesigDesc && !singlesigWithDescriptorSide {
+		// Singlesig descriptor is seed-side metadata only; no descriptor-side plates.
+		plan.descForHost = nil
+	}
+	if plan.descForHost != nil && len(plan.descForHost.Keys) > 0 && !isSinglesigDesc {
+		plan.totalShares = len(plan.descForHost.Keys)
+	}
+	if plan.totalShares <= 0 {
+		return hostRenderPlan{}, fmt.Errorf("no shares to print")
+	}
+
+	plan.compactSingleSided = plan.descForHost != nil &&
+		printer.CompactDescriptor2of3Enabled() &&
+		plan.descForHost.Type == urtypes.SortedMulti &&
+		plan.descForHost.Threshold == 2 &&
+		len(plan.descForHost.Keys) == 3 &&
+		plan.totalShares == 3
+
+	if plan.descForHost != nil && len(plan.descForHost.Keys) > 0 {
+		if isSinglesigDesc && singlesigWithDescriptorSide {
+			qrPayload := printer.DescriptorQRPayload(plan.descForHost)
+			if qrPayload == "" {
+				return hostRenderPlan{}, fmt.Errorf("render: empty singlesig descriptor qr payload")
+			}
+			plan.shardQRPayloads = make([][]string, plan.totalShares)
+			for i := range plan.shardQRPayloads {
+				plan.shardQRPayloads[i] = []string{qrPayload}
+			}
+		} else {
+			var err error
+			plan.shardQRPayloads = make([][]string, plan.totalShares)
+			for i := 0; i < plan.totalShares; i++ {
+				descKeyIdx := i % len(plan.descForHost.Keys)
+				plan.shardQRPayloads[i], err = printer.DescriptorShardQRPayloadsForShare(plan.descForHost, plan.totalShares, descKeyIdx)
+				if err != nil {
+					return hostRenderPlan{}, fmt.Errorf("render: descriptor shard qrs: %w", err)
+				}
+			}
+		}
+	}
+
+	return plan, nil
+}
+
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 
@@ -45,11 +101,6 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 	singlesigWithDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithDescriptorQR
 	singlesigWithInfo := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithInfo
 	isSinglesigJob := desc == nil || isSinglesigDesc
-	descForHost := desc
-	if isSinglesigDesc && !singlesigWithDescriptorSide {
-		// Singlesig descriptor is seed-side metadata only; no descriptor-side plates.
-		descForHost = nil
-	}
 	if isSinglesigJob {
 		// Singlesig default: print two identical seed plates.
 		mnemonics = []bip39.Mnemonic{mnemonic, mnemonic}
@@ -108,44 +159,13 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		}
 		// Host-mode PCL path: render and send in page-sized batches to reduce peak RAM.
 	retryPCL:
-		totalShares := len(mnemonics)
-		if descForHost != nil && len(descForHost.Keys) > 0 && !isSinglesigDesc {
-			totalShares = len(descForHost.Keys)
+		plan, err := prepareHostRenderPlan(desc, len(mnemonics), isSinglesigDesc, singlesigWithDescriptorSide)
+		if err != nil {
+			return err
 		}
-		if totalShares <= 0 {
-			return fmt.Errorf("no shares to print")
-		}
-		compactSingleSided := descForHost != nil &&
-			printer.CompactDescriptor2of3Enabled() &&
-			descForHost.Type == urtypes.SortedMulti &&
-			descForHost.Threshold == 2 &&
-			len(descForHost.Keys) == 3 &&
-			totalShares == 3
-		var shardQRPayloads [][]string
-		var err error
-		if descForHost != nil && len(descForHost.Keys) > 0 {
-			if isSinglesigDesc && singlesigWithDescriptorSide {
-				qrPayload := printer.DescriptorQRPayload(descForHost)
-				if qrPayload == "" {
-					return fmt.Errorf("render: empty singlesig descriptor qr payload")
-				}
-				shardQRPayloads = make([][]string, totalShares)
-				for i := range shardQRPayloads {
-					shardQRPayloads[i] = []string{qrPayload}
-				}
-			} else {
-				shardQRPayloads = make([][]string, totalShares)
-				for i := 0; i < totalShares; i++ {
-					descKeyIdx := i % len(descForHost.Keys)
-					shardQRPayloads[i], err = printer.DescriptorShardQRPayloadsForShare(descForHost, totalShares, descKeyIdx)
-					if err != nil {
-						return fmt.Errorf("render: descriptor shard qrs: %w", err)
-					}
-				}
-			}
-		}
+		totalShares := plan.totalShares
 		sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
-		if descForHost == nil || compactSingleSided {
+		if plan.descForHost == nil || plan.compactSingleSided {
 			sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
 		}
 		if sharesPerBatch < 1 {
@@ -157,7 +177,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		}
 		prepareDone := int64(0)
 		prepareTotal := int64(totalShares)
-		if descForHost != nil && !compactSingleSided {
+		if plan.descForHost != nil && !plan.compactSingleSided {
 			prepareTotal *= 2
 		}
 		composeMarked := false
@@ -167,7 +187,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		var statsRows []printer.EtchPlateStat
 		if opts.EtchStatsPage {
 			statsCap := totalShares
-			if descForHost != nil && !compactSingleSided {
+			if plan.descForHost != nil && !plan.compactSingleSided {
 				statsCap *= 2
 			}
 			statsRows = make([]printer.EtchPlateStat, 0, statsCap)
@@ -180,7 +200,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			batchSize := end - start
 			seedBatch := make([]*image.Paletted, 0, batchSize)
 			var descBatch []*image.Paletted
-			if descForHost != nil && !compactSingleSided {
+			if plan.descForHost != nil && !plan.compactSingleSided {
 				descBatch = make([]*image.Paletted, 0, batchSize)
 			}
 			for i := start; i < end; i++ {
@@ -197,13 +217,13 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				if err != nil {
 					return fmt.Errorf("render: seed plate %d: %w", i+1, err)
 				}
-				if compactSingleSided {
-					descKeyIdx := i % len(descForHost.Keys)
+				if plan.compactSingleSided {
+					descKeyIdx := i % len(plan.descForHost.Keys)
 					descQR := ""
-					if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
-						descQR = shardQRPayloads[i][0]
+					if i < len(plan.shardQRPayloads) && len(plan.shardQRPayloads[i]) > 0 {
+						descQR = plan.shardQRPayloads[i][0]
 					}
-					seedImg, err = printer.RenderCompact2of3PlateBitmap(m, descForHost, descKeyIdx, opts, descQR)
+					seedImg, err = printer.RenderCompact2of3PlateBitmap(m, plan.descForHost, descKeyIdx, opts, descQR)
 					if err != nil {
 						return fmt.Errorf("render: compact plate %d: %w", i+1, err)
 					}
@@ -216,13 +236,13 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				if progress != nil && prepareTotal > 0 {
 					progress(printer.StagePrepare, prepareDone, prepareTotal)
 				}
-				if descForHost != nil && !compactSingleSided {
-					descKeyIdx := i % len(descForHost.Keys)
+				if plan.descForHost != nil && !plan.compactSingleSided {
+					descKeyIdx := i % len(plan.descForHost.Keys)
 					var descQRs []string
-					if i < len(shardQRPayloads) {
-						descQRs = shardQRPayloads[i]
+					if i < len(plan.shardQRPayloads) {
+						descQRs = plan.shardQRPayloads[i]
 					}
-					descImg, err := printer.RenderDescriptorPlateBitmap(descForHost, descKeyIdx, i+1, totalShares, opts, descQRs)
+					descImg, err := printer.RenderDescriptorPlateBitmap(plan.descForHost, descKeyIdx, i+1, totalShares, opts, descQRs)
 					if err != nil {
 						return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
 					}
@@ -596,51 +616,14 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 	singlesigWithDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithDescriptorQR
 	singlesigWithInfo := isSinglesigDesc && opts.SinglesigLayout == printer.SinglesigLayoutSeedWithInfo
 	isSinglesigJob := desc == nil || isSinglesigDesc
-	descForHost := desc
-	if isSinglesigDesc && !singlesigWithDescriptorSide {
-		// Singlesig descriptor is seed-side metadata only; no descriptor-side plates.
-		descForHost = nil
+	plan, err := prepareHostRenderPlan(desc, len(mnemonics), isSinglesigDesc, singlesigWithDescriptorSide)
+	if err != nil {
+		return err
 	}
-	totalShares := len(mnemonics)
-	if descForHost != nil && len(descForHost.Keys) > 0 && !isSinglesigDesc {
-		totalShares = len(descForHost.Keys)
-	}
-	if totalShares <= 0 {
-		return fmt.Errorf("no shares to print")
-	}
-
-	compactSingleSided := descForHost != nil &&
-		printer.CompactDescriptor2of3Enabled() &&
-		descForHost.Type == urtypes.SortedMulti &&
-		descForHost.Threshold == 2 &&
-		len(descForHost.Keys) == 3 &&
-		totalShares == 3
-	var shardQRPayloads [][]string
-	var err error
-	if descForHost != nil && len(descForHost.Keys) > 0 {
-		if isSinglesigDesc && singlesigWithDescriptorSide {
-			qrPayload := printer.DescriptorQRPayload(descForHost)
-			if qrPayload == "" {
-				return fmt.Errorf("render: empty singlesig descriptor qr payload")
-			}
-			shardQRPayloads = make([][]string, totalShares)
-			for i := range shardQRPayloads {
-				shardQRPayloads[i] = []string{qrPayload}
-			}
-		} else {
-			shardQRPayloads = make([][]string, totalShares)
-			for i := 0; i < totalShares; i++ {
-				descKeyIdx := i % len(descForHost.Keys)
-				shardQRPayloads[i], err = printer.DescriptorShardQRPayloadsForShare(descForHost, totalShares, descKeyIdx)
-				if err != nil {
-					return fmt.Errorf("render: descriptor shard qrs: %w", err)
-				}
-			}
-		}
-	}
+	totalShares := plan.totalShares
 
 	sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
-	if descForHost == nil || compactSingleSided {
+	if plan.descForHost == nil || plan.compactSingleSided {
 		sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
 	}
 	if sharesPerBatch < 1 {
@@ -658,7 +641,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 
 	prepareDone := int64(0)
 	prepareTotal := int64(totalShares)
-	if descForHost != nil && !compactSingleSided {
+	if plan.descForHost != nil && !plan.compactSingleSided {
 		prepareTotal *= 2
 	}
 	composeMarked := false
@@ -670,7 +653,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 	var statsRows []printer.EtchPlateStat
 	if opts.EtchStatsPage {
 		statsCap := totalShares
-		if descForHost != nil && !compactSingleSided {
+		if plan.descForHost != nil && !plan.compactSingleSided {
 			statsCap *= 2
 		}
 		statsRows = make([]printer.EtchPlateStat, 0, statsCap)
@@ -684,7 +667,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		batchSize := end - start
 		seedBatch := make([]*image.Paletted, 0, batchSize)
 		var descBatch []*image.Paletted
-		if descForHost != nil && !compactSingleSided {
+		if plan.descForHost != nil && !plan.compactSingleSided {
 			descBatch = make([]*image.Paletted, 0, batchSize)
 		}
 
@@ -702,13 +685,13 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 			if err != nil {
 				return fmt.Errorf("render: seed plate %d: %w", i+1, err)
 			}
-			if compactSingleSided {
-				descKeyIdx := i % len(descForHost.Keys)
+			if plan.compactSingleSided {
+				descKeyIdx := i % len(plan.descForHost.Keys)
 				descQR := ""
-				if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
-					descQR = shardQRPayloads[i][0]
+				if i < len(plan.shardQRPayloads) && len(plan.shardQRPayloads[i]) > 0 {
+					descQR = plan.shardQRPayloads[i][0]
 				}
-				seedImg, err = printer.RenderCompact2of3PlateBitmap(m, descForHost, descKeyIdx, opts, descQR)
+				seedImg, err = printer.RenderCompact2of3PlateBitmap(m, plan.descForHost, descKeyIdx, opts, descQR)
 				if err != nil {
 					return fmt.Errorf("render: compact plate %d: %w", i+1, err)
 				}
@@ -721,13 +704,13 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 			if progress != nil && prepareTotal > 0 {
 				progress(printer.StagePrepare, prepareDone, prepareTotal)
 			}
-			if descForHost != nil && !compactSingleSided {
-				descKeyIdx := i % len(descForHost.Keys)
+			if plan.descForHost != nil && !plan.compactSingleSided {
+				descKeyIdx := i % len(plan.descForHost.Keys)
 				var descQRs []string
-				if i < len(shardQRPayloads) {
-					descQRs = shardQRPayloads[i]
+				if i < len(plan.shardQRPayloads) {
+					descQRs = plan.shardQRPayloads[i]
 				}
-				descImg, err := printer.RenderDescriptorPlateBitmap(descForHost, descKeyIdx, i+1, totalShares, opts, descQRs)
+				descImg, err := printer.RenderDescriptorPlateBitmap(plan.descForHost, descKeyIdx, i+1, totalShares, opts, descQRs)
 				if err != nil {
 					return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
 				}
