@@ -156,7 +156,7 @@ type NavButton struct {
 	Progress float32
 }
 
-func layoutNavigation(ctx *Context, inp *InputTracker, ops op.Ctx, th *Colors, dims image.Point, btns ...NavButton) image.Rectangle {
+func layoutNavigation(_ *Context, inp *InputTracker, ops op.Ctx, th *Colors, dims image.Point, btns ...NavButton) image.Rectangle {
 	navsz := assets.NavBtnPrimary.Bounds().Size()
 	button := func(ops op.Ctx, b NavButton, pressed bool) {
 		if b.Style == StyleNone {

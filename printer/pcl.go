@@ -229,11 +229,6 @@ func estimatePCLBytes(pages []*image.Paletted, dpi float64, paper PaperSize) (in
 	return total, nil
 }
 
-// EstimatePCLBytes estimates raw PCL bytes for already-composed pages.
-func EstimatePCLBytes(pages []*image.Paletted, dpi float64, paper PaperSize) (int64, error) {
-	return estimatePCLBytes(pages, dpi, paper)
-}
-
 // WritePCL streams mono bitmaps as a PCL5e raster job (one page per image).
 // progress, if non-nil, is called with bytes written out of the estimated total.
 func WritePCL(w io.Writer, pages []*image.Paletted, dpi float64, paper PaperSize, progress ProgressFunc) error {
