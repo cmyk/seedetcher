@@ -10,8 +10,8 @@ type seedPlateLayout struct {
 }
 
 const (
-	seedQRYBottomMarginMM = 12.0
-	seedQRSizeMM          = 28.0
+	seedQRYBottomMarginMM = 10.0
+	seedQRSizeMM          = 32.0
 )
 
 func defaultSeedPlateLayout(totalShares int, singlesigVariant bool) seedPlateLayout {
