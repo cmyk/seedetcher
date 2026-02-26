@@ -110,6 +110,15 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 	return nil
 }
 
+// EstimatePSBytes returns the estimated PostScript job size for already-composed pages.
+func EstimatePSBytes(pages []*image.Paletted, paper PaperSize) (int64, error) {
+	pageWmm, pageHmm, ok := paperDimsMM(paper)
+	if !ok {
+		return 0, fmt.Errorf("unsupported paper size: %v", paper)
+	}
+	return estimatePSBytes(pages, pageWmm, pageHmm)
+}
+
 // WritePSPlates composes seed/descriptor plates directly into a PostScript job
 // without materializing all full-page bitmaps in memory at once.
 // extraPages can be used to append already-rendered full pages (e.g. stats page).
@@ -281,6 +290,19 @@ func WritePSPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, paper 
 		return err
 	}
 	return nil
+}
+
+// EstimatePSPlatesBytes returns the estimated PostScript job size for a plate batch.
+func EstimatePSPlatesBytes(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64) (int64, error) {
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, nil)
+	if err != nil {
+		return 0, err
+	}
+	pageWmm, pageHmm, ok := paperDimsMM(paper)
+	if !ok {
+		return 0, fmt.Errorf("unsupported paper size: %v", paper)
+	}
+	return estimatePSBytesForPlan(plan, pageWmm, pageHmm, nil)
 }
 
 func estimatePSBytes(pages []*image.Paletted, pageWmm, pageHmm float64) (int64, error) {

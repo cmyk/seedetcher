@@ -366,10 +366,14 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			return err
 		}
 		totalShares := plan.totalShares
-		composeMarked := false
+		composeTotal := int64(hostBatchCount(totalShares, hostSharesPerBatch(plan)))
+		if opts.EtchStatsPage {
+			composeTotal++
+		}
 		sendDone := int64(0)
 		sendTotal := int64(0)
 		sendBatchBytes := int64(-1)
+		statsSendBudget := int64(0)
 		statsRows, err := runHostRenderBatches(
 			mnemonics,
 			desc,
@@ -379,10 +383,9 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			opts,
 			progress,
 			opts.EtchStatsPage,
-			func(batch hostRenderedBatch, start, end, _, numBatches int) error {
-				if !composeMarked && progress != nil {
-					progress(printer.StageCompose, 1, 1)
-					composeMarked = true
+			func(batch hostRenderedBatch, start, end, batchIndex, numBatches int) error {
+				if progress != nil {
+					progress(printer.StageCompose, int64(batchIndex), composeTotal)
 				}
 				if sendBatchBytes < 0 {
 					var err error
@@ -391,6 +394,11 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 						return fmt.Errorf("pcl: estimate batch %d-%d: %w", start+1, end, err)
 					}
 					sendTotal = sendBatchBytes * int64(numBatches)
+					if opts.EtchStatsPage {
+						// Keep send-total stable from the beginning so progress never jumps backward.
+						statsSendBudget = sendBatchBytes
+						sendTotal += statsSendBudget
+					}
 				}
 				baseDone := sendDone
 				batchProgress := func(stage printer.PrintStage, current, total int64) {
@@ -436,17 +444,45 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			}
 			return err
 		}
-		if progress != nil && !composeMarked {
-			progress(printer.StageCompose, 1, 1)
-			composeMarked = true
-		}
 		if opts.EtchStatsPage {
+			if progress != nil {
+				progress(printer.StageCompose, composeTotal, composeTotal)
+			}
 			statsPage, err := buildStatsPageFromRows(statsRows, opts.DPI, paper)
 			if err != nil {
 				return fmt.Errorf("stats: build/render page: %w", err)
 			}
-			if err := printer.WritePCL(printerDev, []*image.Paletted{statsPage}, opts.DPI, paper, progress); err != nil {
+			if progress != nil && sendTotal > 0 {
+				progress(printer.StageSend, sendDone, sendTotal)
+			}
+			baseDone := sendDone
+			statsProgress := func(stage printer.PrintStage, current, total int64) {
+				if stage != printer.StageSend || progress == nil || sendTotal <= 0 || total <= 0 {
+					return
+				}
+				scaled := current
+				if statsSendBudget > 0 {
+					scaled = (current * statsSendBudget) / total
+				}
+				globalCurrent := baseDone + scaled
+				if globalCurrent > sendTotal {
+					globalCurrent = sendTotal
+				}
+				progress(printer.StageSend, globalCurrent, sendTotal)
+			}
+			if err := printer.WritePCL(printerDev, []*image.Paletted{statsPage}, opts.DPI, paper, statsProgress); err != nil {
 				return fmt.Errorf("stats: write pcl page: %w", err)
+			}
+			if statsSendBudget > 0 {
+				sendDone += statsSendBudget
+			} else {
+				sendDone = sendTotal
+			}
+			if sendDone > sendTotal {
+				sendDone = sendTotal
+			}
+			if progress != nil && sendTotal > 0 {
+				progress(printer.StageSend, sendDone, sendTotal)
 			}
 		}
 		logutil.DebugLog("PCL write complete (shares=%d dpi=%.0f, batched)", totalShares, opts.DPI)
@@ -677,15 +713,15 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		return fmt.Errorf("no printer available")
 	}
 
-	composeMarked := false
 	sendDone := int64(0)
-	sendTotal := int64(hostBatchCount(totalShares, hostSharesPerBatch(plan)))
-	if sendTotal < 1 {
-		sendTotal = 1
-	}
+	numBatches := hostBatchCount(totalShares, hostSharesPerBatch(plan))
+	composeTotal := int64(numBatches)
 	if opts.EtchStatsPage {
-		sendTotal++
+		composeTotal++
 	}
+	sendTotal := int64(0)
+	sendBatchBytes := int64(-1)
+	statsSendBudget := int64(0)
 
 	statsRows, err := runHostRenderBatches(
 		mnemonics,
@@ -696,18 +732,41 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		opts,
 		progress,
 		opts.EtchStatsPage,
-		func(batch hostRenderedBatch, start, end, _, _ int) error {
-			if !composeMarked && progress != nil {
-				progress(printer.StageCompose, 1, 1)
-				composeMarked = true
+		func(batch hostRenderedBatch, start, end, batchIndex, _ int) error {
+			if progress != nil {
+				progress(printer.StageCompose, int64(batchIndex), composeTotal)
+			}
+			if sendBatchBytes < 0 {
+				var err error
+				sendBatchBytes, err = printer.EstimatePSPlatesBytes(batch.seedBatch, batch.descBatch, paper, opts.DPI)
+				if err != nil {
+					return fmt.Errorf("ps: estimate batch %d-%d: %w", start+1, end, err)
+				}
+				sendTotal = sendBatchBytes * int64(numBatches)
+				if opts.EtchStatsPage {
+					// Keep send-total stable from the beginning so progress never jumps backward.
+					statsSendBudget = sendBatchBytes
+					sendTotal += statsSendBudget
+				}
+			}
+			baseDone := sendDone
+			batchProgress := func(stage printer.PrintStage, current, total int64) {
+				if stage != printer.StageSend || progress == nil || sendTotal <= 0 || total <= 0 {
+					return
+				}
+				globalCurrent := baseDone + current
+				if globalCurrent > sendTotal {
+					globalCurrent = sendTotal
+				}
+				progress(printer.StageSend, globalCurrent, sendTotal)
 			}
 			if progress != nil && sendTotal > 0 {
 				progress(printer.StageSend, sendDone, sendTotal)
 			}
-			if err := printer.WritePSPlates(printerDev, batch.seedBatch, batch.descBatch, paper, opts.DPI, nil, nil); err != nil {
+			if err := printer.WritePSPlates(printerDev, batch.seedBatch, batch.descBatch, paper, opts.DPI, nil, batchProgress); err != nil {
 				return fmt.Errorf("ps: write batch %d-%d: %w", start+1, end, err)
 			}
-			sendDone++
+			sendDone += sendBatchBytes
 			if sendDone > sendTotal {
 				sendDone = sendTotal
 			}
@@ -720,11 +779,10 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 	if err != nil {
 		return err
 	}
-	if progress != nil && !composeMarked {
-		progress(printer.StageCompose, 1, 1)
-		composeMarked = true
-	}
 	if opts.EtchStatsPage {
+		if progress != nil {
+			progress(printer.StageCompose, composeTotal, composeTotal)
+		}
 		statsPage, err := buildStatsPageFromRows(statsRows, opts.DPI, paper)
 		if err != nil {
 			return fmt.Errorf("stats: build/render page: %w", err)
@@ -732,10 +790,29 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		if progress != nil && sendTotal > 0 {
 			progress(printer.StageSend, sendDone, sendTotal)
 		}
-		if err := printer.WritePS(printerDev, []*image.Paletted{statsPage}, paper, nil); err != nil {
+		baseDone := sendDone
+		statsProgress := func(stage printer.PrintStage, current, total int64) {
+			if stage != printer.StageSend || progress == nil || sendTotal <= 0 || total <= 0 {
+				return
+			}
+			scaled := current
+			if statsSendBudget > 0 {
+				scaled = (current * statsSendBudget) / total
+			}
+			globalCurrent := baseDone + scaled
+			if globalCurrent > sendTotal {
+				globalCurrent = sendTotal
+			}
+			progress(printer.StageSend, globalCurrent, sendTotal)
+		}
+		if err := printer.WritePS(printerDev, []*image.Paletted{statsPage}, paper, statsProgress); err != nil {
 			return fmt.Errorf("stats: write ps page: %w", err)
 		}
-		sendDone++
+		if statsSendBudget > 0 {
+			sendDone += statsSendBudget
+		} else {
+			sendDone = sendTotal
+		}
 		if sendDone > sendTotal {
 			sendDone = sendTotal
 		}

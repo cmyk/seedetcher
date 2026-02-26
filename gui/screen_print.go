@@ -725,14 +725,33 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		current int64
 		total   int64
 	}
-	progressCh := make(chan progressUpdate, 8)
+	progressCh := make(chan progressUpdate, 64)
 	stageState := make(map[printer.PrintStage]progressUpdate)
-	progressVal := float32(0)
-	lastStage := printer.StagePrepare
+	lastBuildStage := printer.StagePrepare
 	if ctx != nil {
+		lastSendCurrent := int64(-1)
+		lastSendTotal := int64(0)
 		ctx.PrintProgress = func(stage printer.PrintStage, current, total int64) {
 			if total <= 0 {
 				return
+			}
+			if stage == printer.StageSend {
+				// Coalesce only byte-like send streams; count-based send progress (e.g. HBP batches)
+				// must keep every step to avoid hiding 2/3-style updates.
+				if total >= 8192 {
+					if total != lastSendTotal {
+						lastSendTotal = total
+						lastSendCurrent = -1
+					}
+					step := total / 120
+					if step < 64*1024 {
+						step = 64 * 1024
+					}
+					if current < total && lastSendCurrent >= 0 && (current-lastSendCurrent) < step {
+						return
+					}
+					lastSendCurrent = current
+				}
 			}
 			select {
 			case progressCh <- progressUpdate{stage: stage, current: current, total: total}:
@@ -756,84 +775,197 @@ func (s *PrintProgressScreen) Show(ctx *Context, ops op.Ctx, th *Colors, mnemoni
 		close(done)
 	}()
 
+	drawBar := func(rect image.Rectangle, frac float32) {
+		if frac < 0 {
+			frac = 0
+		}
+		if frac > 1 {
+			frac = 1
+		}
+		track := color.NRGBA{R: th.Text.R, G: th.Text.G, B: th.Text.B, A: 70}
+		op.ClipOp(rect).Add(ops.Begin())
+		op.ColorOp(ops, track)
+		bg := ops.End()
+		bg.Add(ops)
+		fillW := int(float32(rect.Dx()) * frac)
+		if fillW < 0 {
+			fillW = 0
+		}
+		if fillW > rect.Dx() {
+			fillW = rect.Dx()
+		}
+		if fillW == 0 && frac > 0 {
+			fillW = 1
+		}
+		fillRect := image.Rect(rect.Min.X, rect.Min.Y, rect.Min.X+fillW, rect.Max.Y)
+		op.ClipOp(fillRect).Add(ops.Begin())
+		op.ColorOp(ops, th.Text)
+		fg := ops.End()
+		fg.Add(ops)
+	}
+	formatBytes := func(v int64) string {
+		if v < 1024 {
+			return fmt.Sprintf("%d B", v)
+		}
+		if v < 1024*1024 {
+			return fmt.Sprintf("%.1f KB", float64(v)/1024.0)
+		}
+		return fmt.Sprintf("%.1f MB", float64(v)/(1024.0*1024.0))
+	}
+	clampCount := func(cur, total int64) int64 {
+		if total <= 0 {
+			return 0
+		}
+		if cur < 0 {
+			return 0
+		}
+		if cur > total {
+			return total
+		}
+		return cur
+	}
+
 	for {
 		dims := ctx.Platform.DisplaySize()
 		op.ColorOp(ops, th.Background)
-		layoutTitle(ctx, ops, dims.X, th.Text, "Printing")
+		titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Printing")
 
 		if !finished {
 			select {
 			case <-done:
 				finished = true
 				finishedAt = ctx.Platform.Now()
-				if progressVal < 1 {
-					progressVal = 1
-				}
 			default:
 			}
 		}
 
-		select {
-		case p := <-progressCh:
-			stageState[p.stage] = p
-			if p.stage >= lastStage {
-				lastStage = p.stage
-			}
-			// Mark earlier stages complete if we reached a later stage.
-			ordered := []printer.PrintStage{printer.StagePrepare, printer.StageCompose, printer.StageSend}
-			for _, st := range ordered {
-				if st == p.stage {
-					break
-				}
-				if _, ok := stageState[st]; !ok {
-					stageState[st] = progressUpdate{stage: st, current: 1, total: 1}
-				}
-			}
-			// Compute overall progress as the average of stage fractions.
-			sum := float32(0)
-			for _, st := range ordered {
-				if upd, ok := stageState[st]; ok && upd.total > 0 {
-					f := float32(upd.current) / float32(upd.total)
-					if f < 0 {
-						f = 0
+		for {
+			select {
+			case p := <-progressCh:
+				if prev, ok := stageState[p.stage]; ok {
+					// Keep stage counters monotonic to avoid UI regressions under bursty updates.
+					if p.total < prev.total {
+						p.total = prev.total
 					}
-					if f > 1 {
-						f = 1
+					if p.current < prev.current {
+						p.current = prev.current
 					}
-					sum += f
 				}
+				stageState[p.stage] = p
+				if p.stage == printer.StagePrepare || p.stage == printer.StageCompose {
+					lastBuildStage = p.stage
+				}
+				// Mark earlier stages complete when we reach a later stage.
+				ordered := []printer.PrintStage{printer.StagePrepare, printer.StageCompose, printer.StageSend}
+				for _, st := range ordered {
+					if st == p.stage {
+						break
+					}
+					if _, ok := stageState[st]; !ok {
+						stageState[st] = progressUpdate{stage: st, current: 1, total: 1}
+					}
+				}
+			default:
+				goto updatesDone
 			}
-			if len(ordered) > 0 {
-				progressVal = sum / float32(len(ordered))
-			}
-		default:
 		}
+	updatesDone:
 
 		ctx.WakeupAt(ctx.Platform.Now().Add(100 * time.Millisecond))
 
-		content := layout.Rectangle{Max: dims}.Shrink(leadingSize, 0, leadingSize, 0)
-		op.Offset(ops, content.Center(assets.ProgressCircle.Bounds().Size()))
-		(&ProgressImage{Progress: progressVal, Src: assets.ProgressCircle}).Add(ops)
-		op.ColorOp(ops, th.Text)
-		percentLabel := fmt.Sprintf("%d%%", int(progressVal*100+0.5))
-		pctSz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, assets.ProgressCircle.Bounds().Dx(), th.Text, "%s", percentLabel)
-		op.Position(ops, ops.End(), content.Center(pctSz))
-		label := "Preparing..."
-		if upd, ok := stageState[lastStage]; ok {
-			switch lastStage {
-			case printer.StagePrepare:
-				label = fmt.Sprintf("Rendering plates %d/%d", upd.current, upd.total)
-			case printer.StageCompose:
-				label = fmt.Sprintf("Composing pages %d/%d", upd.current, upd.total)
-			case printer.StageSend:
-				label = "Sending job to printer"
+		prepareUpd := stageState[printer.StagePrepare]
+		composeUpd := stageState[printer.StageCompose]
+		sendUpd := stageState[printer.StageSend]
+
+		buildCurrent := int64(0)
+		buildTotal := int64(0)
+		if prepareUpd.total > 0 {
+			buildCurrent += clampCount(prepareUpd.current, prepareUpd.total)
+			buildTotal += prepareUpd.total
+		}
+		if composeUpd.total > 0 {
+			buildCurrent += clampCount(composeUpd.current, composeUpd.total)
+			buildTotal += composeUpd.total
+		}
+		buildFrac := float32(0)
+		if buildTotal > 0 {
+			buildFrac = float32(buildCurrent) / float32(buildTotal)
+		}
+		if buildFrac > 1 {
+			buildFrac = 1
+		}
+
+		sendFrac := float32(0)
+		if sendUpd.total > 0 {
+			sendFrac = float32(clampCount(sendUpd.current, sendUpd.total)) / float32(sendUpd.total)
+			if sendFrac > 1 {
+				sendFrac = 1
 			}
 		}
-		sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-16, th.Text, "%s", label)
-		r := layout.Rectangle{Max: dims}
-		_, bottom := r.CutTop(leadingSize)
-		_, lead := bottom.CutBottom(leadingSize)
-		op.Position(ops, ops.End(), lead.Center(sz))
+		if finished {
+			buildFrac = 1
+			sendFrac = 1
+		}
+
+		buildLabel := "Preparing print job"
+		switch lastBuildStage {
+		case printer.StagePrepare:
+			if prepareUpd.total > 0 {
+				buildLabel = fmt.Sprintf("Creating plates %d/%d", clampCount(prepareUpd.current, prepareUpd.total), prepareUpd.total)
+			}
+			if prepareUpd.total > 0 && clampCount(prepareUpd.current, prepareUpd.total) >= prepareUpd.total && composeUpd.total > 0 {
+				lastBuildStage = printer.StageCompose
+			}
+		case printer.StageCompose:
+			if composeUpd.total > 0 {
+				composeCur := clampCount(composeUpd.current, composeUpd.total)
+				if printOpts.EtchStats && composeUpd.total > 1 && composeCur >= composeUpd.total {
+					buildLabel = "Created stats page"
+				} else {
+					buildLabel = fmt.Sprintf("Created pages %d/%d", composeCur, composeUpd.total)
+				}
+			}
+		}
+		if finished {
+			buildLabel = "Creation complete"
+		}
+		sendLabelTitle := "Sending to printer"
+		sendLabelDetail := "Waiting to send..."
+		if sendUpd.total > 0 {
+			sendCur := clampCount(sendUpd.current, sendUpd.total)
+			if sendUpd.total >= 8192 {
+				sendLabelDetail = fmt.Sprintf("%s / %s", formatBytes(sendCur), formatBytes(sendUpd.total))
+			} else {
+				sendLabelDetail = fmt.Sprintf("%d / %d", sendCur, sendUpd.total)
+			}
+		} else if finished {
+			sendLabelDetail = "Complete"
+		}
+
+		left := 16
+		right := dims.X - 16
+		if right-left < 120 {
+			left = 8
+			right = dims.X - 8
+		}
+		barH := 10
+		y := titleRect.Max.Y + 16
+
+		label1 := widget.Labelwf(ops.Begin(), ctx.Styles.lead, right-left, th.Text, "%s", buildLabel)
+		op.Position(ops, ops.End(), image.Pt(left, y))
+		y += label1.Y + 6
+		bar1 := image.Rect(left, y, right, y+barH)
+		drawBar(bar1, buildFrac)
+		y = bar1.Max.Y + 16
+
+		label2a := widget.Labelwf(ops.Begin(), ctx.Styles.lead, right-left, th.Text, "%s", sendLabelTitle)
+		op.Position(ops, ops.End(), image.Pt(left, y))
+		y += label2a.Y + 2
+		label2b := widget.Labelwf(ops.Begin(), ctx.Styles.lead, right-left, th.Text, "%s", sendLabelDetail)
+		op.Position(ops, ops.End(), image.Pt(left, y))
+		y += label2b.Y + 6
+		bar2 := image.Rect(left, y, right, y+barH)
+		drawBar(bar2, sendFrac)
 
 		layoutNavigation(ctx, &s.inp, ops, th, dims)
 		ctx.Frame()
