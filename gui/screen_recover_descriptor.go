@@ -63,14 +63,14 @@ func (s *SDCardGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			default:
 			}
 		}
-			if s.prepDone && s.prepErr != nil {
-				showError(ctx, ops, th, fmt.Errorf("SD removal prep failed: %v", s.prepErr))
-				return &MainMenuScreen{}
-			}
-			if s.prepDone && s.prepErr == nil {
-				ctx.SDRemovalPrepared = true
-			}
-			if !s.prepDone {
+		if s.prepDone && s.prepErr != nil {
+			showError(ctx, ops, th, fmt.Errorf("SD removal prep failed: %v", s.prepErr))
+			return &MainMenuScreen{}
+		}
+		if s.prepDone && s.prepErr == nil {
+			ctx.SDRemovalPrepared = true
+		}
+		if !s.prepDone {
 			dims := ctx.Platform.DisplaySize()
 			op.ColorOp(ops, th.Background)
 			titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing SD removal")
@@ -688,8 +688,7 @@ func buildDescriptorText(payload []byte) string {
 }
 
 func formatDescriptorText(desc urtypes.OutputDescriptor) string {
-	var wrap func(urtypes.Script, string) string
-	wrap = func(script urtypes.Script, inner string) string {
+	wrap := func(script urtypes.Script, inner string) string {
 		switch script {
 		case urtypes.P2WSH:
 			return "wsh(" + inner + ")"

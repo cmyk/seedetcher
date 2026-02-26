@@ -95,10 +95,8 @@ var (
 	faceMuMedium       sync.Mutex
 	faceCacheMedium    = make(map[[2]float64]font.Face) // key: {sizePt, dpi}
 
-	shardSetMu     sync.RWMutex
-	forcedShardSet *[16]byte
-	compactMu      sync.RWMutex
-	compact2of3On  bool
+	compactMu     sync.RWMutex
+	compact2of3On bool
 )
 
 // CreatePlateBitmaps renders seed/descriptor plates to 1-bit bitmaps using the existing layout.
@@ -236,28 +234,6 @@ func DescriptorShardQRCodes(desc *urtypes.OutputDescriptor, totalShares int) ([]
 // given share index. UR/XOR families such as 3-of-5 return two payloads.
 func DescriptorShardQRPayloadsForShare(desc *urtypes.OutputDescriptor, totalShares, keyIdx int) ([]string, error) {
 	return descriptorShardQRPayloadsForShare(desc, totalShares, keyIdx)
-}
-
-// SetDescriptorShardSetID forces the descriptor shard set_id used during plate
-// generation. Pass nil to clear and return to random per-job set IDs.
-func SetDescriptorShardSetID(id *[16]byte) {
-	shardSetMu.Lock()
-	defer shardSetMu.Unlock()
-	if id == nil {
-		forcedShardSet = nil
-		return
-	}
-	v := *id
-	forcedShardSet = &v
-}
-
-func forcedDescriptorShardSetID() ([16]byte, bool) {
-	shardSetMu.RLock()
-	defer shardSetMu.RUnlock()
-	if forcedShardSet == nil {
-		return [16]byte{}, false
-	}
-	return *forcedShardSet, true
 }
 
 // SetCompactDescriptor2of3Enabled toggles compact single-sided 2-of-3 plate rendering.

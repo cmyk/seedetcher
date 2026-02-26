@@ -215,6 +215,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		}
 
 		updatePrinterStatus()
+	printPreviewLoop:
 		for {
 			e, ok := inp.Next(ctx, Button1, Button3)
 			if !ok {
@@ -225,7 +226,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 				if inp.Clicked(e.Button) {
 					inSetup = true
 					stepIdx = len(setupSteps) - 1
-					break
+					break printPreviewLoop
 				}
 			case Button3:
 				if inp.Clicked(e.Button) {

@@ -355,18 +355,13 @@ func (s *BackupFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			}
 			job = FromDescriptor(desc, ctx.Keystores[desc.Keys[0].MasterFingerprint], s.confirmKeyIdx, label)
 		}
-		if s.desc != nil {
-			printer.SetDescriptorShardSetID(&s.shardSetID)
-		}
 		return &PrintFlowScreen{
 			Theme: th,
 			Job:   job,
 			OnSuccess: func() Screen {
-				printer.SetDescriptorShardSetID(nil)
 				return &MainMenuScreen{}
 			},
 			OnRetry: func() Screen {
-				printer.SetDescriptorShardSetID(nil)
 				s.stage = stageLabel
 				return s
 			},
