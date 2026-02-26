@@ -438,7 +438,7 @@ maybe_provision_hbp_async() {
   fi
 }
 
-provision_spike_queue() {
+provision_runtime_queue() {
   [ -x /bin/lpadmin ] || return 1
   [ -S "$SOCK" ] || return 1
 
@@ -460,14 +460,14 @@ provision_spike_queue() {
 }
 
 if /bin/cupsd >> /log/cups.log 2>&1; then
-  if ! provision_spike_queue; then
+  if ! provision_runtime_queue; then
     if [ "${CUPS_RUNTIME_QUEUE_RETRY:-0}" = "1" ]; then
       debug_echo "no printer URI discovered; starting retry loop"
       (
         retries=90
         while [ "$retries" -gt 0 ]; do
           sleep 2
-          if provision_spike_queue; then
+          if provision_runtime_queue; then
             exit 0
           fi
           retries=$((retries - 1))
