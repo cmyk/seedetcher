@@ -86,6 +86,98 @@ func prepareHostRenderPlan(desc *urtypes.OutputDescriptor, totalMnemonicCount in
 	return plan, nil
 }
 
+type hostRenderedBatch struct {
+	seedBatch []*image.Paletted
+	descBatch []*image.Paletted
+	statsRows []printer.EtchPlateStat
+}
+
+func renderHostBatch(
+	mnemonics []bip39.Mnemonic,
+	seedInfoDesc *urtypes.OutputDescriptor,
+	plan hostRenderPlan,
+	isSinglesigJob bool,
+	singlesigWithInfo bool,
+	opts printer.RasterOptions,
+	start, end int,
+	progress func(stage printer.PrintStage, current, total int64),
+	prepareDone *int64,
+	prepareTotal int64,
+	collectStats bool,
+) (hostRenderedBatch, error) {
+	batchSize := end - start
+	out := hostRenderedBatch{
+		seedBatch: make([]*image.Paletted, 0, batchSize),
+	}
+	if plan.descForHost != nil && !plan.compactSingleSided {
+		out.descBatch = make([]*image.Paletted, 0, batchSize)
+	}
+	if collectStats {
+		statsCap := batchSize
+		if plan.descForHost != nil && !plan.compactSingleSided {
+			statsCap *= 2
+		}
+		out.statsRows = make([]printer.EtchPlateStat, 0, statsCap)
+	}
+
+	for i := start; i < end; i++ {
+		m := mnemonics[i%len(mnemonics)]
+		seedShareNum, seedShareTotal := i+1, plan.totalShares
+		if isSinglesigJob {
+			seedShareNum, seedShareTotal = 1, 1
+		}
+		var seedDesc *urtypes.OutputDescriptor
+		if singlesigWithInfo {
+			seedDesc = seedInfoDesc
+		}
+		seedImg, err := printer.RenderSeedPlateBitmapWithDescriptor(m, seedShareNum, seedShareTotal, seedDesc, opts)
+		if err != nil {
+			return hostRenderedBatch{}, fmt.Errorf("render: seed plate %d: %w", i+1, err)
+		}
+		if plan.compactSingleSided {
+			descKeyIdx := i % len(plan.descForHost.Keys)
+			descQR := ""
+			if i < len(plan.shardQRPayloads) && len(plan.shardQRPayloads[i]) > 0 {
+				descQR = plan.shardQRPayloads[i][0]
+			}
+			seedImg, err = printer.RenderCompact2of3PlateBitmap(m, plan.descForHost, descKeyIdx, opts, descQR)
+			if err != nil {
+				return hostRenderedBatch{}, fmt.Errorf("render: compact plate %d: %w", i+1, err)
+			}
+		}
+		out.seedBatch = append(out.seedBatch, seedImg)
+		if collectStats {
+			out.statsRows = append(out.statsRows, printer.ComputeEtchPlateStat(seedImg, i+1, "seed", opts.DPI))
+		}
+		*prepareDone = *prepareDone + 1
+		if progress != nil && prepareTotal > 0 {
+			progress(printer.StagePrepare, *prepareDone, prepareTotal)
+		}
+
+		if plan.descForHost != nil && !plan.compactSingleSided {
+			descKeyIdx := i % len(plan.descForHost.Keys)
+			var descQRs []string
+			if i < len(plan.shardQRPayloads) {
+				descQRs = plan.shardQRPayloads[i]
+			}
+			descImg, err := printer.RenderDescriptorPlateBitmap(plan.descForHost, descKeyIdx, i+1, plan.totalShares, opts, descQRs)
+			if err != nil {
+				return hostRenderedBatch{}, fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
+			}
+			out.descBatch = append(out.descBatch, descImg)
+			if collectStats {
+				out.statsRows = append(out.statsRows, printer.ComputeEtchPlateStat(descImg, i+1, "descriptor", opts.DPI))
+			}
+			*prepareDone = *prepareDone + 1
+			if progress != nil && prepareTotal > 0 {
+				progress(printer.StagePrepare, *prepareDone, prepareTotal)
+			}
+		}
+	}
+
+	return out, nil
+}
+
 func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, paper printer.PaperSize, opts printer.RasterOptions) error {
 	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
 
@@ -197,64 +289,25 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			if end > totalShares {
 				end = totalShares
 			}
-			batchSize := end - start
-			seedBatch := make([]*image.Paletted, 0, batchSize)
-			var descBatch []*image.Paletted
-			if plan.descForHost != nil && !plan.compactSingleSided {
-				descBatch = make([]*image.Paletted, 0, batchSize)
+			batch, err := renderHostBatch(
+				mnemonics,
+				desc,
+				plan,
+				isSinglesigJob,
+				singlesigWithInfo,
+				opts,
+				start,
+				end,
+				progress,
+				&prepareDone,
+				prepareTotal,
+				opts.EtchStatsPage,
+			)
+			if err != nil {
+				return err
 			}
-			for i := start; i < end; i++ {
-				m := mnemonics[i%len(mnemonics)]
-				seedShareNum, seedShareTotal := i+1, totalShares
-				if isSinglesigJob {
-					seedShareNum, seedShareTotal = 1, 1
-				}
-				seedDesc := (*urtypes.OutputDescriptor)(nil)
-				if singlesigWithInfo {
-					seedDesc = desc
-				}
-				seedImg, err := printer.RenderSeedPlateBitmapWithDescriptor(m, seedShareNum, seedShareTotal, seedDesc, opts)
-				if err != nil {
-					return fmt.Errorf("render: seed plate %d: %w", i+1, err)
-				}
-				if plan.compactSingleSided {
-					descKeyIdx := i % len(plan.descForHost.Keys)
-					descQR := ""
-					if i < len(plan.shardQRPayloads) && len(plan.shardQRPayloads[i]) > 0 {
-						descQR = plan.shardQRPayloads[i][0]
-					}
-					seedImg, err = printer.RenderCompact2of3PlateBitmap(m, plan.descForHost, descKeyIdx, opts, descQR)
-					if err != nil {
-						return fmt.Errorf("render: compact plate %d: %w", i+1, err)
-					}
-				}
-				seedBatch = append(seedBatch, seedImg)
-				if opts.EtchStatsPage {
-					statsRows = append(statsRows, printer.ComputeEtchPlateStat(seedImg, i+1, "seed", opts.DPI))
-				}
-				prepareDone++
-				if progress != nil && prepareTotal > 0 {
-					progress(printer.StagePrepare, prepareDone, prepareTotal)
-				}
-				if plan.descForHost != nil && !plan.compactSingleSided {
-					descKeyIdx := i % len(plan.descForHost.Keys)
-					var descQRs []string
-					if i < len(plan.shardQRPayloads) {
-						descQRs = plan.shardQRPayloads[i]
-					}
-					descImg, err := printer.RenderDescriptorPlateBitmap(plan.descForHost, descKeyIdx, i+1, totalShares, opts, descQRs)
-					if err != nil {
-						return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
-					}
-					descBatch = append(descBatch, descImg)
-					if opts.EtchStatsPage {
-						statsRows = append(statsRows, printer.ComputeEtchPlateStat(descImg, i+1, "descriptor", opts.DPI))
-					}
-					prepareDone++
-					if progress != nil && prepareTotal > 0 {
-						progress(printer.StagePrepare, prepareDone, prepareTotal)
-					}
-				}
+			if opts.EtchStatsPage {
+				statsRows = append(statsRows, batch.statsRows...)
 			}
 			if !composeMarked && progress != nil {
 				progress(printer.StageCompose, 1, 1)
@@ -262,7 +315,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			}
 			if sendBatchBytes < 0 {
 				var err error
-				sendBatchBytes, err = printer.EstimatePCLPlatesBytes(seedBatch, descBatch, opts.DPI, paper)
+				sendBatchBytes, err = printer.EstimatePCLPlatesBytes(batch.seedBatch, batch.descBatch, opts.DPI, paper)
 				if err != nil {
 					return fmt.Errorf("pcl: estimate batch %d-%d: %w", start+1, end, err)
 				}
@@ -282,7 +335,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 			if progress != nil && sendTotal > 0 {
 				progress(printer.StageSend, sendDone, sendTotal)
 			}
-			if err := printer.WritePCLPlates(printerDev, seedBatch, descBatch, opts.DPI, paper, batchProgress); err != nil {
+			if err := printer.WritePCLPlates(printerDev, batch.seedBatch, batch.descBatch, opts.DPI, paper, batchProgress); err != nil {
 				if sendDone == 0 && opts.DPI > 600 && isDeviceWriteEIO(err) {
 					logutil.DebugLog("PCL host path: write failed at %.0fdpi with EIO; retrying at 600dpi", opts.DPI)
 					p.hostPCLForce600 = true
@@ -664,65 +717,25 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		if end > totalShares {
 			end = totalShares
 		}
-		batchSize := end - start
-		seedBatch := make([]*image.Paletted, 0, batchSize)
-		var descBatch []*image.Paletted
-		if plan.descForHost != nil && !plan.compactSingleSided {
-			descBatch = make([]*image.Paletted, 0, batchSize)
+		batch, err := renderHostBatch(
+			mnemonics,
+			desc,
+			plan,
+			isSinglesigJob,
+			singlesigWithInfo,
+			opts,
+			start,
+			end,
+			progress,
+			&prepareDone,
+			prepareTotal,
+			opts.EtchStatsPage,
+		)
+		if err != nil {
+			return err
 		}
-
-		for i := start; i < end; i++ {
-			m := mnemonics[i%len(mnemonics)]
-			seedShareNum, seedShareTotal := i+1, totalShares
-			if isSinglesigJob {
-				seedShareNum, seedShareTotal = 1, 1
-			}
-			seedDesc := (*urtypes.OutputDescriptor)(nil)
-			if singlesigWithInfo {
-				seedDesc = desc
-			}
-			seedImg, err := printer.RenderSeedPlateBitmapWithDescriptor(m, seedShareNum, seedShareTotal, seedDesc, opts)
-			if err != nil {
-				return fmt.Errorf("render: seed plate %d: %w", i+1, err)
-			}
-			if plan.compactSingleSided {
-				descKeyIdx := i % len(plan.descForHost.Keys)
-				descQR := ""
-				if i < len(plan.shardQRPayloads) && len(plan.shardQRPayloads[i]) > 0 {
-					descQR = plan.shardQRPayloads[i][0]
-				}
-				seedImg, err = printer.RenderCompact2of3PlateBitmap(m, plan.descForHost, descKeyIdx, opts, descQR)
-				if err != nil {
-					return fmt.Errorf("render: compact plate %d: %w", i+1, err)
-				}
-			}
-			seedBatch = append(seedBatch, seedImg)
-			if opts.EtchStatsPage {
-				statsRows = append(statsRows, printer.ComputeEtchPlateStat(seedImg, i+1, "seed", opts.DPI))
-			}
-			prepareDone++
-			if progress != nil && prepareTotal > 0 {
-				progress(printer.StagePrepare, prepareDone, prepareTotal)
-			}
-			if plan.descForHost != nil && !plan.compactSingleSided {
-				descKeyIdx := i % len(plan.descForHost.Keys)
-				var descQRs []string
-				if i < len(plan.shardQRPayloads) {
-					descQRs = plan.shardQRPayloads[i]
-				}
-				descImg, err := printer.RenderDescriptorPlateBitmap(plan.descForHost, descKeyIdx, i+1, totalShares, opts, descQRs)
-				if err != nil {
-					return fmt.Errorf("render: descriptor plate %d: %w", i+1, err)
-				}
-				descBatch = append(descBatch, descImg)
-				if opts.EtchStatsPage {
-					statsRows = append(statsRows, printer.ComputeEtchPlateStat(descImg, i+1, "descriptor", opts.DPI))
-				}
-				prepareDone++
-				if progress != nil && prepareTotal > 0 {
-					progress(printer.StagePrepare, prepareDone, prepareTotal)
-				}
-			}
+		if opts.EtchStatsPage {
+			statsRows = append(statsRows, batch.statsRows...)
 		}
 
 		if !composeMarked && progress != nil {
@@ -732,7 +745,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 		if progress != nil && sendTotal > 0 {
 			progress(printer.StageSend, sendDone, sendTotal)
 		}
-		if err := printer.WritePSPlates(printerDev, seedBatch, descBatch, paper, opts.DPI, nil, nil); err != nil {
+		if err := printer.WritePSPlates(printerDev, batch.seedBatch, batch.descBatch, paper, opts.DPI, nil, nil); err != nil {
 			return fmt.Errorf("ps: write batch %d-%d: %w", start+1, end, err)
 		}
 		sendDone++
