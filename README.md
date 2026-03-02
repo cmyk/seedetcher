@@ -3,6 +3,15 @@
 SeedEtcher is an open-source, air-gapped system for creating durable Bitcoin backups by printing seed phrases, descriptors, and QR codes with a standard laser printer and permanently etching them into metal.
 It minimizes trust and attack surface by relying on offline hardware, simple materials, and a transparent, reproducible workflow instead of expensive dedicated machines.
 
+Starting with version b0.3 the follwing things were substantially improved:
+
+- All brother lasers are supported (even host-based). PCL/PS remains the recommended way to print. HBP (host based printing) is capped to 600dpi (memory limit of pi zero)
+All other brands that support true PCL or PostScript should work too. See: [printers.md](docs/printers.md)
+- A new method leverages the use of silicone sheets to reliably transfer toner masks to both sides of a metal plate at once.
+This means, you can also etch both sides at once!
+- A new 
+
+
 The project consists of:
 
 ## 1) SeedEtcher Controller
@@ -23,7 +32,8 @@ A documented, repeatable workflow for chemically etching printed layouts onto st
 ---
 
 ## Features
-- Multisig uses descriptor-share backups (no full descriptor on a single plate). In b0.3, `sortedmulti 2/3` defaults to UR/XOR-compatible shares; other multisig configurations remain on legacy share encoding.
+- Multisig uses descriptor-share backups (no full descriptor on a single plate). Starting with b0.3 these wallet configs default to UR/XOR-compatible shares: `1/2`, `2/2`, `2/3`, `2/4`, `4/4`, `3/5`, and any `n-1/n`. 
+other multisig configurations output the full descriptor.
 - The SeedEtcher controller has a descriptor recovery mode. TODO: cross-platform binaries will make this inheritance-friendly.
 - Manual mnemonic input with validation (`bip39`).
 - GUI-driven, with physical button navigation.
