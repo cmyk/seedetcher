@@ -87,7 +87,7 @@ func TestComposePagesPreservesPlatePixels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ComposePages: %v", err)
 	}
-	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, nil)
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, false, nil)
 	if err != nil {
 		t.Fatalf("buildPlacementPlan: %v", err)
 	}

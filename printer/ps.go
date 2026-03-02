@@ -114,7 +114,13 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 // without materializing all full-page bitmaps in memory at once.
 // extraPages can be used to append already-rendered full pages (e.g. stats page).
 func WritePSPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, extraPages []*image.Paletted, progress ProgressFunc) error {
-	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, progress)
+	return WritePSPlatesWithInvert(w, seedPlates, descPlates, paper, dpi, false, extraPages, progress)
+}
+
+// WritePSPlatesWithInvert composes plates directly into a PostScript job and
+// applies transfer-mask overlays controlled by invert mode.
+func WritePSPlatesWithInvert(w io.Writer, seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, invert bool, extraPages []*image.Paletted, progress ProgressFunc) error {
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, invert, progress)
 	if err != nil {
 		return err
 	}
@@ -196,21 +202,7 @@ func WritePSPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, paper 
 		}
 
 		for y := 0; y < height; y++ {
-			for i := range rowPix {
-				rowPix[i] = 0
-			}
-			for _, slot := range page.slots {
-				if slot.plate == nil {
-					continue
-				}
-				pb := slot.plate.Bounds()
-				ly := y - slot.y
-				if ly < 0 || ly >= pb.Dy() {
-					continue
-				}
-				srcRow := slot.plate.Pix[(pb.Min.Y+ly)*slot.plate.Stride+pb.Min.X : (pb.Min.Y+ly)*slot.plate.Stride+pb.Min.X+pb.Dx()]
-				copy(rowPix[slot.x:slot.x+pb.Dx()], srcRow)
-			}
+			renderPlannedRow(rowPix, y, page, invert)
 			packBits(rowPacked, rowPix)
 			hex.Encode(hexRow[:rowBytes*2], rowPacked)
 			hexRow[rowBytes*2] = '\n'
@@ -285,7 +277,7 @@ func WritePSPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, paper 
 
 // EstimatePSPlatesBytes returns the estimated PostScript job size for a plate batch.
 func EstimatePSPlatesBytes(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64) (int64, error) {
-	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, nil)
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, false, nil)
 	if err != nil {
 		return 0, err
 	}

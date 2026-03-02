@@ -475,7 +475,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				}
 				batchProgress := send.batchProgress(send.sendDone)
 				send.notifySend()
-				if err := printer.WritePCLPlates(printerDev, batch.seedBatch, batch.descBatch, opts.DPI, paper, batchProgress); err != nil {
+				if err := printer.WritePCLPlatesWithInvert(printerDev, batch.seedBatch, batch.descBatch, opts.DPI, paper, opts.Invert, batchProgress); err != nil {
 					if send.sendDone == 0 && opts.DPI > 600 && isDeviceWriteEIO(err) {
 						return &pclNeed600RetryError{cause: err}
 					}
@@ -525,7 +525,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		return fmt.Errorf("render: plate bitmaps: %w", err)
 	}
 
-	pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, progress)
+	pages, err := printer.ComposePagesWithInvert(seedImgs, descImgs, paper, opts.DPI, opts.Invert, progress)
 	if err != nil {
 		return fmt.Errorf("render: compose pages: %w", err)
 	}
@@ -661,7 +661,7 @@ func (p *Platform) createPlatesHBP(_ *gui.Context, mnemonics []bip39.Mnemonic, d
 			return fmt.Errorf("hbp: create temp pdf: %w", err)
 		}
 		outPath := outFile.Name()
-		if err := printer.WritePDFPlates(outFile, batch.seedBatch, batch.descBatch, paper, opts.DPI); err != nil {
+		if err := printer.WritePDFPlatesWithInvert(outFile, batch.seedBatch, batch.descBatch, paper, opts.DPI, opts.Invert); err != nil {
 			outFile.Close()
 			_ = os.Remove(outPath)
 			return fmt.Errorf("hbp: write temp pdf batch %d-%d: %w", start+1, end, err)
@@ -773,7 +773,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 			}
 			batchProgress := send.batchProgress(send.sendDone)
 			send.notifySend()
-			if err := printer.WritePSPlates(printerDev, batch.seedBatch, batch.descBatch, paper, opts.DPI, nil, batchProgress); err != nil {
+			if err := printer.WritePSPlatesWithInvert(printerDev, batch.seedBatch, batch.descBatch, paper, opts.DPI, opts.Invert, nil, batchProgress); err != nil {
 				return fmt.Errorf("ps: write batch %d-%d: %w", start+1, end, err)
 			}
 			send.finishBatch()
