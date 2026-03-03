@@ -1,10 +1,13 @@
 # Supported Printers
 
 **Important:** For SeedEtcher a laser printer MUST have USB. All printers in this list do.
-***PCL capability is preferable***, since you won't need to load the extra HBP (Brother's Host Based Printer) support (which is heavy on a zero).
-A printer without Wi-Fi is preferable (air-gapped security). Wi-Fi can be shut off, however.
+PCL and PostScript capable printers should generally work well with SeedEtcher.
+Gotchas: If your print comes out 2x scale, you probably set the printer to a different resolution than what you're sending.
 
 ## Brother
+
+***PCL capability is preferable***, since you won't need to load the extra HBP (Brother's Host Based Printer) support (which is heavy on a zero).
+A printer without Wi-Fi is preferable (air-gapped security). Wi-Fi can be shut off, however.
 
 Brother's suffix meanings:
 D = Duplex
@@ -113,4 +116,4 @@ Some rows are manual additions for known models not present in the current `brla
 
 ## Other Printers
 
-For now, only printers with true PCL and PostScript are supported.
+For non-Brother models, only printers with true PCL or PostScript are currently supported.
