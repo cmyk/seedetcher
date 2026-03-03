@@ -14,7 +14,7 @@ The video DOES NOT REPLACE this guide. Please do read this guide for best result
 Titanium doesn't etch well with FeCl3. Electro etching could be an option. Stay tuned. 
 As for thickness: 1.5mm is the minimum. 2mm is substantial.
 
-What you need:
+## What you need:
 
 - [ ] Raspberry Pi Zero with screen and cam (same hardware as SeedSigner)
 - [ ] micro SD-Card
