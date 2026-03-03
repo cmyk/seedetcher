@@ -239,6 +239,27 @@ sha256sum release/seedetcher-vX.Y.Z.img
 shasum -a 256 release/seedetcher-vX.Y.Z.img
 ```
 
+### Third-party license release check
+
+Release images include third-party printing/runtime components (CUPS, cups-filters,
+Ghostscript, brlaser). Before publishing a release:
+
+1. Review/update [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md).
+2. Ensure `flake.lock` is committed in the release tag.
+3. In release notes, link to:
+   - the source tag/commit,
+   - `THIRD_PARTY_LICENSES.md`,
+   - any local patch/build changes for bundled GPL/AGPL components.
+
+Minimal release-note snippet:
+
+```md
+## Source and Licensing
+- Source tag: <TAG>
+- Third-party licenses: THIRD_PARTY_LICENSES.md
+- GPL/AGPL local patches: none
+```
+
 ## Shell Commands on Zero
 
 Use `-test-createPageLayout` to run controller in headless render-test mode (no GUI), so `-w/-mnemonic/-descriptor/...` flags are applied.

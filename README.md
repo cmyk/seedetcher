@@ -92,6 +92,7 @@ Run controller on Pi:
 
 ## License
 Licensed under Apache License 2.0: [LICENSE](LICENSE) and [NOTICE](NOTICE)
+Third-party component licenses: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 ---
 
