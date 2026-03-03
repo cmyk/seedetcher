@@ -93,7 +93,7 @@ func main() {
 		fmt.Printf("Error creating raster plates: %v\n", err)
 		os.Exit(1)
 	}
-	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, nil)
+	pages, err := printer.ComposePagesWithInvert(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, opts.Invert, nil)
 	if err != nil {
 		fmt.Printf("Error composing pages: %v\n", err)
 		os.Exit(1)

@@ -16,29 +16,22 @@ type EtchPlateStat struct {
 	BlackMM2 float64 // Toner area within 90x90 mask
 	WhiteMM2 float64 // Exposed area within 90x90 mask
 
-	// Scenario A: user masks the 10mm outer margin (only 90x90 center etched).
-	ExposedMaskedMM2 float64
-	ExposedMaskedPct float64 // of full 100x100 steel plate
-
-	// Scenario B: user does not mask the 10mm outer margin (outer ring also etched).
-	ExposedUnmaskedMM2 float64
-	ExposedUnmaskedPct float64 // of full 100x100 steel plate
+	ExposedMM2 float64 // Exposed area on the plate
+	ExposedPct float64 // of full 100x100 steel plate
 }
 
 type EtchStatsReport struct {
 	DPI   float64
 	Paper PaperSize
 
-	MaskAreaMM2  float64 // 90x90 mask area
 	SteelAreaMM2 float64 // 100x100 physical plate area
 
 	Stats []EtchPlateStat
 }
 
 const (
-	maskAreaMM2   = 90.0 * 90.0
-	steelAreaMM2  = 100.0 * 100.0
-	marginAreaMM2 = steelAreaMM2 - maskAreaMM2
+	steelAreaMM2 = 100.0 * 100.0
+	plateEdgeMM  = 2.0 * (100.0 + 100.0) // Perimeter of 100x100mm plate.
 
 	// Bench defaults for the operator section on the stats page.
 	etchGapMM          = 15.0
@@ -47,6 +40,8 @@ const (
 	etchVoltageLimitV  = 12.0
 	etchCurrentDensity = 0.04 // A/cm^2 default for "set current"
 )
+
+var etchThicknessMM = []float64{1.0, 1.5, 2.0, 3.0}
 
 func BuildEtchStatsReport(seedPlates, descPlates []*image.Paletted, dpi float64, paper PaperSize) (EtchStatsReport, error) {
 	if len(seedPlates) == 0 {
@@ -75,7 +70,6 @@ func BuildEtchStatsReportFromStats(stats []EtchPlateStat, dpi float64, paper Pap
 	r := EtchStatsReport{
 		DPI:          dpi,
 		Paper:        paper,
-		MaskAreaMM2:  maskAreaMM2,
 		SteelAreaMM2: steelAreaMM2,
 		Stats:        make([]EtchPlateStat, len(stats)),
 	}
@@ -103,19 +97,16 @@ func plateStat(p *image.Paletted, plateIdx int, side string, dpi float64) EtchPl
 	pxArea := (25.4 / dpi) * (25.4 / dpi)
 	blackMM2 := float64(black) * pxArea
 	whiteMM2 := float64(white) * pxArea
-	exposedMasked := whiteMM2
-	exposedUnmasked := whiteMM2 + marginAreaMM2
+	exposed := whiteMM2
 	return EtchPlateStat{
-		PlateIndex:         plateIdx,
-		Side:               side,
-		BlackPixels:        black,
-		WhitePixels:        white,
-		BlackMM2:           blackMM2,
-		WhiteMM2:           whiteMM2,
-		ExposedMaskedMM2:   exposedMasked,
-		ExposedMaskedPct:   pct(exposedMasked, steelAreaMM2),
-		ExposedUnmaskedMM2: exposedUnmasked,
-		ExposedUnmaskedPct: pct(exposedUnmasked, steelAreaMM2),
+		PlateIndex:  plateIdx,
+		Side:        side,
+		BlackPixels: black,
+		WhitePixels: white,
+		BlackMM2:    blackMM2,
+		WhiteMM2:    whiteMM2,
+		ExposedMM2:  exposed,
+		ExposedPct:  pct(exposed, steelAreaMM2),
 	}
 }
 
@@ -133,7 +124,6 @@ func RenderEtchStatsPage(report EtchStatsReport, paper PaperSize, dpi float64) (
 	}
 	page := image.NewPaletted(image.Rect(0, 0, mmToPx(pageWmm, dpi), mmToPx(pageHmm, dpi)), bwPalette)
 	draw.Draw(page, page.Bounds(), &image.Uniform{bwPalette[0]}, image.Point{}, draw.Src)
-	black := uint8(1)
 
 	faceTitle := loadFaceMedium(12, dpi)
 	faceBody := loadFaceMedium(9, dpi)
@@ -152,11 +142,40 @@ func RenderEtchStatsPage(report EtchStatsReport, paper PaperSize, dpi float64) (
 	defaults := fmt.Sprintf("DEFAULTS: Na2SO4 %.0fg/L  TEMP %.0fC  GAP %.0fmm  V-LIMIT %.0fV  J %.2fA/cm2",
 		etchSulfateGPerL, etchTempC, etchGapMM, etchVoltageLimitV, etchCurrentDensity)
 	drawTrackedText(page, faceBody, dpi, x, y, defaults, bodyTrack)
+	y += 4.0
+	drawTrackedText(page, faceBody, dpi, x, y, "If you only etch one side, please mask the other side completely with tape.", bodyTrack)
+	y += 4.0
+	psuExplain := "The MASKED column in PSU GUIDE TABLE means you did mask the side walls of the plate. If you leave the walls unmasked refer to t (plate thickness)."
+	noteLines := wrapTextTracked(faceBody, dpi, psuExplain, pageWmm-2*x, bodyTrack)
+	for _, ln := range noteLines {
+		drawTrackedText(page, faceBody, dpi, x, y, ln, bodyTrack)
+		y += 4.0
+	}
+	drawTrackedText(page, faceBody, dpi, x, y, "If you etch both sides of the plate (SEED and DESC) together using 2 cathodes,", bodyTrack)
+	y += 4.0
+	drawTrackedText(page, faceBody, dpi, x, y, "sum both sides' A.", bodyTrack)
+	y += 4.0
 
-	y += 5.0
-	drawTrackedText(page, faceBody, dpi, x, y, "AREA TABLE", bodyTrack)
+	y += 4.0
+	drawTrackedText(page, faceBody, dpi, x, y, "AREA TABLE (t=plate thickness)", bodyTrack)
 	y += 4.5
-	drawTrackedText(page, faceBody, dpi, x, y, "PLATE          TONER(mm2)  EXPOSED90(mm2)  EXPOSED+MARGIN(mm2)  %MASKED  %UNMASKED", bodyTrack)
+	const (
+		plateColW = 8
+		areaColW  = 11
+		pctColW   = 9
+		curColW   = 10
+	)
+	areaHeader := fmt.Sprintf("%-*s %*s %*s %*s %*s %*s %*s %*s",
+		plateColW, "PLATE",
+		areaColW, "TONER(cm2)",
+		areaColW, "EXPOSED(cm2)",
+		pctColW, "MASKED",
+		pctColW, "t=1 +%",
+		pctColW, "t=1.5 +%",
+		pctColW, "t=2 +%",
+		pctColW, "t=3 +%",
+	)
+	drawTrackedText(page, faceBody, dpi, x, y, areaHeader, bodyTrack)
 	y += 4.0
 
 	for _, s := range report.Stats {
@@ -165,8 +184,16 @@ func RenderEtchStatsPage(report EtchStatsReport, paper PaperSize, dpi float64) (
 			side = "DESC"
 		}
 		plateID := fmt.Sprintf("%02d %s", s.PlateIndex, side)
-		line := fmt.Sprintf("%-13s %10.1f    %11.1f      %14.1f   %6.1f%%   %8.1f%%",
-			plateID, s.BlackMM2, s.ExposedMaskedMM2, s.ExposedUnmaskedMM2, s.ExposedMaskedPct, s.ExposedUnmaskedPct)
+		line := fmt.Sprintf("%-*s %*.2f %*.2f %*s %*s %*s %*s %*s",
+			plateColW, plateID,
+			areaColW, s.BlackMM2/100.0,
+			areaColW, s.ExposedMM2/100.0,
+			pctColW, fmtPct(s.ExposedPct),
+			pctColW, fmtPct(edgePctForThickness(etchThicknessMM[0])),
+			pctColW, fmtPct(edgePctForThickness(etchThicknessMM[1])),
+			pctColW, fmtPct(edgePctForThickness(etchThicknessMM[2])),
+			pctColW, fmtPct(edgePctForThickness(etchThicknessMM[3])),
+		)
 		drawTrackedText(page, faceBody, dpi, x, y, line, bodyTrack)
 		y += 4.0
 		if y > pageHmm-20.0 {
@@ -174,10 +201,18 @@ func RenderEtchStatsPage(report EtchStatsReport, paper PaperSize, dpi float64) (
 		}
 	}
 
-	y += 1.0
-	drawTrackedText(page, faceBody, dpi, x, y, "PSU GUIDE TABLE", bodyTrack)
+	y += 5.0
+	drawTrackedText(page, faceBody, dpi, x, y, "PSU GUIDE TABLE (set A to)", bodyTrack)
 	y += 4.5
-	drawTrackedText(page, faceBody, dpi, x, y, "PLATE          SET A MASKED  SET A UNMASKED", bodyTrack)
+	psuHeader := fmt.Sprintf("%-*s %*s %*s %*s %*s %*s",
+		plateColW, "PLATE",
+		curColW, "MASKED",
+		curColW, "t=1mm",
+		curColW, "t=1.5mm",
+		curColW, "t=2mm",
+		curColW, "t=3mm",
+	)
+	drawTrackedText(page, faceBody, dpi, x, y, psuHeader, bodyTrack)
 	y += 4.0
 	for _, s := range report.Stats {
 		side := "SEED"
@@ -185,9 +220,14 @@ func RenderEtchStatsPage(report EtchStatsReport, paper PaperSize, dpi float64) (
 			side = "DESC"
 		}
 		plateID := fmt.Sprintf("%02d %s", s.PlateIndex, side)
-		iMasked := setCurrentA(s.ExposedMaskedMM2, etchCurrentDensity)
-		iUnmasked := setCurrentA(s.ExposedUnmaskedMM2, etchCurrentDensity)
-		line := fmt.Sprintf("%-13s    %6.2f A       %6.2f A", plateID, iMasked, iUnmasked)
+		line := fmt.Sprintf("%-*s %*s %*s %*s %*s %*s",
+			plateColW, plateID,
+			curColW, fmtCurrentA(setCurrentA(s.ExposedMM2, etchCurrentDensity)),
+			curColW, fmtCurrentA(setCurrentA(exposedMM2ForThickness(s.ExposedMM2, etchThicknessMM[0]), etchCurrentDensity)),
+			curColW, fmtCurrentA(setCurrentA(exposedMM2ForThickness(s.ExposedMM2, etchThicknessMM[1]), etchCurrentDensity)),
+			curColW, fmtCurrentA(setCurrentA(exposedMM2ForThickness(s.ExposedMM2, etchThicknessMM[2]), etchCurrentDensity)),
+			curColW, fmtCurrentA(setCurrentA(exposedMM2ForThickness(s.ExposedMM2, etchThicknessMM[3]), etchCurrentDensity)),
+		)
 		drawTrackedText(page, faceBody, dpi, x, y, line, bodyTrack)
 		y += 4.0
 		if y > pageHmm-8.0 {
@@ -195,9 +235,6 @@ func RenderEtchStatsPage(report EtchStatsReport, paper PaperSize, dpi float64) (
 		}
 	}
 
-	legendY := pageHmm - 8.0
-	drawTrackedText(page, faceBody, dpi, x, legendY, "Masked=only 90x90 center exposed. Unmasked=90x90 + 10mm outer margin exposed.", bodyTrack)
-	_ = black
 	return page, nil
 }
 
@@ -207,4 +244,31 @@ func setCurrentA(exposedMM2, currentDensityAperCM2 float64) float64 {
 	}
 	exposedCM2 := exposedMM2 / 100.0
 	return exposedCM2 * currentDensityAperCM2
+}
+
+func edgeAreaMM2ForThickness(thicknessMM float64) float64 {
+	if thicknessMM <= 0 {
+		return 0
+	}
+	return plateEdgeMM * thicknessMM
+}
+
+func edgePctForThickness(thicknessMM float64) float64 {
+	return pct(edgeAreaMM2ForThickness(thicknessMM), steelAreaMM2)
+}
+
+func exposedMM2ForThickness(topExposedMM2, thicknessMM float64) float64 {
+	return topExposedMM2 + edgeAreaMM2ForThickness(thicknessMM)
+}
+
+func exposedPctForThickness(topExposedMM2, thicknessMM float64) float64 {
+	return pct(exposedMM2ForThickness(topExposedMM2, thicknessMM), steelAreaMM2)
+}
+
+func fmtPct(v float64) string {
+	return fmt.Sprintf("%.1f%%", v)
+}
+
+func fmtCurrentA(v float64) string {
+	return fmt.Sprintf("%.2fA", v)
 }

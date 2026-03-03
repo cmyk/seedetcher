@@ -107,12 +107,12 @@ func runCLI(f *testutils.Flags) error {
 	pclPath := strings.TrimSpace(f.PCLOut)
 	paper := printer.PaperSize(f.PaperSize)
 	if !opts.EtchStatsPage {
-		if err := printer.WritePDFPlates(pdfFile, seedImgs, descImgs, paper, opts.DPI); err != nil {
+		if err := printer.WritePDFPlatesWithInvert(pdfFile, seedImgs, descImgs, paper, opts.DPI, opts.Invert); err != nil {
 			pdfFile.Close()
 			return fmt.Errorf("write PDF: %w", err)
 		}
 	} else {
-		pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, nil)
+		pages, err := printer.ComposePagesWithInvert(seedImgs, descImgs, paper, opts.DPI, opts.Invert, nil)
 		if err != nil {
 			pdfFile.Close()
 			return fmt.Errorf("compose pages: %w", err)
@@ -141,7 +141,7 @@ func runCLI(f *testutils.Flags) error {
 	}
 
 	if pclPath != "" {
-		pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, nil)
+		pages, err := printer.ComposePagesWithInvert(seedImgs, descImgs, paper, opts.DPI, opts.Invert, nil)
 		if err != nil {
 			return fmt.Errorf("compose pages: %w", err)
 		}
@@ -264,12 +264,9 @@ func rasterPlateCounts(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescripto
 	return totalShares, seedPlates, descPlates
 }
 
-func rasterPageCount(seedPlates, descPlates int, paper printer.PaperSize) int {
+func rasterPageCount(seedPlates, descPlates int, _ printer.PaperSize) int {
 	slots := seedPlates + descPlates
-	perPage := 6
-	if paper == printer.PaperLetter {
-		perPage = 4
-	}
+	perPage := 4 // Fixed 2x2 layout on both A4 and Letter.
 	if perPage <= 0 {
 		perPage = 1
 	}

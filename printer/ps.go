@@ -58,6 +58,9 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 		}
 		rowBytes := (width + 7) / 8
 		buf := make([]byte, rowBytes)
+		rowPix := make([]uint8, width)
+		effectiveDPI := float64(width) * 25.4 / pageWmm
+		dy := mmToPx(hostDirectTopOffsetMM, effectiveDPI)
 		if _, err := fmt.Fprintf(bw, "%%%%Page: %d %d\n", i+1, i+1); err != nil {
 			return err
 		}
@@ -88,8 +91,8 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 		}
 		hexRow := make([]byte, rowBytes*2+1)
 		for y := 0; y < height; y++ {
-			pix := page.Pix[y*page.Stride : y*page.Stride+width]
-			packBits(buf, pix)
+			renderShiftedPageRow(rowPix, page, y, 0, dy)
+			packBits(buf, rowPix)
 			hex.Encode(hexRow[:rowBytes*2], buf)
 			hexRow[rowBytes*2] = '\n'
 			if _, err := bw.Write(hexRow); err != nil {
@@ -114,7 +117,13 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 // without materializing all full-page bitmaps in memory at once.
 // extraPages can be used to append already-rendered full pages (e.g. stats page).
 func WritePSPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, extraPages []*image.Paletted, progress ProgressFunc) error {
-	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, progress)
+	return WritePSPlatesWithInvert(w, seedPlates, descPlates, paper, dpi, false, extraPages, progress)
+}
+
+// WritePSPlatesWithInvert composes plates directly into a PostScript job and
+// applies transfer-mask overlays controlled by invert mode.
+func WritePSPlatesWithInvert(w io.Writer, seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, invert bool, extraPages []*image.Paletted, progress ProgressFunc) error {
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, invert, progress)
 	if err != nil {
 		return err
 	}
@@ -164,6 +173,7 @@ func WritePSPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, paper 
 	rowPix := make([]uint8, width)
 	rowPacked := make([]byte, rowBytes)
 	hexRow := make([]byte, rowBytes*2+1)
+	dy := mmToPx(hostDirectTopOffsetMM, dpi)
 
 	pageNum := 1
 	for _, page := range plan.pages {
@@ -194,23 +204,10 @@ func WritePSPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, paper 
 		if _, err := fmt.Fprintf(bw, "{ currentfile picstr readhexstring pop } imagemask\n"); err != nil {
 			return err
 		}
+		renderPage := offsetPagePlacement(page, 0, dy)
 
 		for y := 0; y < height; y++ {
-			for i := range rowPix {
-				rowPix[i] = 0
-			}
-			for _, slot := range page.slots {
-				if slot.plate == nil {
-					continue
-				}
-				pb := slot.plate.Bounds()
-				ly := y - slot.y
-				if ly < 0 || ly >= pb.Dy() {
-					continue
-				}
-				srcRow := slot.plate.Pix[(pb.Min.Y+ly)*slot.plate.Stride+pb.Min.X : (pb.Min.Y+ly)*slot.plate.Stride+pb.Min.X+pb.Dx()]
-				copy(rowPix[slot.x:slot.x+pb.Dx()], srcRow)
-			}
+			renderPlannedRow(rowPix, y, renderPage, invert)
 			packBits(rowPacked, rowPix)
 			hex.Encode(hexRow[:rowBytes*2], rowPacked)
 			hexRow[rowBytes*2] = '\n'
@@ -260,8 +257,8 @@ func WritePSPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, paper 
 			return err
 		}
 		for y := 0; y < height; y++ {
-			pix := page.Pix[(b.Min.Y+y)*page.Stride+b.Min.X : (b.Min.Y+y)*page.Stride+b.Min.X+width]
-			packBits(rowPacked, pix)
+			renderShiftedPageRow(rowPix, page, y, 0, dy)
+			packBits(rowPacked, rowPix)
 			hex.Encode(hexRow[:rowBytes*2], rowPacked)
 			hexRow[rowBytes*2] = '\n'
 			if _, err := bw.Write(hexRow); err != nil {
@@ -285,7 +282,7 @@ func WritePSPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, paper 
 
 // EstimatePSPlatesBytes returns the estimated PostScript job size for a plate batch.
 func EstimatePSPlatesBytes(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64) (int64, error) {
-	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, nil)
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, false, nil)
 	if err != nil {
 		return 0, err
 	}

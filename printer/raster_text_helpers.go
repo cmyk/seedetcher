@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strings"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
@@ -208,7 +209,6 @@ func capBaselineOffsetMM(face font.Face, dpi float64) float64 {
 }
 
 func wrapTextTracked(face font.Face, dpi float64, text string, maxWidthMm float64, trackingPx float64) []string {
-	var lines []string
 	if maxWidthMm <= 0 {
 		return []string{text}
 	}
@@ -217,23 +217,33 @@ func wrapTextTracked(face font.Face, dpi float64, text string, maxWidthMm float6
 		return []string{text}
 	}
 
-	var buf []rune
-	for _, r := range text {
-		buf = append(buf, r)
-		if trackedTextWidthPx(face, string(buf), trackingPx) > maxPx {
-			// Overflow: push previous run and start new line with current rune.
-			if len(buf) > 1 {
-				lines = append(lines, string(buf[:len(buf)-1]))
-				buf = buf[len(buf)-1:]
-			} else {
-				// Single rune too wide; force as line.
-				lines = append(lines, string(buf))
-				buf = buf[:0]
+	parts := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	lines := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		words := strings.Fields(part)
+		if len(words) == 0 {
+			continue
+		}
+		line := words[0]
+		for _, w := range words[1:] {
+			candidate := line + " " + w
+			if trackedTextWidthPx(face, candidate, trackingPx) <= maxPx {
+				line = candidate
+				continue
 			}
+			lines = append(lines, line)
+			line = w
+		}
+		if line != "" {
+			lines = append(lines, line)
 		}
 	}
-	if len(buf) > 0 {
-		lines = append(lines, string(buf))
+	if len(lines) == 0 {
+		return []string{text}
 	}
 	return lines
 }

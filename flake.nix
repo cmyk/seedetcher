@@ -916,8 +916,8 @@ EOF
               PROG="${self.packages.${system}.controller-debug}/bin/controller"
 
               # Ensure USB serial is in raw mode before reloading
-              stty -F $USBDEV1 raw -echo
-              echo "" > $USBDEV1
+              stty -F "$USBDEV" raw -echo
+              echo "" > "$USBDEV"
 
               echo "reload $(wc -c < "$PROG")" > "$USBDEV"
               cat "$PROG" > "$USBDEV"

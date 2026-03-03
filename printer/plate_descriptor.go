@@ -33,23 +33,40 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	descTrackPx := 0.04 * 11.0 * dpi / 72.0 // Affinity tracking as percent of em
 
 	key := desc.Keys[keyIdx]
-	allText := fmt.Sprintf("TYPE:%s/SCRIPT:%s/NET:%s/THRESHOLD:%d/KEYS:%d/KEY:%d",
-		desc.Type.Tag(), desc.Script.Tag(), descriptorNetworkTag(key.Network), desc.Threshold, len(desc.Keys), keyIdx+1)
+	typeTag := fmt.Sprintf("TYPE:%s", desc.Type.Tag())
+	scriptTag := fmt.Sprintf("SCRIPT:%s", desc.Script.Tag())
+	netTag := fmt.Sprintf("NET:%s", descriptorNetworkTag(key.Network))
+	thresholdTag := fmt.Sprintf("THRESHOLD:%d", desc.Threshold)
+	keysTag := fmt.Sprintf("KEYS:%d", len(desc.Keys))
+	keyTag := fmt.Sprintf("KEY:%d", keyIdx+1)
 
 	margin := descriptorSingleQRLayout.MarginMM
 	ascentMM := capBaselineOffsetMM(descriptorFace, dpi)
-	lines := wrapTextTracked(descriptorFace, dpi, allText, plateSizeMM-2*margin, descTrackPx)
+	maxMetaWidth := plateSizeMM - 2*margin
+	line1 := strings.Join([]string{typeTag, scriptTag, netTag}, " / ")
+	line2 := strings.Join([]string{thresholdTag, keysTag, keyTag}, " / ")
+	// Deterministic fixed-line layout; avoid mid-token wrapping.
+	if trackedTextWidthMM(descriptorFace, dpi, line1, descTrackPx) > maxMetaWidth ||
+		trackedTextWidthMM(descriptorFace, dpi, line2, descTrackPx) > maxMetaWidth {
+		line1 = strings.Join([]string{typeTag, scriptTag, netTag}, "/")
+		line2 = strings.Join([]string{thresholdTag, keysTag, keyTag}, "/")
+	}
+	if trackedTextWidthMM(descriptorFace, dpi, line1, descTrackPx) > maxMetaWidth ||
+		trackedTextWidthMM(descriptorFace, dpi, line2, descTrackPx) > maxMetaWidth {
+		line1 = strings.Join([]string{typeTag, scriptTag}, "/")
+		line2 = strings.Join([]string{netTag, fmt.Sprintf("THR:%d", desc.Threshold), keysTag, keyTag}, "/")
+	}
 	lineSpacing := descriptorSingleQRLayout.LineGapMM
 	y := margin + ascentMM
 	res := DrawTextBlock(canvas, dpi, TextBlock{
 		Face:      descriptorFace,
 		Tracking:  descTrackPx,
 		LeadingMM: lineSpacing,
-		WidthMM:   plateSizeMM - 2*margin,
+		WidthMM:   maxMetaWidth,
 		Align:     TextAlignStart,
 		OriginXMM: margin,
 		OriginYMM: y,
-	}, strings.Join(lines, "\n"))
+	}, line1+"\n"+line2)
 	y = res.NextBaselineYMM - lineSpacing
 
 	if len(qrPayloads) == 0 {

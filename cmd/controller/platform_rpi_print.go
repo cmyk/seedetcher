@@ -179,9 +179,9 @@ func renderHostBatch(
 }
 
 func hostSharesPerBatch(plan hostRenderPlan) int {
-	sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
+	sharesPerBatch := 2 // Fixed 2x2 layout with descriptor side (2 shares/page).
 	if plan.descForHost == nil || plan.compactSingleSided {
-		sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
+		sharesPerBatch = 4 // Fixed 2x2 seed-only path (4 shares/page).
 	}
 	if sharesPerBatch < 1 {
 		return 1
@@ -475,7 +475,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 				}
 				batchProgress := send.batchProgress(send.sendDone)
 				send.notifySend()
-				if err := printer.WritePCLPlates(printerDev, batch.seedBatch, batch.descBatch, opts.DPI, paper, batchProgress); err != nil {
+				if err := printer.WritePCLPlatesWithInvert(printerDev, batch.seedBatch, batch.descBatch, opts.DPI, paper, opts.Invert, batchProgress); err != nil {
 					if send.sendDone == 0 && opts.DPI > 600 && isDeviceWriteEIO(err) {
 						return &pclNeed600RetryError{cause: err}
 					}
@@ -525,7 +525,7 @@ func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc 
 		return fmt.Errorf("render: plate bitmaps: %w", err)
 	}
 
-	pages, err := printer.ComposePages(seedImgs, descImgs, paper, opts.DPI, progress)
+	pages, err := printer.ComposePagesWithInvert(seedImgs, descImgs, paper, opts.DPI, opts.Invert, progress)
 	if err != nil {
 		return fmt.Errorf("render: compose pages: %w", err)
 	}
@@ -595,22 +595,8 @@ func (p *Platform) createPlatesHBP(_ *gui.Context, mnemonics []bip39.Mnemonic, d
 	}
 	totalShares := plan.totalShares
 
-	maxSlotsPerPage := 6
-	if paper == printer.PaperLetter {
-		maxSlotsPerPage = 4
-	}
-	slotsPerShare := 1
-	if plan.descForHost != nil && !plan.compactSingleSided {
-		slotsPerShare = 2
-	}
-	sharesPerBatch := maxSlotsPerPage / slotsPerShare
-	if sharesPerBatch < 1 {
-		sharesPerBatch = 1
-	}
-	numBatches := (totalShares + sharesPerBatch - 1) / sharesPerBatch
-	if numBatches < 1 {
-		numBatches = 1
-	}
+	sharesPerBatch := hostSharesPerBatch(plan)
+	numBatches := hostBatchCount(totalShares, sharesPerBatch)
 	composeTotal := int64(numBatches)
 	sendTotal := int64(numBatches)
 	if opts.EtchStatsPage {
@@ -661,7 +647,7 @@ func (p *Platform) createPlatesHBP(_ *gui.Context, mnemonics []bip39.Mnemonic, d
 			return fmt.Errorf("hbp: create temp pdf: %w", err)
 		}
 		outPath := outFile.Name()
-		if err := printer.WritePDFPlates(outFile, batch.seedBatch, batch.descBatch, paper, opts.DPI); err != nil {
+		if err := printer.WritePDFPlatesWithInvert(outFile, batch.seedBatch, batch.descBatch, paper, opts.DPI, opts.Invert); err != nil {
 			outFile.Close()
 			_ = os.Remove(outPath)
 			return fmt.Errorf("hbp: write temp pdf batch %d-%d: %w", start+1, end, err)
@@ -773,7 +759,7 @@ func (p *Platform) createPlatesPostScript(ctx *gui.Context, mnemonics []bip39.Mn
 			}
 			batchProgress := send.batchProgress(send.sendDone)
 			send.notifySend()
-			if err := printer.WritePSPlates(printerDev, batch.seedBatch, batch.descBatch, paper, opts.DPI, nil, batchProgress); err != nil {
+			if err := printer.WritePSPlatesWithInvert(printerDev, batch.seedBatch, batch.descBatch, paper, opts.DPI, opts.Invert, nil, batchProgress); err != nil {
 				return fmt.Errorf("ps: write batch %d-%d: %w", start+1, end, err)
 			}
 			send.finishBatch()

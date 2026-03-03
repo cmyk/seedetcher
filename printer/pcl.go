@@ -3,7 +3,6 @@ package printer
 import (
 	"fmt"
 	"image"
-	"image/draw"
 	"io"
 	"math"
 )
@@ -23,13 +22,66 @@ type placedPlate struct {
 }
 
 type pagePlacement struct {
-	slots []placedPlate
+	slots    []placedPlate
+	cutBoxes []image.Rectangle
+	marks    []cutMark
+	overlays []placedPlate
+}
+
+type cutMark struct {
+	x0 int
+	y0 int
+	x1 int
+	y1 int
 }
 
 type placementPlan struct {
 	pageWpx int
 	pageHpx int
 	pages   []pagePlacement
+}
+
+const (
+	// Direct host backends (raw PCL/PS) tend to clip near page top versus CUPS/HBP.
+	// Keep HBP/layout geometry unchanged and apply a small emit-time translation here.
+	hostDirectTopOffsetMM = 5.0
+	// Raw PCL path is typically shifted right; compensate left to restore centering.
+	hostPCLLeftOffsetMM = -5.0
+)
+
+func offsetPagePlacement(p pagePlacement, dx, dy int) pagePlacement {
+	out := pagePlacement{
+		slots:    make([]placedPlate, 0, len(p.slots)),
+		cutBoxes: make([]image.Rectangle, 0, len(p.cutBoxes)),
+		marks:    make([]cutMark, 0, len(p.marks)),
+		overlays: make([]placedPlate, 0, len(p.overlays)),
+	}
+	for _, s := range p.slots {
+		out.slots = append(out.slots, placedPlate{
+			plate: s.plate,
+			x:     s.x + dx,
+			y:     s.y + dy,
+		})
+	}
+	for _, b := range p.cutBoxes {
+		out.cutBoxes = append(out.cutBoxes, b.Add(image.Pt(dx, dy)))
+	}
+	for _, m := range p.marks {
+		out.marks = append(out.marks, cutMark{
+			x0: m.x0 + dx,
+			y0: m.y0 + dy,
+			x1: m.x1 + dx,
+			y1: m.y1 + dy,
+		})
+	}
+	for _, ov := range p.overlays {
+		out.overlays = append(out.overlays, placedPlate{
+			plate: ov.plate,
+			x:     ov.x + dx,
+			y:     ov.y + dy,
+		})
+	}
+	return out
 }
 
 func newProgressWriter(stage PrintStage, w io.Writer, total int64, progress ProgressFunc) *progressWriter {
@@ -50,25 +102,26 @@ func (pw *progressWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
-// ComposePages assembles plate bitmaps into A4/Letter pages (2x3 grid), matching the PDF layout.
+// ComposePages assembles plate bitmaps into transfer-mask pages.
 // Mirrors/inversion should be handled at the plate level via RasterOptions.
 // progress, if set, receives StageCompose updates as slots are placed.
 func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, progress ProgressFunc) ([]*image.Paletted, error) {
-	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, progress)
+	return ComposePagesWithInvert(seedPlates, descPlates, paper, dpi, false, progress)
+}
+
+// ComposePagesWithInvert composes pages and applies transfer-mask overlay behavior
+// that depends on inverted plate rendering.
+func ComposePagesWithInvert(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, invert bool, progress ProgressFunc) ([]*image.Paletted, error) {
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, invert, progress)
 	if err != nil {
 		return nil, err
 	}
 	var pages []*image.Paletted
 	for _, page := range plan.pages {
 		pageImg := image.NewPaletted(image.Rect(0, 0, plan.pageWpx, plan.pageHpx), bwPalette)
-		draw.Draw(pageImg, pageImg.Bounds(), &image.Uniform{bwPalette[0]}, image.Point{}, draw.Src)
-		for _, slot := range page.slots {
-			if slot.plate == nil {
-				continue
-			}
-			b := slot.plate.Bounds()
-			r := image.Rect(slot.x, slot.y, slot.x+b.Dx(), slot.y+b.Dy())
-			draw.Draw(pageImg, r, slot.plate, b.Min, draw.Src)
+		for y := 0; y < plan.pageHpx; y++ {
+			row := pageImg.Pix[y*pageImg.Stride : y*pageImg.Stride+plan.pageWpx]
+			renderPlannedRow(row, y, page, invert)
 		}
 		pages = append(pages, pageImg)
 	}
@@ -78,7 +131,13 @@ func ComposePages(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi
 // WritePCLPlates composes seed/descriptor plates directly into a PCL raster job
 // without creating full-page intermediate images.
 func WritePCLPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, dpi float64, paper PaperSize, progress ProgressFunc) error {
-	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, progress)
+	return WritePCLPlatesWithInvert(w, seedPlates, descPlates, dpi, paper, false, progress)
+}
+
+// WritePCLPlatesWithInvert composes plates directly into a PCL stream with
+// transfer-mask overlays controlled by invert mode.
+func WritePCLPlatesWithInvert(w io.Writer, seedPlates, descPlates []*image.Paletted, dpi float64, paper PaperSize, invert bool, progress ProgressFunc) error {
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, invert, progress)
 	if err != nil {
 		return err
 	}
@@ -108,6 +167,8 @@ func WritePCLPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, dpi f
 	rowBytes := (width + 7) / 8
 	rowPix := make([]uint8, width)
 	rowPacked := make([]byte, rowBytes)
+	dx := mmToPx(hostPCLLeftOffsetMM, dpi)
+	dy := mmToPx(hostDirectTopOffsetMM, dpi)
 
 	for _, page := range plan.pages {
 		if _, err := fmt.Fprintf(pw, "\x1bE"); err != nil { // reset
@@ -137,23 +198,10 @@ func WritePCLPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, dpi f
 		if _, err := fmt.Fprintf(pw, "\x1b*r0F"); err != nil { // start raster graphics
 			return err
 		}
+		renderPage := offsetPagePlacement(page, dx, dy)
 
 		for y := 0; y < height; y++ {
-			for i := range rowPix {
-				rowPix[i] = 0
-			}
-			for _, slot := range page.slots {
-				if slot.plate == nil {
-					continue
-				}
-				pb := slot.plate.Bounds()
-				ly := y - slot.y
-				if ly < 0 || ly >= pb.Dy() {
-					continue
-				}
-				srcRow := slot.plate.Pix[(pb.Min.Y+ly)*slot.plate.Stride+pb.Min.X : (pb.Min.Y+ly)*slot.plate.Stride+pb.Min.X+pb.Dx()]
-				copy(rowPix[slot.x:slot.x+pb.Dx()], srcRow)
-			}
+			renderPlannedRow(rowPix, y, renderPage, invert)
 			packBits(rowPacked, rowPix)
 			if _, err := fmt.Fprintf(pw, "\x1b*b%dW", rowBytes); err != nil {
 				return err
@@ -180,7 +228,7 @@ func WritePCLPlates(w io.Writer, seedPlates, descPlates []*image.Paletted, dpi f
 // EstimatePCLPlatesBytes estimates the raw PCL byte size for a plate-set job.
 // Useful for aggregating multi-batch send progress.
 func EstimatePCLPlatesBytes(seedPlates, descPlates []*image.Paletted, dpi float64, paper PaperSize) (int64, error) {
-	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, nil)
+	plan, err := buildPlacementPlan(seedPlates, descPlates, paper, dpi, false, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -295,9 +343,12 @@ func WritePCL(w io.Writer, pages []*image.Paletted, dpi float64, paper PaperSize
 
 		rowBytes := (width + 7) / 8
 		buf := make([]byte, rowBytes)
+		rowPix := make([]uint8, width)
+		dx := mmToPx(hostPCLLeftOffsetMM, dpi)
+		dy := mmToPx(hostDirectTopOffsetMM, dpi)
 		for y := 0; y < height; y++ {
-			pix := page.Pix[y*page.Stride : y*page.Stride+width]
-			packBits(buf, pix)
+			renderShiftedPageRow(rowPix, page, y, dx, dy)
+			packBits(buf, rowPix)
 			if _, err := fmt.Fprintf(pw, "\x1b*b%dW", rowBytes); err != nil {
 				return err
 			}
@@ -354,6 +405,38 @@ func packBits(dst []byte, row []uint8) {
 	}
 }
 
+func renderShiftedPageRow(dst []uint8, page *image.Paletted, y, dx, dy int) {
+	for i := range dst {
+		dst[i] = 0
+	}
+	if page == nil {
+		return
+	}
+	b := page.Bounds()
+	srcY := y - dy
+	if srcY < 0 || srcY >= b.Dy() {
+		return
+	}
+	src := page.Pix[(b.Min.Y+srcY)*page.Stride+b.Min.X : (b.Min.Y+srcY)*page.Stride+b.Min.X+b.Dx()]
+	dstStart := dx
+	srcStart := 0
+	n := len(src)
+	if dstStart < 0 {
+		srcStart = -dstStart
+		dstStart = 0
+	}
+	if dstStart >= len(dst) || srcStart >= n {
+		return
+	}
+	n -= srcStart
+	if dstStart+n > len(dst) {
+		n = len(dst) - dstStart
+	}
+	if n > 0 {
+		copy(dst[dstStart:dstStart+n], src[srcStart:srcStart+n])
+	}
+}
+
 func minInt(a, b int) int {
 	if a < b {
 		return a
@@ -361,7 +444,7 @@ func minInt(a, b int) int {
 	return b
 }
 
-func buildPlacementPlan(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, progress ProgressFunc) (placementPlan, error) {
+func buildPlacementPlan(seedPlates, descPlates []*image.Paletted, paper PaperSize, dpi float64, invert bool, progress ProgressFunc) (placementPlan, error) {
 	if len(seedPlates) == 0 {
 		return placementPlan{}, fmt.Errorf("no seed plates to compose")
 	}
@@ -371,15 +454,30 @@ func buildPlacementPlan(seedPlates, descPlates []*image.Paletted, paper PaperSiz
 	}
 	pageWpx := mmToPx(pageWmm, dpi)
 	pageHpx := mmToPx(pageHmm, dpi)
-	targetGapPx := mmToPx(4, dpi)    // desired gap between plates
-	targetMarginPx := mmToPx(5, dpi) // desired margin to page edges
+	outerMarginPx := mmToPx(transferOuterMarginMM, dpi)
+	rowGapPx := mmToPx(transferRowGapMM, dpi)
+	insetLeftPx := mmToPx(transferPlateInsetLeftMM, dpi)
+	insetTopPx := mmToPx(transferPlateInsetTopMM, dpi)
+	insetBottomPx := mmToPx(transferPlateInsetBottomMM, dpi)
+	if outerMarginPx < 0 {
+		outerMarginPx = 0
+	}
+	if rowGapPx < 0 {
+		rowGapPx = 0
+	}
+	if insetLeftPx < 0 {
+		insetLeftPx = 0
+	}
+	if insetTopPx < 0 {
+		insetTopPx = 0
+	}
+	if insetBottomPx < 0 {
+		insetBottomPx = 0
+	}
 
 	hasDesc := descPlates != nil && len(descPlates) == len(seedPlates)
 	totalShares := len(seedPlates)
-	maxSlotsPerPage := 6 // A4 default: 2x3
-	if paper == PaperLetter {
-		maxSlotsPerPage = 4 // Letter: 2x2 to preserve true 90mm plates without scaling
-	}
+	maxSlotsPerPage := 4 // Fixed 2x2 transfer-mask layout on both A4 and Letter.
 	slotsPerShare := 1
 	if hasDesc {
 		slotsPerShare = 2
@@ -413,7 +511,10 @@ func buildPlacementPlan(seedPlates, descPlates []*image.Paletted, paper PaperSiz
 			}
 		}
 		slotsThisPage := len(slots)
-		cols := 2
+		cols := minInt(2, slotsThisPage)
+		if cols < 1 {
+			cols = 1
+		}
 		rows := (slotsThisPage + cols - 1) / cols
 		baseW, baseH, err := basePlateDims(slots)
 		if err != nil {
@@ -421,16 +522,23 @@ func buildPlacementPlan(seedPlates, descPlates []*image.Paletted, paper PaperSiz
 		}
 		plateW := baseW
 		plateH := baseH
-		gapPx := targetGapPx
-		reqW := cols*plateW + (cols-1)*gapPx + 2*targetMarginPx
-		reqH := rows*plateH + (rows-1)*gapPx + 2*targetMarginPx
+		cutBoxW := plateW + insetLeftPx
+		cutBoxH := plateH + insetTopPx + insetBottomPx
+		gapX := 0
+		gridW := cols*cutBoxW + (cols-1)*gapX
+		gridH := rows*cutBoxH + (rows-1)*rowGapPx
+		reqW := gridW + 2*outerMarginPx
+		reqH := gridH + 2*outerMarginPx
 		if reqW > pageWpx || reqH > pageHpx {
 			return placementPlan{}, fmt.Errorf("plates do not fit page at fixed size (paper=%s req=%dx%d page=%dx%d)", paper, reqW, reqH, pageWpx, pageHpx)
 		}
-		marginX := (pageWpx - (cols*plateW + (cols-1)*gapPx)) / 2
-		marginY := targetMarginPx
+		marginX := (pageWpx - gridW) / 2
+		marginY := outerMarginPx
 
-		pp := pagePlacement{slots: make([]placedPlate, 0, len(slots))}
+		pp := pagePlacement{
+			slots:    make([]placedPlate, 0, len(slots)),
+			cutBoxes: make([]image.Rectangle, 0, len(slots)),
+		}
 		for slotIdx, plate := range slots {
 			if plate == nil {
 				continue
@@ -439,17 +547,49 @@ func buildPlacementPlan(seedPlates, descPlates []*image.Paletted, paper PaperSiz
 			if b.Dx() != plateW || b.Dy() != plateH {
 				return placementPlan{}, fmt.Errorf("mismatched plate dimensions: got %dx%d want %dx%d", b.Dx(), b.Dy(), plateW, plateH)
 			}
-			row := slotIdx / 2
-			col := slotIdx % 2
+			row := slotIdx / cols
+			col := slotIdx % cols
+			cellX := marginX + col*(cutBoxW+gapX)
+			cellY := marginY + row*(cutBoxH+rowGapPx)
 			pp.slots = append(pp.slots, placedPlate{
 				plate: plate,
-				x:     marginX + col*(plateW+gapPx),
-				y:     marginY + row*(plateH+gapPx),
+				x:     cellX + insetLeftPx,
+				y:     cellY + insetTopPx,
 			})
+			pp.cutBoxes = append(pp.cutBoxes, image.Rect(cellX, cellY, cellX+cutBoxW, cellY+cutBoxH))
 			placed++
 			if progress != nil && totalSlots > 0 {
 				progress(StageCompose, placed, int64(totalSlots))
 			}
+		}
+
+		grid := image.Rect(marginX, marginY, marginX+gridW, marginY+gridH)
+		vCuts := make([]int, 0, cols+1)
+		for c := 0; c <= cols; c++ {
+			vCuts = append(vCuts, marginX+c*(cutBoxW+gapX))
+		}
+		hCuts := make([]int, 0, rows+1)
+		for r := 0; r <= rows; r++ {
+			hCuts = append(hCuts, marginY+r*(cutBoxH+rowGapPx))
+		}
+		pp.marks = buildTransferCutMarks(grid, vCuts, hCuts, dpi)
+
+		tapeXs := make([]int, 0, cols)
+		for c := 0; c < cols; c++ {
+			tapeXs = append(tapeXs, marginX+(c+1)*(cutBoxW+gapX))
+		}
+		tapeLabelCenterX := marginX + cutBoxW/2
+		if len(pp.cutBoxes) > 0 {
+			rightBox := pp.cutBoxes[0]
+			for _, b := range pp.cutBoxes[1:] {
+				if b.Min.X > rightBox.Min.X {
+					rightBox = b
+				}
+			}
+			tapeLabelCenterX = rightBox.Min.X + rightBox.Dx()/2
+		}
+		if overlay, ok := buildTransferInstructionOverlay(pageWpx, pageHpx, dpi, grid.Max.Y, tapeXs, tapeLabelCenterX, grid.Min.X); ok {
+			pp.overlays = append(pp.overlays, overlay)
 		}
 		pages = append(pages, pp)
 	}
