@@ -91,7 +91,7 @@ Run controller on Pi:
 ---
 
 ## License
-Unlicense license: [LICENSE](LICENSE)
+Licensed under Apache License 2.0: [LICENSE](LICENSE) and [NOTICE](NOTICE)
 
 ---
 
