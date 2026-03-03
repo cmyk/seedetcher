@@ -179,9 +179,9 @@ func renderHostBatch(
 }
 
 func hostSharesPerBatch(plan hostRenderPlan) int {
-	sharesPerBatch := 3 // A4 with descriptor side (2x3 slots -> 3 shares/page).
+	sharesPerBatch := 2 // Fixed 2x2 layout with descriptor side (2 shares/page).
 	if plan.descForHost == nil || plan.compactSingleSided {
-		sharesPerBatch = 6 // seed-only path (2x3 slots -> 6 shares/page).
+		sharesPerBatch = 4 // Fixed 2x2 seed-only path (4 shares/page).
 	}
 	if sharesPerBatch < 1 {
 		return 1
@@ -595,22 +595,8 @@ func (p *Platform) createPlatesHBP(_ *gui.Context, mnemonics []bip39.Mnemonic, d
 	}
 	totalShares := plan.totalShares
 
-	maxSlotsPerPage := 6
-	if paper == printer.PaperLetter {
-		maxSlotsPerPage = 4
-	}
-	slotsPerShare := 1
-	if plan.descForHost != nil && !plan.compactSingleSided {
-		slotsPerShare = 2
-	}
-	sharesPerBatch := maxSlotsPerPage / slotsPerShare
-	if sharesPerBatch < 1 {
-		sharesPerBatch = 1
-	}
-	numBatches := (totalShares + sharesPerBatch - 1) / sharesPerBatch
-	if numBatches < 1 {
-		numBatches = 1
-	}
+	sharesPerBatch := hostSharesPerBatch(plan)
+	numBatches := hostBatchCount(totalShares, sharesPerBatch)
 	composeTotal := int64(numBatches)
 	sendTotal := int64(numBatches)
 	if opts.EtchStatsPage {

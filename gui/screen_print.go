@@ -296,10 +296,7 @@ func (s *PrintSeedScreen) Print(ctx *Context, ops op.Ctx, th *Colors, mnemonic b
 		if desc != nil {
 			walletShares = len(desc.Keys)
 		}
-		maxSlotsPerPage := 6
-		if selectedPaper == printer.PaperLetter {
-			maxSlotsPerPage = 4
-		}
+		maxSlotsPerPage := 4 // Fixed 2x2 layout on both A4 and Letter.
 		slotsPerShare := 2
 		if desc == nil {
 			slotsPerShare = 1
@@ -508,10 +505,7 @@ func estimateJobPages(desc *urtypes.OutputDescriptor, paper printer.PaperSize, o
 	if desc != nil {
 		walletShares = len(desc.Keys)
 	}
-	maxSlotsPerPage := 6
-	if paper == printer.PaperLetter {
-		maxSlotsPerPage = 4
-	}
+	maxSlotsPerPage := 4 // Fixed 2x2 layout on both A4 and Letter.
 	slotsPerShare := 2
 	if desc == nil {
 		slotsPerShare = 1

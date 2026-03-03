@@ -15,7 +15,13 @@ import (
 )
 
 func TestSeedQRPayloadRoundTripForWalletFixtures(t *testing.T) {
-	for _, wallet := range []string{"singlesig", "multisig-mainnet-2of3", "multisig-7of10"} {
+	for _, wallet := range []string{
+		"singlesig",
+		"singlesig-nested-p2sh-p2wpkh",
+		"multisig-mainnet-2of3",
+		"multisig-nested-2of3",
+		"multisig-7of10",
+	} {
 		cfg, ok := testutils.WalletConfigs[wallet]
 		if !ok {
 			t.Fatalf("wallet fixture not found: %s", wallet)
@@ -37,7 +43,13 @@ func TestSeedQRPayloadRoundTripForWalletFixtures(t *testing.T) {
 }
 
 func TestDescriptorSharePayloadsRecoverOriginalDescriptor(t *testing.T) {
-	for _, wallet := range []string{"singlesig", "multisig-mainnet-2of3", "multisig-7of10"} {
+	for _, wallet := range []string{
+		"singlesig",
+		"singlesig-nested-p2sh-p2wpkh",
+		"multisig-mainnet-2of3",
+		"multisig-nested-2of3",
+		"multisig-7of10",
+	} {
 		cfg, ok := testutils.WalletConfigs[wallet]
 		if !ok {
 			t.Fatalf("wallet fixture not found: %s", wallet)
