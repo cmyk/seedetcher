@@ -16,7 +16,6 @@ But it is easy enough to mix 30% from 40% by diluting it with distilled water.
 - Eye protection
 - Accurate scale (+/-0.1g)
 
-
 ## To get 0.5L 30% Solution
 
 You'll need:
