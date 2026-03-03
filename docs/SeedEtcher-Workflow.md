@@ -3,7 +3,7 @@
 A word of warning:\
 This process is somewhat involved. It’s not a machine that you flip on and off and be done with it.\
 But the idea was to create a process that doesn’t require a $500 machine. Most of the items you need you might already have. Also, you won’t create multisig backups very often. Besides, how about adding a new skill to your skill set: etching metal!
-This workflow has many unknown variables (like the laser printer/toner (original or cheap replacement?) or iron you use). I tried to rule out as many variables as possible. Still, your mileage may vary. Do not expect this to work on your first try.
+This workflow has many unknown variables (like the laser printer/toner (original or cheap replacement?) or iron you use). I tried to rule out as many variables as possible. With b0.3 the process got a lot more reliable. Still, your mileage may vary. Do not expect this to work on your first try.
 
 Here's a video of the process: https://youtu.be/O1ZcKIli9hk?si=wur4efhf88QD2LMY \
 The video DOES NOT REPLACE this guide. Please do read this guide for best results AND security/safety instructions.
