@@ -13,111 +13,12 @@ nix build .#image-gadget-debug
 If build fails because of has error use `--impure`
 Debug builds use `--print-build-logs`
 
+## Local Machine Notes
 
-## Developemnt Environmet
+Host/VM-specific setup notes are intentionally kept outside this repository.
 
-Ubuntu VM on Mac.
-
-### USB-GADET DETECTION on VM
-
-#### Recap of Added/Modified Files & Reloading udevadm
-
-##### 1. Added/Modified Files
-
-##### 1.1 /etc/udev/rules.d/99-serial-settings.rules
-- This is the `udev` rule that detects the Pi Zero’s USB serial interfaces and triggers the update script.
-- Example rule:
-  
-  `ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="0525", ATTRS{idProduct}=="a4a7", KERNEL=="ttyACM*", SYMLINK+="usbzero%n", RUN+="/usr/local/bin/usbdev_checker.sh"`
-
-##### 1.2 /usr/local/bin/usbdev_checker.sh
-- This script ensures both serial devices are present before running `update_usbdevs.sh`.
-- It prevents duplicate script execution.
-
-##### 1.3 /usr/local/bin/update_usbdevs.sh
-- This script assigns the detected serial devices and updates the environment variables.
-- It logs device assignments and prevents duplicate messages.
-
-**(ATTENTION: run source ~/.bashrc to update the USBDEVx shell vars)**
-
-#### 2. How to Reload udevadm
-
-##### Reload udev rules:
-
-```bash 
-sudo udevadm control --reload-rules
-```
-
-##### Apply changes immediately:
-
-```bash
-  sudo udevadm trigger
-```
-
-##### Check if udev triggered the script:
-
-```bash
-  journalctl -u systemd-udevd --no-pager | grep usbdev_checker.sh
-```
-
-##### Disabled ModemManager 
-
-```bash
-sudo systemctl stop ModemManager
-sudo systemctl disable ModemManager
-```
-
-##### Apparmor:
-
-```bash
-sudo systemctl stop apparmor
-sudo systemctl disable apparmor
-sudo reboot
-```
-
-
-## NixOS Stuff
-
-Install multiuser NixOS
-
-```bash
-sudo systemctl restart nix-daemon
-sudo systemctl status nix-daemon
-
-sudo nvim /etc/nix/nix.conf
->> 
-extra-experimental-features = nix-command flakes
-trusted-users = root <user>
-keep-outputs = true
-keep-derivations = true   
-auto-optimise-store = true
-```
-
-If you want to remove all temporary build artifacts (like failed derivations), run:
-nix-store --gc --print-dead | xargs nix-store --delete
-nix build .#<package-name> --show-trace
-
-nix-store --gc --print-dead
-nix-store --gc
-
-
-## Ubuntu config changes
-
-If you want /tmp to be stored in RAM (makes it faster but non-persistent):
-
-1️) Edit /etc/fstab:
-	
-	```bash
-	sudo nano /etc/fstab
-	```
-
-2️) Add this line:
-
-	```bash
-	tmpfs /tmp tmpfs defaults,noatime,mode=1777 0 0
-	```
-
-3) Reboot
+- keep private notes in your own local/private repo (example: `~/seedetcher-private-notes`)
+- optional symlink from this repo: `.tmp/private-notes`
 
 ## GO Dependecies trouble?
 
