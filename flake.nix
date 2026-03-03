@@ -950,15 +950,36 @@ EOF
             mkRelease = let pkgs = hostPkgs; in pkgs.writeShellScriptBin "mk-release" ''
               set -eu
 
-              VERSION=$1
-              if [ -z "$VERSION" ]; then
-                  echo "error: specify version"
-                  exit 1
+              # Default to the current checkout (fork-friendly). Override if needed:
+              #   SE_RELEASE_FLAKE=github:seedetcher/seedetcher/vX.Y.Z
+              flake_ref="''${SE_RELEASE_FLAKE:-.}"
+              tag="$(awk -F'\"' '/^const Tag = / { print $2; exit }' version/version.go 2>/dev/null || true)"
+              if [ "$#" -gt 1 ]; then
+                echo "usage: mk-release [VERSION]"
+                exit 1
               fi
-
-              flake="github:seedetcher/seedetcher/$VERSION"
-              nix build "$flake"
-              nix run "$flake"#stamp-release $VERSION
+              if [ "$#" -eq 1 ] && [ -n "$1" ]; then
+                VERSION="$1"
+              else
+                VERSION="$tag"
+              fi
+              if [ -z "$VERSION" ]; then
+                echo "error: no VERSION provided and version.Tag not found"
+                exit 1
+              fi
+              if [ "$flake_ref" != "." ] && [ "$#" -eq 0 ]; then
+                echo "error: when SE_RELEASE_FLAKE is set, pass explicit VERSION"
+                exit 1
+              fi
+              if [ "$flake_ref" = "." ]; then
+                if [ -n "$tag" ] && [ "$tag" != "$VERSION" ]; then
+                  echo "error: VERSION=$VERSION does not match version.Tag=$tag"
+                  echo "       update version/version.go or pass matching VERSION"
+                  exit 1
+                fi
+              fi
+              nix build "$flake_ref"#image
+              nix run "$flake_ref"#stamp-release -- "$VERSION"
 
               if [[ -v SSH_SIGNING_KEY ]]; then
                 ssh-keygen -Y sign -f "$SSH_SIGNING_KEY" -n seedetcher.img seedetcher-"$VERSION".img
@@ -978,13 +999,19 @@ EOF
               trap 'rm -rf -- "$TMPDIR"' EXIT
 
               src="result/seedetcher.img"
-              dst="seedetcher-$VERSION.img"
+              outdir="release"
+              mkdir -p "$outdir"
+              dst="$outdir/seedetcher-$VERSION.img"
 
               # Append the version string to the kernel cmdline, to be read by the controller binary.
-              START=$(${pkgs.util-linux}/bin/fdisk -l -o Start $src|tail -n 1)
+              START=$(${pkgs.util-linux}/bin/fdisk -l -o Start "$src" | awk '/^[[:space:]]*[0-9]+[[:space:]]*$/ { gsub(/[[:space:]]/, "", $0); print; exit }')
+              if [ -z "$START" ]; then
+                  echo "error: failed to detect boot partition start in $src"
+                  exit 1
+              fi
               OFFSET=$(( $START*512 ))
               ${pkgs.mtools}/bin/mcopy -bpm -i "$src@@$OFFSET" ::cmdline.txt "$TMPDIR/"
-              echo -n " sh_version=$VERSION" >> "$TMPDIR/cmdline.txt"
+              echo -n " se_version=$VERSION" >> "$TMPDIR/cmdline.txt"
               # preserve attributes for determinism.
               chmod 0755 "$TMPDIR/cmdline.txt"
               ${pkgs.coreutils}/bin/touch -d '${timestamp}' "$TMPDIR/cmdline.txt"

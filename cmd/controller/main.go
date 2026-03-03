@@ -331,7 +331,11 @@ func memAvailableBytes() (int64, error) {
 
 func run() error {
 	log.SetFlags(log.Flags() &^ (log.Ldate | log.Ltime))
-	version := os.Getenv("sh_version")
+	version := os.Getenv("se_version")
+	if version == "" {
+		// Backward compatibility for older stamped images.
+		version = os.Getenv("sh_version")
+	}
 	p, err := initPlatform()
 	if err != nil {
 		return err
