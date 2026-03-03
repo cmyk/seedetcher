@@ -53,8 +53,12 @@ func (s *MainMenuScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		icon := ops.Begin()
 		op.ImageOp(icon, assets.SeedetcherLogo, false)
 		op.Position(ops, ops.End(), logoPos)
-		// Version badge bottom-left.
-		vlabel := fmt.Sprintf("SeedEtcher %s", version.String())
+		// Version badge bottom-left: prefer stamped runtime version when present.
+		v := ctx.Version
+		if v == "" {
+			v = version.String()
+		}
+		vlabel := fmt.Sprintf("SeedEtcher %s", v)
 		sz := widget.Labelf(ops.Begin(), ctx.Styles.debug, singleTheme.Text, "%s", vlabel)
 		op.Position(ops, ops.End(), image.Pt(6, dims.Y-sz.Y-6))
 

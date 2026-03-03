@@ -203,6 +203,42 @@ go run cmd/cli/main.go -w multisig \
   `version.String()` prefers `Build` when set, otherwise falls back to `Tag`.
 - The plate renderer uses `version.String()`.
 
+### Release image builds (`mkRelease`)
+
+Set the release tag in `version/version.go` and run:
+
+```bash
+nix run .#mkRelease
+```
+
+This builds from the current checkout by default (works on forks), then writes:
+
+```text
+release/seedetcher-vX.Y.Z.img
+```
+
+To override version explicitly:
+
+```bash
+nix run .#mkRelease -- vX.Y.Z
+```
+
+To build/stamp from a different flake ref, set:
+
+```bash
+SE_RELEASE_FLAKE=github:seedetcher/seedetcher/vX.Y.Z nix run .#mkRelease -- vX.Y.Z
+```
+
+### Reproducibility check
+
+Release images are intended to be deterministic. Verify your local build hash against the published artifact hash:
+
+```bash
+sha256sum release/seedetcher-vX.Y.Z.img
+# or on macOS:
+shasum -a 256 release/seedetcher-vX.Y.Z.img
+```
+
 ## Shell Commands on Zero
 
 Use `-test-createPageLayout` to run controller in headless render-test mode (no GUI), so `-w/-mnemonic/-descriptor/...` flags are applied.
