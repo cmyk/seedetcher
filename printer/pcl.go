@@ -41,6 +41,49 @@ type placementPlan struct {
 	pages   []pagePlacement
 }
 
+const (
+	// Direct host backends (raw PCL/PS) tend to clip near page top versus CUPS/HBP.
+	// Keep HBP/layout geometry unchanged and apply a small emit-time translation here.
+	hostDirectTopOffsetMM = 5.0
+	// Raw PCL path is typically shifted right; compensate left to restore centering.
+	hostPCLLeftOffsetMM = -5.0
+)
+
+func offsetPagePlacement(p pagePlacement, dx, dy int) pagePlacement {
+	out := pagePlacement{
+		slots:    make([]placedPlate, 0, len(p.slots)),
+		cutBoxes: make([]image.Rectangle, 0, len(p.cutBoxes)),
+		marks:    make([]cutMark, 0, len(p.marks)),
+		overlays: make([]placedPlate, 0, len(p.overlays)),
+	}
+	for _, s := range p.slots {
+		out.slots = append(out.slots, placedPlate{
+			plate: s.plate,
+			x:     s.x + dx,
+			y:     s.y + dy,
+		})
+	}
+	for _, b := range p.cutBoxes {
+		out.cutBoxes = append(out.cutBoxes, b.Add(image.Pt(dx, dy)))
+	}
+	for _, m := range p.marks {
+		out.marks = append(out.marks, cutMark{
+			x0: m.x0 + dx,
+			y0: m.y0 + dy,
+			x1: m.x1 + dx,
+			y1: m.y1 + dy,
+		})
+	}
+	for _, ov := range p.overlays {
+		out.overlays = append(out.overlays, placedPlate{
+			plate: ov.plate,
+			x:     ov.x + dx,
+			y:     ov.y + dy,
+		})
+	}
+	return out
+}
+
 func newProgressWriter(stage PrintStage, w io.Writer, total int64, progress ProgressFunc) *progressWriter {
 	return &progressWriter{
 		w:        w,
@@ -124,6 +167,8 @@ func WritePCLPlatesWithInvert(w io.Writer, seedPlates, descPlates []*image.Palet
 	rowBytes := (width + 7) / 8
 	rowPix := make([]uint8, width)
 	rowPacked := make([]byte, rowBytes)
+	dx := mmToPx(hostPCLLeftOffsetMM, dpi)
+	dy := mmToPx(hostDirectTopOffsetMM, dpi)
 
 	for _, page := range plan.pages {
 		if _, err := fmt.Fprintf(pw, "\x1bE"); err != nil { // reset
@@ -153,9 +198,10 @@ func WritePCLPlatesWithInvert(w io.Writer, seedPlates, descPlates []*image.Palet
 		if _, err := fmt.Fprintf(pw, "\x1b*r0F"); err != nil { // start raster graphics
 			return err
 		}
+		renderPage := offsetPagePlacement(page, dx, dy)
 
 		for y := 0; y < height; y++ {
-			renderPlannedRow(rowPix, y, page, invert)
+			renderPlannedRow(rowPix, y, renderPage, invert)
 			packBits(rowPacked, rowPix)
 			if _, err := fmt.Fprintf(pw, "\x1b*b%dW", rowBytes); err != nil {
 				return err
@@ -297,9 +343,12 @@ func WritePCL(w io.Writer, pages []*image.Paletted, dpi float64, paper PaperSize
 
 		rowBytes := (width + 7) / 8
 		buf := make([]byte, rowBytes)
+		rowPix := make([]uint8, width)
+		dx := mmToPx(hostPCLLeftOffsetMM, dpi)
+		dy := mmToPx(hostDirectTopOffsetMM, dpi)
 		for y := 0; y < height; y++ {
-			pix := page.Pix[y*page.Stride : y*page.Stride+width]
-			packBits(buf, pix)
+			renderShiftedPageRow(rowPix, page, y, dx, dy)
+			packBits(buf, rowPix)
 			if _, err := fmt.Fprintf(pw, "\x1b*b%dW", rowBytes); err != nil {
 				return err
 			}
@@ -353,6 +402,38 @@ func packBits(dst []byte, row []uint8) {
 		if v != 0 { // palette index 1 = black
 			dst[i/8] |= 1 << (7 - uint(i%8))
 		}
+	}
+}
+
+func renderShiftedPageRow(dst []uint8, page *image.Paletted, y, dx, dy int) {
+	for i := range dst {
+		dst[i] = 0
+	}
+	if page == nil {
+		return
+	}
+	b := page.Bounds()
+	srcY := y - dy
+	if srcY < 0 || srcY >= b.Dy() {
+		return
+	}
+	src := page.Pix[(b.Min.Y+srcY)*page.Stride+b.Min.X : (b.Min.Y+srcY)*page.Stride+b.Min.X+b.Dx()]
+	dstStart := dx
+	srcStart := 0
+	n := len(src)
+	if dstStart < 0 {
+		srcStart = -dstStart
+		dstStart = 0
+	}
+	if dstStart >= len(dst) || srcStart >= n {
+		return
+	}
+	n -= srcStart
+	if dstStart+n > len(dst) {
+		n = len(dst) - dstStart
+	}
+	if n > 0 {
+		copy(dst[dstStart:dstStart+n], src[srcStart:srcStart+n])
 	}
 }
 

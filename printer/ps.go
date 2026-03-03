@@ -58,6 +58,9 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 		}
 		rowBytes := (width + 7) / 8
 		buf := make([]byte, rowBytes)
+		rowPix := make([]uint8, width)
+		effectiveDPI := float64(width) * 25.4 / pageWmm
+		dy := mmToPx(hostDirectTopOffsetMM, effectiveDPI)
 		if _, err := fmt.Fprintf(bw, "%%%%Page: %d %d\n", i+1, i+1); err != nil {
 			return err
 		}
@@ -88,8 +91,8 @@ func WritePS(w io.Writer, pages []*image.Paletted, paper PaperSize, progress Pro
 		}
 		hexRow := make([]byte, rowBytes*2+1)
 		for y := 0; y < height; y++ {
-			pix := page.Pix[y*page.Stride : y*page.Stride+width]
-			packBits(buf, pix)
+			renderShiftedPageRow(rowPix, page, y, 0, dy)
+			packBits(buf, rowPix)
 			hex.Encode(hexRow[:rowBytes*2], buf)
 			hexRow[rowBytes*2] = '\n'
 			if _, err := bw.Write(hexRow); err != nil {
@@ -170,6 +173,7 @@ func WritePSPlatesWithInvert(w io.Writer, seedPlates, descPlates []*image.Palett
 	rowPix := make([]uint8, width)
 	rowPacked := make([]byte, rowBytes)
 	hexRow := make([]byte, rowBytes*2+1)
+	dy := mmToPx(hostDirectTopOffsetMM, dpi)
 
 	pageNum := 1
 	for _, page := range plan.pages {
@@ -200,9 +204,10 @@ func WritePSPlatesWithInvert(w io.Writer, seedPlates, descPlates []*image.Palett
 		if _, err := fmt.Fprintf(bw, "{ currentfile picstr readhexstring pop } imagemask\n"); err != nil {
 			return err
 		}
+		renderPage := offsetPagePlacement(page, 0, dy)
 
 		for y := 0; y < height; y++ {
-			renderPlannedRow(rowPix, y, page, invert)
+			renderPlannedRow(rowPix, y, renderPage, invert)
 			packBits(rowPacked, rowPix)
 			hex.Encode(hexRow[:rowBytes*2], rowPacked)
 			hexRow[rowBytes*2] = '\n'
@@ -252,8 +257,8 @@ func WritePSPlatesWithInvert(w io.Writer, seedPlates, descPlates []*image.Palett
 			return err
 		}
 		for y := 0; y < height; y++ {
-			pix := page.Pix[(b.Min.Y+y)*page.Stride+b.Min.X : (b.Min.Y+y)*page.Stride+b.Min.X+width]
-			packBits(rowPacked, pix)
+			renderShiftedPageRow(rowPix, page, y, 0, dy)
+			packBits(rowPacked, rowPix)
 			hex.Encode(hexRow[:rowBytes*2], rowPacked)
 			hexRow[rowBytes*2] = '\n'
 			if _, err := bw.Write(hexRow); err != nil {
