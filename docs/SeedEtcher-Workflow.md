@@ -8,14 +8,20 @@ This workflow has many unknown variables (like the laser printer/toner (original
 Here's a video of the process: https://youtu.be/O1ZcKIli9hk?si=wur4efhf88QD2LMY \
 The video DOES NOT REPLACE this guide. Please do read this guide for best results AND security/safety instructions.
 
+## A Note on Metal
+
+316L is the most corrosion resistant type of steel. So if you want maximum longevity, don't cheap out. 304 works too but it absolutely needs citric passivation. Citric passivation is also recommended for 316L but not as urgently. See notes on citric acid bath below (post processing).
+Titanium doesn't etch well with FeCl3. Electro etching could be an option. Stay tuned. 
+As for thickness: 1.5mm is the minimum. 2mm is substantial.
+
 What you need:
 
-- [ ] Raspi Pi Zero with screen and cam (same hardware as SeedSigner)
+- [ ] Raspberry Pi Zero with screen and cam (same hardware as SeedSigner)
 - [ ] micro SD-Card
 - [ ] SeedEtcher Firmware
 - [ ] Laser Printer (air gapped), I only tested Brother HL-L5000D so far. Printer needs to understand PCL or PS (not emulated!). Avoid eco toners.
 - [ ] Micro-USB male to USB-A female ([amazon](https://a.co/d/drLFF49))
-- [ ] Steel Plates, 10x10cm (make sure they are really flat). You can get them on ebay or amazon or cut your own.
+- [ ] Steel Plates, 304/316L, 10x10cm (make sure they are really flat). You can get them on ebay or amazon or cut your own.
 - [ ] Iron (for ironing clothes)
 - [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for SeedEtcher Transfer Stack
 - [ ] Wood board, cork mat (optional)
@@ -32,6 +38,7 @@ Note: FeCl is for etching brass, copper and steel. It does not work for titanium
 - [ ] HDPE/PP etching container
 - [ ] Container for water bath (40°C)
 - [ ] Baking Soda (sodium bicarbonate, NaHCO₃), NOT baking powder (contains acids + starch)
+- [ ] Citric acid 50-100g (aka citric acid powder, food grade citric acid, sour salt) [amazon](https://a.co/d/04FpymMQ)
 
 Really nice to have:
 - [ ] Thermometer
@@ -52,7 +59,7 @@ diskutil eject /dev/diskX
 
 ## Load Descriptor and Seedphrases
 
-There is multiple ways of doing this and it is beyond the scope of this guide.\
+There are multiple ways of doing this and it is beyond the scope of this guide.\
 SeedEtcher just needs a QR of the descriptor. The seedphrase(s) can be input via QR or manually.
 You generally use a coordinator like [sparrow](https://www.sparrowwallet.com) to create the descriptor.
 Note: Sparrow just needs the xpubs of the seedphrases for this and not the actual seedphrase(s).
@@ -61,15 +68,10 @@ Scan the descriptor from sparrow with SeedEtcher and then each seedphrase QR fro
 
 ## Descriptor Shares
 
-For multisig backups, SeedEtcher prints descriptor shares instead of a full descriptor on each plate.
-For `2/3` multisig in current b0.3 flow, descriptor shares use UR/XOR-compatible payloads (interoperability-first).
-Legacy `SE1:` has been discontinued.
+For multisig backups, SeedEtcher prints UR/XOR descriptor shares instead of a full descriptor on each plate for these multisig wallets configurations:
+`1/2`, `2/2`, `2/3`, `2/4`, `4/4`, `3/5`, and any `n-1/n`. No single plate reveals the full descriptor.
+For all other n/m variants we print the full descriptor.
 
-- No single plate reveals the full descriptor.
-- You must scan at least `t` descriptor shares to reconstruct and export the descriptor QR.
-- For this flow, descriptor-share threshold matches the wallet signing threshold: an m-of-n wallet uses t=m descriptor shares for recovery.
-- Singlesig backup flow is unchanged (no descriptor sharding required).
-- Recovery QR is sensitive: once reconstructed, treat it like wallet metadata and keep cameras/devices away.
 
 ### Backup flow (on device)
 
@@ -78,42 +80,19 @@ For multisig backups, the on-device review/setup flow is:
 1. Confirm wallet (check receive/change addresses)
 2. Fingerprints review (all cosigner fingerprints, paged)
 3. Wallet label
-4. Print settings
+4. Choose print settings
 5. Print
-
-### Recovery (cold-room flow)
-
-1. Open `Recover Descr.` on SeedEtcher.
-2. Scan descriptor share QRs until threshold is reached.
-3. Choose `Single QR` or `Multipart UR`.
-4. Scan the exported descriptor QR with Sparrow.
-5. Verify first receive/change addresses before trusting the backup.
-
-### Troubleshooting
-
-- Mixed share sets:
-  - Error: `share set mismatch: different wallet or shard set`
-  - Cause: shares from different backups mixed together.
-- Checksum/invalid share:
-  - Error includes `invalid share QR` or `combine shares failed`.
-  - Cause: damaged/partial scan or wrong share.
-- QR too dense:
-  - Use `Multipart UR` on the 240x240 recovery screen.
-  - Current practical etched-plate target is `n <= 10`.
-- Sparrow red derivation/network fields:
-  - Ensure Sparrow is in Testnet mode for testnet descriptors.
-  - Keep xpub/tpub serialization and coin-type path consistent.
 
 ## Printing the Layouts
 
-Connect the dataport of the Pi Zero (it’s the one closer to the center) to the printer’s USB port. Connect a power source to the other port. SeedEtcher sends a bitmap via this USB serial connection using PCL, PostScript or HBP (Brother host based printers protocol).
+Connect the dataport of the Pi Zero (it’s the one closer to the center) to the printer’s USB port. Connect a power source to the other port. SeedEtcher sends a bitmap via this USB connection using PCL, PostScript or HBP (Brother host based printers protocol).
 Tip: Print the layout to paper first to check. You can set inverted and mirrored off for that to save toner.
 For the real print remember to use inverted and mirrored!
 Use the manual feed to print onto the transfer paper. Make sure it prints onto the glossy side!
 
 ### Printer Settings
 
-- Set resolution to highest your printer supports (bitmap is sent at 1200dpi or 600dpi) (Caveat: Brother HQ1200 is not true 1200. If you send a 1200dpi bitmap to a printer set to HQ1200/600 via PCL, it will print it 200% in size. Just send 600dpi in that case.)
+- Set resolution to highest your printer supports (bitmap is sent at 1200dpi or 600dpi) (Caveat: Brother HQ1200 is not true 1200. If you send a 1200dpi bitmap to a printer set to HQ1200/600 via PCL, it will print it 200% in size. Just send 600dpi in that case.) HBP only supports 600dpi.
 - Shut off toner saving options.
 - If it has a silent mode option, turn it on (prints slower which is good).
 - Set density to 0 (neutral, not +, not -).
@@ -133,11 +112,17 @@ Use a scotch brite, steel wool or 240–320 grit sand paper to thoroughly clean 
 
 2) ### Cut and fasten transfer paper to plates
 Cut the plate layouts as indicated by the cut marks. Use a clean surface (fresh piece of paper on a cutting mat), a clean metal ruler and a sharp cutter.
-The new layout is designed for maximal mask coverage of a 100x100mm plate. Put the transfer paper with the laser side down on the plate. Pay attention what side should be flush with the plate edge! The left side is intentionally 5mm shorter so you can tape it down with a small strip of masking tape. (Tip: put a piece of tape on cutting mat and cut it to thin strips 5x20mm).
+The new layout is designed for maximal mask coverage of a 100x100mm plate. Put the transfer paper with the laser side down on the plate. Pay attention what side should be flush with the plate edge! The left side (when looking at the plate with the transfer paper laid down) is intentionally 5mm shorter so you can tape it down with a small strip of masking tape. (Tip: put a piece of tape on the cutting mat and cut it to thin strips of 5x20mm).\
 
-3) ### SeedEtcher Transfer Stack
+![Transfer paper placement](assets/workflow/transfer-paper-placement.png)
+
+*If you sanded to a brushed look, the direction of the brushed lines are important. Light breaks differently on brushed metal depending on the direction they run in. If you hold a plate towards a light source, horizontal lines will diffuse the light and reflections, vertical lines will reflect more. So, the brushed lines should run horizontally to your plate layout. The QR code is easier to scan when looking normally at the plate. This is a detail but it is worth mentioning.*
+
+1) ### SeedEtcher Transfer Stack
 With the SeedEtcher Transfer Stack it is now possible to heat transfer both sides of the plate at once.
-TODO: add image for transfer stack
+
+![SeedEtcher Transfer Stack](assets/workflow/seedetcher-transfer-stack.png)
+
 Pre-heat the iron to around 175°C. (the temperature has to be between 150°C and 180°C but no more than 180°C). Tip: Use a thermometer to figure out how hot your iron gets.
 Put a paper towel folded 4 times on your wood board (optionally use cork, even better insulator). The board should be on the floor and it should not wiggle.
 Put a silicone sheet, then the plate, another silicone sheet, then a 10x10cm piece of paper towel.
@@ -159,7 +144,7 @@ This reflows the toner and makes it stick even more to the plate and closes pinh
 6) ### Repairs
 If the transfer wasn’t perfect you can do repairs by using nail polish or stop out ground and a small brush or anti-etching pens ([amazon](https://a.co/d/5DnOhRR))
 
-### Trouble shooting
+### Transfer Troubleshooting
 Don’t be frustrated if it doesn’t work the first time. This takes practice.
 Common culprits: 
 - not enough pressure (most of the toner sticks to the paper)
@@ -172,7 +157,7 @@ Common culprits:
 
 ### You’ll need:
 
-- [ ] Container to hold Ferric Chloride. Food containers made from HDPE/PP work well. NO METAL containers, obviously! Choose a size that allows to fully submerge the metal plate in 1L of solution. Ideally the plate is vertical, especially when you want to etch both sides at the same time. Tip: Test with water first.\
+- [ ] Container to hold Ferric Chloride. Food containers made from HDPE/PP work well. NO METAL containers, obviously! Choose a size that allows to fully submerge the metal plate in 1 liter (or less) solution. Ideally the plate is vertical, especially when you want to etch both sides at the same time. Tip: Test with water first.\
 I designed a 3d printed container for etching both sides holding exactly 0.5l of etchant. But I will not release the files just yet.
 - [ ] Plastic container to hold a 40°C water bath. You put the etching container into it.
 - [ ] Thermos with hot water to top up when the bath gets too cold
@@ -190,16 +175,16 @@ Do wear protection gear: nitrile gloves, eye protection (important!). And maybe 
 Ferric Chloride stains EVERYTHING it comes in contact with. Don’t let it drip into your kitchen sink, you’ll ruin the sink.
 Neutralize everything with the baking soda water solution!
 
-1. Prepare the plate. You have to mask off the unmasked strip on the left side. Make sure you mask it off properly or etchant will get to it. Normal packaging tape or electrical tape works. Avoid masking tape! (it’s not water proof)\
+1. Prepare the plate. You have to mask off the unmasked strip on the left side. Make sure you mask it off properly or etchant will get to it. Normal packaging tape or electrical tape works. Avoid masking tape! (it’s not waterproof)\
 Tip: make a holding flap from tape, so you can hold the plate easily from top.
-1. Make sure the etchant is around 40°C. Tip: Put the etching container in a slightly warmer water bath to achieve the temperature. Use hot water from thermos to adjust it. Nice to have: Use an aquarium heater.
-2. Set timer to 60 minutes. Submerge the plate fully into the FeCl, ideally keep it vertical. Get the FeCl moving slightly by either moving the container or the plate\
-Etchant needs to be moving, or no fresh etchant will get to where it is supposed to. So, either take a plastic or glass stick and stir or use an fishtank air pump to produce bubbles from the bottom of the etch tank. If the bubbles are too strong, clamp the silicone tube slightly. This is a very comfortable setup.
-1. Check the plate every 20 minutes. Check the mask. It is best not to do multiple sessions with neutralizing bath and water rinse, I found. It tends to destroy the mask.
+2. Make sure the etchant is around 40°C. Tip: Put the etching container in a slightly warmer water bath to achieve the temperature. Use hot water from thermos to adjust it. Nice to have: Use an aquarium heater.
+3. Set timer to 60 minutes. Submerge the plate fully into the FeCl, ideally keep it vertical. Get the FeCl moving slightly by either moving the container or the plate\
+Etchant needs to be moving, or no fresh etchant will get to where it is supposed to. So, either take a plastic or glass stick and stir or use a fishtank air pump to produce bubbles from the bottom of the etch tank. If the bubbles are too strong, clamp the silicone tube slightly. This is a very comfortable setup.
+4. Check the plate every 20 minutes. Check the mask. It is best not to do multiple sessions with neutralizing bath and water rinse, I found. It tends to destroy the mask.
 60 minutes should get you 0.2mm etch depth. If the mask looks fine after 60 you can go to 80 or even 100.
-1. When desired etch depth has been reached, take the plate out, let it drip off, submerge it into the baking soda bowl. This neutralises the acidic ferric-chloride residue.
-2. Rinse the plate under running water.
-And obviously: Do not etch unattended!
+5. When desired etch depth has been reached, take the plate out, let it drip off, submerge it into the baking soda bowl. This neutralises the acidic ferric-chloride residue.
+6. Rinse the plate under running water.
+Do not etch unattended, check on it every 20 minutes.
 
 One liter of FeCl should last you for plenty of plates. I etched 16 plates and it still works fine.\
 When etch times double: replace.
@@ -210,7 +195,7 @@ So, re-use the etchant and when it’s done dispose of it properly.
 
 You could use salt water and 12V/1amp to etch.\
 However, I do strongly advise you NOT to do that. Etching stainless steel with salt water can produce chlorine gas and other toxic chlorine compounds.\
-You do NOT want chlorine gas in your lungs. There are hundreds of youtube videos on etching like this, and none of them cares to give you that warning.
+You do NOT want chlorine gas in your lungs. There are hundreds of YouTube videos on etching like this, and none of them cares to give you that warning.
 Etching copper or brass this way is fine.
 Using Na2SO4 seems the way to go. But I need to do more testing.
 
@@ -219,8 +204,21 @@ Using Na2SO4 seems the way to go. But I need to do more testing.
 Remove the toner with a stainless steel scrubber with dish soap and running water. Super efficient!
 Clean rest with acetone.
 
-If you etch 304 steel it is advisable to use citric acid to make the etched surface corrosion resistant again.
-Optionally wipe it down with vinegar (but it's not as effective).
+If you etch 304 steel, citric acid passivation is recommended to restore corrosion resistance.
+For 316L, citric passivation is optional but still recommended for best long-term stability.
+A vinegar wipe is better than nothing, but less effective than citric passivation.
+
+### Citric passivation (quick recipe)
+
+1. Mix a 5-10% citric acid solution (50-100 g citric acid per 1 L water) in a plastic or glass container.
+2. Warm solution to about 50-60°C if possible.
+3. Soak the plate for:
+   - 20-30 minutes at 50-60°C, or
+   - 60-120 minutes at room temperature.
+4. Rinse thoroughly with clean water and dry completely.
+
+***Safety:*** Citric acid is relatively low hazard, but it is still an acid. Avoid breathing powder dust, avoid eye contact, and wear gloves and eye protection. Never mix with bleach/chlorine cleaners.
+Reuse/disposal: You can reuse the citric solution multiple times if it remains reasonably clean. Store it in a labeled HDPE/PP (PET is fine as well here) plastic bottle. Replace when performance drops or it becomes visibly contaminated. For disposal, follow local rules; heavily metal-contaminated solution should be treated as hazardous waste.
 
 If the etching started to etch surfaces that should have been masked, you can often correct it by using 240-320 grit sandpaper with a sanding block.
 Carefully sand the etched plate until the undesired etching errors are mostly gone.
@@ -228,4 +226,3 @@ Carefully sand the etched plate until the undesired etching errors are mostly go
 Do not keep failed prints or transfer sheets: destroy immediately!
 
 And lastly: Please do test your backup before calling it done.
-
