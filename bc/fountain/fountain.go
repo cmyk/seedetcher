@@ -27,6 +27,9 @@ type Decoder struct {
 }
 
 func Encode(message []byte, seqNum, seqLen int) []byte {
+	if seqLen <= 0 {
+		panic("seqLen out of range")
+	}
 	if seqLen == 1 {
 		return message
 	}
@@ -107,6 +110,9 @@ func (d *Decoder) Add(data []byte) error {
 	p := new(part)
 	if err := mode.Unmarshal(data, p); err != nil {
 		return fmt.Errorf("fountain: failed to decode fragment: %w", err)
+	}
+	if err := validatePartHeader(p); err != nil {
+		return err
 	}
 	if d.header.SeqLen > 0 {
 		if d.header != p.partHeader {
@@ -227,6 +233,9 @@ func Checksum(data []byte) uint32 {
 
 // SeqNumFor searches for a seqNum that outpus the xor of fragments.
 func SeqNumFor(seqLen int, checksum uint32, fragments []int) int {
+	if seqLen <= 0 {
+		panic("seqLen out of range")
+	}
 	seqNum := 1
 	sort.Ints(fragments)
 	for {
@@ -240,7 +249,10 @@ func SeqNumFor(seqLen int, checksum uint32, fragments []int) int {
 }
 
 func chooseFragments(seqNum uint32, seqLen int, checksum uint32) []int {
-	if seqNum <= uint32(seqLen) {
+	if seqLen <= 0 {
+		return nil
+	}
+	if uint64(seqNum) <= uint64(seqLen) {
 		return []int{int(seqNum - 1)}
 	} else {
 		seed := binary.BigEndian.AppendUint32(nil, seqNum)
@@ -256,6 +268,16 @@ func chooseFragments(seqNum uint32, seqLen int, checksum uint32) []int {
 		shuffled := shuffle(indexes, rng)
 		return shuffled[:degree]
 	}
+}
+
+func validatePartHeader(p *part) error {
+	if p.SeqLen <= 0 {
+		return fmt.Errorf("fountain: invalid sequence length")
+	}
+	if p.MessageLen < 0 {
+		return fmt.Errorf("fountain: invalid message length")
+	}
+	return nil
 }
 
 func shuffle(items []int, rng *xoshiro256.Source) []int {

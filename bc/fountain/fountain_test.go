@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
+	"github.com/fxamacker/cbor/v2"
 	"seedetcher.com/bc/xoshiro256"
 )
 
@@ -159,5 +161,63 @@ func TestChooseFragments(t *testing.T) {
 	}
 	if !reflect.DeepEqual(indexes, want) {
 		t.Errorf("mismatched fragment indexes")
+	}
+}
+
+func TestDecoderRejectsInvalidHeaders(t *testing.T) {
+	enc, err := cbor.CoreDetEncOptions().EncMode()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		p    part
+		want string
+	}{
+		{
+			name: "seq len zero",
+			p: part{
+				SeqNum: 1,
+				partHeader: partHeader{
+					SeqLen:     0,
+					MessageLen: 1,
+					Checksum:   1,
+				},
+				Data: []byte{0},
+			},
+			want: "invalid sequence length",
+		},
+		{
+			name: "message len negative",
+			p: part{
+				SeqNum: 1,
+				partHeader: partHeader{
+					SeqLen:     1,
+					MessageLen: -1,
+					Checksum:   1,
+				},
+				Data: []byte{0},
+			},
+			want: "invalid message length",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := enc.Marshal(tc.p)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var d Decoder
+			err = d.Add(b)
+			if err == nil {
+				t.Fatalf("expected error containing %q", tc.want)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got error %q, want substring %q", err.Error(), tc.want)
+			}
+		})
 	}
 }
