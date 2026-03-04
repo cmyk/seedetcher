@@ -1,0 +1,31 @@
+/* PDF export tweaks for docs/SeedEtcher-Workflow.md */
+
+/* Keep checkbox-style task lists, but use hanging indent so wrapped lines
+   align with text instead of the marker. */
+ul.task-list[class] {
+  list-style: none;
+  padding-left: 0;
+  margin-left: 0;
+}
+
+ul.task-list li {
+  position: relative;
+  padding-left: 1.35em;
+  margin: 0.18em 0;
+}
+
+ul.task-list li input[type="checkbox"] {
+  display: none;
+}
+
+ul.task-list li label {
+  display: block;
+  margin: 0;
+}
+
+ul.task-list li label::before {
+  content: "☐";
+  position: absolute;
+  left: 0;
+  top: 0.02em;
+}

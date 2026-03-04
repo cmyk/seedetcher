@@ -19,7 +19,7 @@ As for thickness: 1.5mm is the minimum. 2mm is substantial.
 - [ ] Raspberry Pi Zero with screen and cam (same hardware as SeedSigner)
 - [ ] micro SD-Card
 - [ ] SeedEtcher Firmware
-- [ ] Laser Printer (air gapped), I only tested Brother HL-L5000D so far. Printer needs to understand PCL or PS (not emulated!). Avoid eco toners.
+- [ ] Laser Printer (air gapped), I only tested Brother HL-L5000D, L2360DN and HL-L2400D so far. But all Brother printers should work. Printer needs to understand PCL or PS (not emulated!) or Host Based Printing (HBP). Avoid eco toners.
 - [ ] Micro-USB male to USB-A female ([amazon](https://a.co/d/drLFF49))
 - [ ] Steel Plates, 304/316L, 10x10cm (make sure they are really flat). You can get them on ebay or amazon or cut your own.
 - [ ] Iron (for ironing clothes)
@@ -112,7 +112,7 @@ Use a scotch brite, steel wool or 240–320 grit sand paper to thoroughly clean 
 
 2) ### Cut and fasten transfer paper to plates
 Cut the plate layouts as indicated by the cut marks. Use a clean surface (fresh piece of paper on a cutting mat), a clean metal ruler and a sharp cutter.
-The new layout is designed for maximal mask coverage of a 100x100mm plate. Put the transfer paper with the laser side down on the plate. Pay attention what side should be flush with the plate edge! The left side (when looking at the plate with the transfer paper laid down) is intentionally 5mm shorter so you can tape it down with a small strip of masking tape. (Tip: put a piece of tape on the cutting mat and cut it to thin strips of 5x20mm).\
+The new layout is designed for maximal mask coverage of a 100x100mm plate. Put the transfer paper with the laser side down on the plate. Pay attention what side should be flush with the plate edge! The left side (when looking at the plate with the transfer paper laid down) is intentionally 5mm shorter so you can tape it down with a small strip of masking tape. (Tip: put a piece of tape on the cutting mat and cut it to thin strips of 5x20mm).
 
 ![Transfer paper placement](assets/workflow/transfer-paper-placement.png)
 
