@@ -116,7 +116,7 @@ The new layout is designed for maximal mask coverage of a 100x100mm plate. Put t
 
 ![Transfer paper placement](assets/workflow/transfer-paper-placement.png)
 
-*If you sanded to a brushed look, the direction of the brushed lines are important. Light breaks differently on brushed metal depending on the direction they run in. If you hold a plate towards a light source, horizontal lines will diffuse the light and reflections, vertical lines will reflect more. So, the brushed lines should run horizontally to your plate layout. The QR code is easier to scan when looking normally at the plate. This is a detail but it is worth mentioning.*
+*If you sanded to a brushed look, the direction of the brushed lines is important. Light breaks differently on brushed metal depending on the direction it runs. If you hold a plate towards a light source, horizontal lines will diffuse the light and reflections, vertical lines will reflect more. So, the brushed lines should run horizontally to your plate layout. The QR code is easier to scan when looking normally at the plate. This is a detail but it is worth mentioning.*
 
 1) ### SeedEtcher Transfer Stack
 With the SeedEtcher Transfer Stack it is now possible to heat transfer both sides of the plate at once.
