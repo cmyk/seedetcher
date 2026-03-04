@@ -1,6 +1,27 @@
 # Changelog
 
-## Unreleased
+## Release v0.3.0-beta.1
+### User-facing highlights (since v0.2.0-beta.2)
+- New SeedEtcher Transfer Stack workflow cuts prep and etch time in half.
+- Plate layout overhaul (seed + descriptor sides) with etch-first styling:
+  - custom-designed `SeedEtcher-Regular` plate font integration,
+  - circular QR modules with square islands,
+  - updated seed/descriptor text anchors, margins, and metadata placement.
+- Print options UI before printing: selectable `DPI` (`1200`/`600`), `Invert`, and `Mirror`.
+- Host print language selection: `PCL` (default) or `PS` (PostScript), plus a native PS writer path.
+- Brother HBP support integrated into standard images (`image`, `image-debug`, `image-gadget`, `image-gadget-debug`) with lazy on-demand runtime prep.
+- HBP-enabled sessions lock print flow to Brother HBP at `600 DPI` and bypass language/DPI selection for that session.
+- SD detach/runtime handling was hardened for HBP and host print paths.
+- Multisig descriptor-share mode migrated to interoperability-first `UR/XOR` for supported families, with explicit fallback to full descriptor UR for unsupported families.
+- `SE1` fallback was removed from active backup output path.
+- Optional etch stats page added to print output (CLI + UI toggle), with area/coverage and PSU guide sections.
+- Print progress behavior was stabilized across `PCL`/`PS`/`HBP` (including etch-stats page accounting and stage ordering).
+- Added debug-only `Load Test Wallet` action flow to speed testing without repeated scan loops.
+- Transfer cutbox layout/workflow introduced for easier masking and cutting.
+- Fixed deterministic 2x2 page/batch/count math across UI and controller host/HBP paths.
+- Direct host PCL/PS output alignment corrected to match intended cutbox placement (top/cut-mark clipping and PCL horizontal shift fixes).
+
+### Detailed notes
 - HBP runtime integration is now part of the standard image outputs (`image`, `image-debug`, `image-gadget`, `image-gadget-debug`); separate runtime/spike image variants are removed.
 - Internal CUPS/HBP runtime naming was normalized from `cups-spike` to `cups-runtime` across flake wiring, init/runtime env, helper scripts, and controller call sites.
 - Runtime helper/script names are now:
@@ -69,11 +90,6 @@
 - Etch defaults block added to stats page for bench setup:
   - `Na2SO4 100 g/L`, `34C`, `15 mm` electrode gap, `12 V` limit, `J=0.04 A/cm2`.
 
-## Release v0.3.0-beta.1
-- b0.3 plate layout overhaul (seed + descriptor sides) with etched-first styling:
-  - custom `SeedEtcher-Regular` plate font integration,
-  - circular QR modules with square islands,
-  - updated seed/descriptor text anchors, margins, and metadata placement.
 - Invert behavior fix: plate border remains black while interior content is inverted.
 - Page layout updates:
   - 4 mm inter-plate spacing,
