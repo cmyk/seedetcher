@@ -23,7 +23,7 @@ As for thickness: 1.5mm is the minimum. 2mm is substantial.
 - [ ] Micro-USB male to USB-A female ([amazon](https://a.co/d/drLFF49))
 - [ ] Steel Plates, 304/316L, 10x10cm (make sure they are really flat). You can get them on ebay or amazon or cut your own.
 - [ ] Iron (for ironing clothes)
-- [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for SeedEtcher Transfer Stack, cut 2 pieces of 100x100mm.
+- [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for SeedEtcher Transfer Stack, cut 2 pieces of 110x110mm.
 - [ ] Wood board, cork mat (optional)
 - [ ] Toner Transfer Paper ([amazon](https://a.co/d/dmR4RUL))
 - [ ] Anti-etching pens ([amazon](https://a.co/d/5DnOhRR)), stop out ground e.g. from [Lascaux](https://lascaux.ch/en/products/brushes-printmaking-sets-various/lascaux-etching?shp3_product=1704) or [Charbonnel](https://intaglioprintmaker.com/product/charbonnel-lamour-black-covering-varnish/) or nail polish
@@ -183,7 +183,7 @@ Tip: make a holding flap from tape, so you can hold the plate easily from top.
 3. Set timer to 60 minutes. Submerge the plate fully into the FeCl, ideally keep it vertical. Get the FeCl moving slightly by either moving the container or the plate\
 Etchant needs to be moving, or no fresh etchant will get to where it is supposed to. So, either take a plastic or glass stick and stir or use a fishtank air pump to produce bubbles from the bottom of the etch tank. If the bubbles are too strong, clamp the silicone tube slightly. This is a very comfortable setup.
 4. Check the plate every 20 minutes. Check the mask. It is best not to do multiple sessions with neutralizing bath and water rinse, I found. It tends to destroy the mask.
-60 minutes should get you 0.2mm etch depth. If the mask looks fine after 60 you can go to 80 or even 100.
+60 minutes should get you 0.2mm etch depth. If the mask looks fine after 60 you can go futher. All this depends on how good your mask holds up.
 5. When desired etch depth has been reached, take the plate out, let it drip off, submerge it into the baking soda bowl. This neutralises the acidic ferric-chloride residue.
 6. Rinse the plate under running water.
 Do not etch unattended, check on it every 20 minutes.
