@@ -23,7 +23,7 @@ As for thickness: 1.5mm is the minimum. 2mm is substantial.
 - [ ] Micro-USB male to USB-A female ([amazon](https://a.co/d/drLFF49))
 - [ ] Steel Plates, 304/316L, 10x10cm (make sure they are really flat). You can get them on ebay or amazon or cut your own.
 - [ ] Iron (for ironing clothes)
-- [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for SeedEtcher Transfer Stack
+- [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for SeedEtcher Transfer Stack, cut 2 pieces of 100x100mm.
 - [ ] Wood board, cork mat (optional)
 - [ ] Toner Transfer Paper ([amazon](https://a.co/d/dmR4RUL))
 - [ ] Anti-etching pens ([amazon](https://a.co/d/5DnOhRR)), stop out ground e.g. from [Lascaux](https://lascaux.ch/en/products/brushes-printmaking-sets-various/lascaux-etching?shp3_product=1704) or [Charbonnel](https://intaglioprintmaker.com/product/charbonnel-lamour-black-covering-varnish/) or nail polish
@@ -136,12 +136,14 @@ Pressure is important. Do it on the floor where you can really lean onto the iro
 Optional: Put a stack of steel plates on top of the hot plate (heat sink).
 Let it cool off completely! It will take a while (20m). The transfer paper should buckle and lift off the metal all by itself. The transfer paper should come off without any toner sticking to it. 
 
-5) ### Bake plate in oven
-Pre-heat to 180°C, no airflow. 
-Bake for 12 minutes. 
+1) ### Bake plate in oven (don't skip this step)
+Bake for 12 minutes at 180°C, no airflow.  
 This reflows the toner and makes it stick even more to the plate and closes pinholes.
+***IMPORTANT:*** With the new layout most of the plate is covered in toner mask to the edges. Use a baking tray, put two silicon sheets next to each other (they are heat resistant). Place a tee cup that is high enough to lean the plate against on one sheet. The silcone prevents the cup and plate from sliding. Put Bottom edge of the plate on the silicone and the lean the top edege against the cup.
+Make the setup in cold oven.
+Let this cool down when done baking and only then move it. If the plate falls while it's hot your toner mask is ruined.
 
-6) ### Repairs
+1) ### Repairs
 If the transfer wasn’t perfect you can do repairs by using nail polish or stop out ground and a small brush or anti-etching pens ([amazon](https://a.co/d/5DnOhRR))
 
 ### Transfer Troubleshooting
