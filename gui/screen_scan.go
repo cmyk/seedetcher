@@ -8,6 +8,7 @@ import (
 
 	"seedetcher.com/bc/ur"
 	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/descriptor/urxor2of3"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/layout"
 	"seedetcher.com/gui/op"
@@ -125,15 +126,19 @@ func (d *QRDecoder) parseQR(qr []byte) (any, bool) {
 
 // ScanScreen handles QR scanning flow.
 type ScanScreen struct {
-	Title string
-	Lead  string
+	Title            string
+	Lead             string
+	RawURXOR2of3Only bool
+	ShowURXOR2of3    bool
 }
 
 func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
 	var (
-		feed, feed2, gray *image.Gray
-		cameraErr         error
-		decoder           QRDecoder
+		feed, feed2, gray      *image.Gray
+		cameraErr              error
+		decoder                QRDecoder
+		seenURXOR2of3Fragments map[int]struct{}
+		urSeqLen              int
 	)
 	inp := new(InputTracker)
 	for {
@@ -178,6 +183,24 @@ func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
 				scaleRot(feed, gray, ctx.RotateCamera)
 				results, _ := ctx.Platform.ScanQR(gray)
 				for _, res := range results {
+					if s.RawURXOR2of3Only || s.ShowURXOR2of3 {
+						raw := strings.ToUpper(strings.TrimSpace(string(res)))
+						if typ, seqNum, seqLen, ok := urxor2of3.ParseShare(raw); ok && typ == "crypto-output" && seqLen >= urxor2of3.MinShares {
+							if seenURXOR2of3Fragments == nil {
+								seenURXOR2of3Fragments = make(map[int]struct{})
+							}
+							if urSeqLen == 0 {
+								urSeqLen = seqLen
+							}
+							seenURXOR2of3Fragments[seqNum] = struct{}{}
+						}
+					}
+					if s.RawURXOR2of3Only {
+						raw := strings.ToUpper(strings.TrimSpace(string(res)))
+						if typ, _, seqLen, ok := urxor2of3.ParseShare(raw); ok && typ == "crypto-output" && seqLen >= urxor2of3.MinShares {
+							return []byte(raw), true
+						}
+					}
 					if v, ok := decoder.parseQR(res); ok {
 						return v, true
 					}
@@ -219,11 +242,25 @@ func (s *ScanScreen) Scan(ctx *Context, ops op.Ctx) (any, bool) {
 		background(ops, ops.End(), image.Rectangle{Min: pos, Max: pos.Add(sz)}, pos)
 
 		// Progress
-		if progress := decoder.Progress(); progress > 0 {
-			sz = widget.Labelwf(ops.Begin(), ctx.Styles.lead, width, th.Text, "%d%%", progress)
+		if (s.RawURXOR2of3Only || s.ShowURXOR2of3) && len(seenURXOR2of3Fragments) > 0 {
+			captured := len(seenURXOR2of3Fragments)
+			if urSeqLen <= 0 {
+				urSeqLen = urxor2of3.MinShares
+			}
+			if captured > urSeqLen {
+				captured = urSeqLen
+			}
+			sz = widget.Labelwf(ops.Begin(), ctx.Styles.lead, width, th.Text, "%d/%d", captured, urSeqLen)
 			_, percent := top.CutBottom(sz.Y)
 			pos := percent.Center(sz)
 			background(ops, ops.End(), image.Rectangle{Min: pos, Max: pos.Add(sz)}, pos)
+		} else {
+			if progress := decoder.Progress(); progress > 0 {
+				sz = widget.Labelwf(ops.Begin(), ctx.Styles.lead, width, th.Text, "%d%%", progress)
+				_, percent := top.CutBottom(sz.Y)
+				pos := percent.Center(sz)
+				background(ops, ops.End(), image.Rectangle{Min: pos, Max: pos.Add(sz)}, pos)
+			}
 		}
 
 		nav := func(btn Button, icn image.RGBA64Image) {

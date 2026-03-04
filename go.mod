@@ -10,7 +10,6 @@ require (
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/jung-kurt/gofpdf/v2 v2.17.3
 	github.com/kortschak/qr v0.3.0
-	github.com/pdfcpu/pdfcpu v0.9.1
 	golang.org/x/crypto v0.45.0
 	golang.org/x/image v0.24.0
 	golang.org/x/sys v0.38.0
@@ -22,15 +21,9 @@ require (
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.0.1 // indirect
-	github.com/hhrutter/lzw v1.0.0 // indirect
-	github.com/hhrutter/tiff v1.0.1 // indirect
-	github.com/mattn/go-runewidth v0.0.16 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
-	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/text v0.31.0 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
 replace github.com/kortschak/qr => github.com/seedhammer/kortschak-qr v0.0.0-20240113235555-375796488df0

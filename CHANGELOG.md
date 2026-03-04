@@ -1,7 +1,130 @@
 # Changelog
 
-## Unreleased
-- (no changes yet)
+## Release v0.3.0-beta.1
+### User-facing highlights (since v0.2.0-beta.2)
+- New SeedEtcher Transfer Stack workflow cuts prep and etch time in half.
+- Plate layout overhaul (seed + descriptor sides) with etch-first styling:
+  - custom-designed `SeedEtcher-Regular` plate font integration,
+  - circular QR modules with square islands,
+  - updated seed/descriptor text anchors, margins, and metadata placement.
+- Print options UI before printing: selectable `DPI` (`1200`/`600`), `Invert`, and `Mirror`.
+- Host print language selection: `PCL` (default) or `PS` (PostScript), plus a native PS writer path.
+- Brother HBP support integrated into standard images (`image`, `image-debug`, `image-gadget`, `image-gadget-debug`) with lazy on-demand runtime prep.
+- HBP-enabled sessions lock print flow to Brother HBP at `600 DPI` and bypass language/DPI selection for that session.
+- SD detach/runtime handling was hardened for HBP and host print paths.
+- Multisig descriptor-share mode migrated to interoperability-first `UR/XOR` for supported families, with explicit fallback to full descriptor UR for unsupported families.
+- `SE1` fallback was removed from active backup output path.
+- Optional etch stats page added to print output (CLI + UI toggle), with area/coverage and PSU guide sections.
+- Print progress behavior was stabilized across `PCL`/`PS`/`HBP` (including etch-stats page accounting and stage ordering).
+- Added debug-only `Load Test Wallet` action flow to speed testing without repeated scan loops.
+- Transfer cutbox layout/workflow introduced for easier masking and cutting.
+- Fixed deterministic 2x2 page/batch/count math across UI and controller host/HBP paths.
+- Direct host PCL/PS output alignment corrected to match intended cutbox placement (top/cut-mark clipping and PCL horizontal shift fixes).
+
+### Detailed notes
+- HBP runtime integration is now part of the standard image outputs (`image`, `image-debug`, `image-gadget`, `image-gadget-debug`); separate runtime/spike image variants are removed.
+- Internal CUPS/HBP runtime naming was normalized from `cups-spike` to `cups-runtime` across flake wiring, init/runtime env, helper scripts, and controller call sites.
+- Runtime helper/script names are now:
+  - `cups-runtime-bootstrap`
+  - `cups-runtime-ram-feasibility`
+  - `/cups-runtime.env`
+  - `/cups-runtime-store-paths`
+- Added release-focused HBP operations doc: `docs/dev/hbp-runtime.md` and removed the old feasibility spike diary doc.
+- Added `docs/printers.md` as a consolidated Brother printer capability reference used for HBP/PCL/PS field validation and support triage.
+- Added a debug-only `Load Test Wallet` action flow in UI to inject fixture wallets without repeated scan loops during print/recovery testing.
+- HBP-enabled startup path now locks print flow to Brother HBP at `600 DPI` and bypasses language/DPI choice screens for that session.
+- Print progress behavior was stabilized across `PCL`/`PS`/`HBP`, including correct etch-stats page accounting and stage ordering.
+- Gadget-mode HBP capture path was restored and `scripts/capture_print.sh` now supports replay/conversion flow for captured CUPS raster jobs.
+- HBP bootstrap/runtime path is lazy on-demand (not eager at boot) and SD-detach handling was hardened for both HBP and PCL/PS flows.
+- Build/runtime no longer depends on an external `brlaser-root.tar.gz` artifact; integrated packaged runtime is used by default with optional drop-in fallback.
+- Added developer utility scripts: `scripts/analyze-go-bloat.sh` and `scripts/cleanup-nix-images.sh`.
+- Debug-image diagnostics:
+  - added `export-logs-to-sd` helper to write a privacy-first, plain-directory snapshot on the boot partition (`SE-LOGS-LATEST`),
+  - export payload is now strict allowlist only: `init_debug.log`, CUPS logs, `dmesg`, and manifest metadata (no `/proc`/`/tmp` dump),
+  - export now attempts a best-effort PJL capability snapshot from `INFO VARIABLES` when printer access is available (skipped for boot-triggered exports),
+  - UI error screens now trigger best-effort SD log export (rate-limited) to improve field-debug capture on failures,
+  - debug images now auto-run this export with boot-time retries and again when `controller` exits, so UART/manual shell access is not required to collect logs,
+  - default export folder name is now `SE-LOGS-<timestamp>` at boot-partition root for easy retrieval on desktop OSes,
+  - wired as debug-only tooling (not shipped in non-debug images).
+- Host-mode SD-detach safety note: diagnostic export is on-demand and best-effort; if SD is detached/unavailable, printing/runtime flow is unchanged and only log export fails.
+- Printing now supports explicit host-mode printer language selection:
+  - `PCL` (default) or `PS` (PostScript) from print settings UI.
+  - guidance shown in UI: if `PCL` prints blank pages, try `PS`.
+- Added native PostScript writer path for host mode (`/dev/usb/lp0`) with no external `gs`/`pdftops` dependency on device.
+- Host-mode PCL robustness:
+  - when a `1200 DPI` send fails with `/dev/usb/lp0` `EIO`, controller now auto-retries the job once at `600 DPI`,
+  - after such a failure, host PCL stays on `600 DPI` for the current printer session (reset on replug) to avoid repeated hard failures.
+- PostScript pipeline fixes and performance improvements:
+  - corrected PS `imagemask` geometry/polarity behavior to match canonical page layout,
+  - optimized PS streaming on Pi Zero (buffered writes + fast row hex encoding),
+  - PS mode now honors selected DPI (600/1200) in print settings.
+- Descriptor share mode is now interoperability-first:
+  - UR/XOR used for supported families (`2/2`, `2/3`, `2/4`, `3/5`, and generic `n-1/n`),
+  - unsupported families fall back to full descriptor `UR:CRYPTO-OUTPUT` per descriptor plate.
+- SE1 fallback removed from active backup output path.
+- Backup flow now shows a `Warning` (not `Error`) for XOR-unsupported multisig families, explaining full-descriptor fallback behavior.
+- Compact single-sided 2-of-3 layout is wired to UR/XOR shares (seed QR + descriptor-share QR on one plate).
+- Compact layout tuning:
+  - 24-word split `10/7/7`, 12-word split `6/6`,
+  - descriptor-side warning block and updated custom font glyph support for arrows,
+  - derivation path rendering uses apostrophe hardened markers (`'`) in plate text.
+- Descriptor plate QR placement is now explicit by top-left coordinates and size (including safe zone), with default size now aligned to `80 mm`.
+- Backup/recovery UX cleanup:
+  - removed WID/SET lines from active screens,
+  - scan UI shows deterministic `x/2` only in dedicated UR/XOR share-capture mode,
+  - generic animated UR scans continue to show `%` progress.
+- Fingerprints review screen updates:
+  - bold fingerprint rows,
+  - 7 entries per page,
+  - pagination line shown only when there are multiple pages.
+- Print confirmation screen now shows `Compact 2/3` line only for eligible `sortedmulti 2/3` jobs.
+- Added table-driven descriptor-share matrix tests across script/network variants for representative families (`2/3`, `2/4`, `3/5`, `4/5`, fallback `7/10`).
+- Added CLI/test fixtures for additional families: `multisig-2of2`, `multisig-3of4`, `multisig-4of7`, `multisig-5of7`.
+- Optional etch stats page added to print output (`-etch-stats-page` in CLI; toggle in print options UI).
+- Etch stats now include two sections:
+  - area/coverage table per plate (`TONER`, `EXPOSED90`, `EXPOSED+MARGIN`, `%MASKED`, `%UNMASKED`),
+  - PSU guide table per plate with `SET A MASKED` / `SET A UNMASKED`.
+- Etch stats model now assumes a fixed physical plate size of `100x100 mm` and reports both scenarios:
+  - masked margin (only `90x90` center exposed),
+  - unmasked margin (`90x90` exposure + outer margin exposure).
+- Etch defaults block added to stats page for bench setup:
+  - `Na2SO4 100 g/L`, `34C`, `15 mm` electrode gap, `12 V` limit, `J=0.04 A/cm2`.
+
+- Invert behavior fix: plate border remains black while interior content is inverted.
+- Page layout updates:
+  - 4 mm inter-plate spacing,
+  - top-anchored placement for partial pages,
+  - no automatic plate scaling (plates remain true 90x90mm),
+  - Letter layout switched to 2x2 (4 plates/page) to preserve fixed plate size.
+- Pi image packaging fix: include `font/seedetcher/SeedEtcher-Regular.ttf` in initramfs.
+- Host-mode print pipeline performance/memory refactor:
+  - direct 1bpp plate-to-PCL streaming path (`/dev/usb/lp0`) without full-page raster buffers,
+  - batched host rendering/sending to reduce peak RAM on larger jobs,
+  - host default DPI set to 1200, gadget fallback path kept at 600.
+- Host print-progress behavior stabilized for batched sending (continuous/monotonic progress, compose marked once).
+- Test fixtures expanded with additional seed-only wallets: 12/15/18/21 words.
+- Added `singlesig-longwords` seed-only fixture for plate layout stress testing.
+- Docs updated to clarify host (direct 1bpp PCL) vs gadget (raster-to-PDF fallback) print paths.
+- Paper-size selection is now honored end-to-end in both host and gadget print pipelines (Letter stays 2x2, A4 stays 2x3).
+- Wallet label input limit reduced from 20 to 15 characters.
+- Additional plate typography tuning:
+  - 11pt metadata/descriptor tracking support,
+  - tighter number-column tracking on seed plates,
+  - wider gutter between seed index numbers and words.
+- Print options UI added before printing:
+  - selectable `DPI` (`1200`/`600`), `Invert` (`On`/`Off`), and `Mirror` (`On`/`Off`),
+  - defaults set to `1200`, `On`, `On`,
+  - options are now passed through controller print flow; non-PCL fallback remains capped at `600 DPI`.
+- Descriptor-side metadata/QR update:
+  - top descriptor line now uses explicit concise fields (`TYPE/SCRIPT/NET/THRESHOLD/KEYS/KEY`) without full xpub text,
+  - descriptor QR is bottom-anchored, centered on X, rendered with quiet zone, and enlarged (up to 80mm including quiet zone).
+- Singlesig layout update:
+  - singlesig now renders as seed-only plates (no descriptor-side plate),
+  - singlesig seed side uses a shifted word/QR layout variant with optional right-edge metadata (`path/script/net`) when a descriptor is present,
+  - when descriptor is skipped in singlesig flow, no right-edge metadata line is printed.
+- Seed scan prompt copy clarified to `SeedQR or Mnemonic QR` to avoid implying OCR/manual-word camera entry.
+- Singlesig print default updated to produce two physical seed plates per job while preserving key-pagination semantics (`1/1` marker on both copies, not `1/2`/`2/2`).
+- Plate QR rendering tuning: circular data-module dot scale reduced to `0.7` (finder/alignment islands remain square) to increase etch-process headroom.
 
 ## Release v0.2.0-beta.2
 - Security dependencies bumped to address Dependabot alerts: `github.com/btcsuite/btcd` -> `v0.25.0`, `github.com/btcsuite/btcd/btcec/v2` -> `v2.3.6`, `github.com/btcsuite/btcd/btcutil` -> `v1.1.6`, and `golang.org/x/crypto` -> `v0.45.0` (plus related `x/sys`/`x/text` updates).

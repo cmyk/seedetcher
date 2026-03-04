@@ -8,6 +8,42 @@ import (
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 )
 
+func TestSeedOnlyFixturesParseExpectedWordCounts(t *testing.T) {
+	tests := []struct {
+		name     string
+		words    int
+		fixture  string
+	}{
+		{name: "seed-12", words: 12, fixture: "seed-12"},
+		{name: "seed-15", words: 15, fixture: "seed-15"},
+		{name: "seed-18", words: 18, fixture: "seed-18"},
+		{name: "seed-21", words: 21, fixture: "seed-21"},
+		{name: "singlesig-longwords", words: 24, fixture: "singlesig-longwords"},
+	}
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, ok := WalletConfigs[tc.fixture]
+			if !ok {
+				t.Fatalf("missing %s fixture", tc.fixture)
+			}
+			mnemonics, desc, err := ParseWallet(cfg, "", "")
+			if err != nil {
+				t.Fatalf("parse wallet: %v", err)
+			}
+			if desc != nil {
+				t.Fatalf("expected no descriptor for %s fixture", tc.fixture)
+			}
+			if got, want := len(mnemonics), 1; got != want {
+				t.Fatalf("mnemonic count = %d, want %d", got, want)
+			}
+			if got, want := len(mnemonics[0]), tc.words; got != want {
+				t.Fatalf("mnemonic length = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
 func TestMultisigMainnet2of3FixtureParsesAsMainnetXpub(t *testing.T) {
 	cfg, ok := WalletConfigs["multisig-mainnet-2of3"]
 	if !ok {

@@ -3,61 +3,29 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"image"
 	"image/draw"
 	"io"
 	"log"
 	"os"
-	"path/filepath"
 	"runtime"
-	"strings"
-	"syscall"
-	"time"
-	"unsafe"
-
-	"golang.org/x/sys/unix"
-	"seedetcher.com/bc/urtypes"
-	"seedetcher.com/bip39"
+	rdebug "runtime/debug"
 	"seedetcher.com/driver/drm"
 	"seedetcher.com/driver/libcamera"
 	"seedetcher.com/driver/wshat"
 	"seedetcher.com/gui"
 	"seedetcher.com/logutil"
-	"seedetcher.com/printer"
 	"seedetcher.com/zbar"
+	"strings"
+	"syscall"
+	"time"
 )
 
 // Debug hooks (ensure unique per build tag if needed, but keep as is for now).
 var (
 	initHook func(p *Platform) error
 )
-
-// queryPrinterCapabilities sends a PJL query and parses the response for PCL/PostScript support
-func queryPrinterCapabilities(w io.Writer, r io.Reader) (supportsPCL, supportsPostScript bool, err error) {
-	// PJL query for printer language
-	query := []byte("\033%-12345X@PJL INFO VARIABLES\r\n\033%-12345X")
-	if _, err = w.Write(query); err != nil {
-		logutil.DebugLog("PJL query failed: %v", err)
-		return false, false, err
-	}
-
-	// Read response (simplified, assumes line-based response)
-	buf := make([]byte, 1024)
-	n, err := r.Read(buf)
-	if err != nil {
-		logutil.DebugLog("Failed to read PJL response: %v", err)
-		return false, false, err
-	}
-	response := string(buf[:n])
-	logutil.DebugLog("PJL response: %s", response)
-
-	// Parse for PCL and PostScript (simplified, adjust for actual printer response)
-	supportsPCL = strings.Contains(response, "PCL")
-	supportsPostScript = strings.Contains(response, "POSTSCRIPT")
-	return supportsPCL, supportsPostScript, nil
-}
 
 type Platform struct {
 	display *drm.LCD
@@ -71,10 +39,10 @@ type Platform struct {
 		close  func()
 		active bool
 	}
-	printerCached      io.Writer
-	supportsPCL        bool
-	supportsPostScript bool
-	printing           bool // Add flag to track printing state
+	printerCached   io.Writer
+	supportsPCL     bool
+	hostPCLForce600 bool
+	printing        bool // Add flag to track printing state
 }
 
 func Init() (*Platform, error) {
@@ -122,19 +90,6 @@ func (p *Platform) Wakeup() {
 	case p.wakeups <- struct{}{}:
 	default:
 	}
-}
-
-func (p *Platform) PrinterStatus() (bool, string) {
-	for i := 0; i < 3; i++ {
-		matches, _ := filepath.Glob("/dev/usb/lp*")
-		if len(matches) > 0 {
-			return true, readPrinterModel()
-		}
-		if i < 2 {
-			time.Sleep(50 * time.Millisecond)
-		}
-	}
-	return false, ""
 }
 
 func (p *Platform) AppendEvents(deadline time.Time, evts []gui.Event) []gui.Event {
@@ -233,8 +188,16 @@ func (p *Platform) CameraFrame(dims image.Point) {
 	c.active = true
 }
 
-// In platform_rpi.go, replace Printer function
 func (p *Platform) Printer() io.Writer {
+	// usblp can disconnect/re-enumerate between jobs; always reopen fresh in host mode
+	// to avoid writing through a stale file descriptor.
+	if p.printerCached != nil && p.supportsPCL {
+		if f, ok := p.printerCached.(*os.File); ok {
+			_ = f.Close()
+		}
+		p.printerCached = nil
+	}
+
 	// If we previously failed and cached a non-PCL writer, but lp0 exists now,
 	// clear the cache and try again.
 	if p.printerCached != nil {
@@ -242,7 +205,7 @@ func (p *Platform) Printer() io.Writer {
 			return p.printerCached
 		}
 		if _, err := os.Stat("/dev/usb/lp0"); err == nil {
-			if f, ok := p.printerCached.(*os.File); ok && f != os.Stderr {
+			if f, ok := p.printerCached.(*os.File); ok {
 				_ = f.Close()
 			}
 			p.printerCached = nil
@@ -265,297 +228,12 @@ func (p *Platform) Printer() io.Writer {
 		} else {
 			p.supportsPCL = false
 		}
-		p.supportsPostScript = false
 		p.printerCached = printer
-		logutil.DebugLog("Printer initialized: dev=%s PCL=%v PS=%v", dev, p.supportsPCL, p.supportsPostScript)
+		logutil.DebugLog("Printer initialized: dev=%s PCL=%v", dev, p.supportsPCL)
 		return printer
 	}
-	p.printerCached = os.Stderr
-	return p.printerCached
-}
-func (p *Platform) CreatePlates(ctx *gui.Context, mnemonic bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int) error {
-	logutil.DebugLog("Entering CreatePlates with mnemonic length: %d, desc: %v, keyIdx: %d", len(mnemonic), desc != nil, keyIdx)
-	printerDev := p.Printer()
-	if printerDev == nil {
-		logutil.DebugLog("Printer is nil")
-		return fmt.Errorf("no printer available")
-	}
-	if p.supportsPCL {
-		logutil.DebugLog("Printer acquired (PCL), preparing to write job")
-	} else {
-		logutil.DebugLog("Printer acquired (non-PCL), using raster-to-PDF path")
-	}
-
-	p.printing = true
-	defer func() { p.printing = false }()
-
-	var mnemonics []bip39.Mnemonic
-	if desc == nil {
-		mnemonics = []bip39.Mnemonic{mnemonic}
-	} else if ctx == nil { // Add this
-		mnemonics = []bip39.Mnemonic{mnemonic} // Use passed mnemonic
-	} else {
-		mnemonics = make([]bip39.Mnemonic, len(desc.Keys))
-		i := 0
-		for _, k := range desc.Keys {
-			if m, ok := ctx.Keystores[k.MasterFingerprint]; ok {
-				mnemonics[i] = m
-				i++
-			}
-		}
-	}
-
-	progress := func(stage printer.PrintStage, current, total int64) {
-		if ctx != nil && ctx.PrintProgress != nil && total > 0 {
-			ctx.PrintProgress(stage, current, total)
-		}
-	}
-
-	opts := printer.RasterOptions{
-		DPI:    600, // Safe default for Zero; adjust if needed
-		Mirror: true,
-		Invert: true,
-	}
-	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, keyIdx, opts, progress)
-	if err != nil {
-		return fmt.Errorf("render: plate bitmaps: %w", err)
-	}
-	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperA4, opts.DPI, progress)
-	if err != nil {
-		return fmt.Errorf("render: compose pages: %w", err)
-	}
-
-	if p.supportsPCL {
-		// Default to PCL in host mode (usblp).
-		if err := printer.WritePCL(printerDev, pages, opts.DPI, printer.PaperA4, progress); err != nil {
-			return fmt.Errorf("pcl: write: %w", err)
-		}
-		logutil.DebugLog("PCL write complete (pages=%d dpi=%.0f)", len(pages), opts.DPI)
-		return nil
-	}
-
-	// Fallback: serialize canonical raster pages as PDF (gadget capture/dev).
-	var pdf bytes.Buffer
-	if err := printer.WritePDFRaster(&pdf, pages, printer.PaperA4); err != nil {
-		return fmt.Errorf("pdf: write: %w", err)
-	}
-	data := pdf.Bytes()
-	logutil.DebugLog("Raster-based PDF generated, size: %d bytes", len(data))
-	if len(data) == 0 {
-		logutil.DebugLog("Generated PDF is empty")
-		return fmt.Errorf("no data to write to printer")
-	}
-
-	const chunkSize = 1024
-	total := int64(len(data))
-	written := int64(0)
-	if progress != nil && total > 0 {
-		progress(printer.StageSend, 0, total)
-	}
-	for i := 0; i < len(data); i += chunkSize {
-		end := i + chunkSize
-		if end > len(data) {
-			end = len(data)
-		}
-		chunk := data[i:end]
-		n, err := printerDev.Write(chunk)
-		if err != nil {
-			logutil.DebugLog("Write chunk %d failed: %v, wrote %d bytes", i/chunkSize, err, n)
-			return err
-		}
-		logutil.DebugLog("Wrote chunk %d, %d bytes", i/chunkSize, n)
-		written += int64(n)
-		if progress != nil && total > 0 {
-			progress(printer.StageSend, written, total)
-		}
-	}
-	written = total
-	if progress != nil && total > 0 {
-		progress(printer.StageSend, written, total)
-	}
-	time.Sleep(2 * time.Second)
+	p.printerCached = nil
 	return nil
-}
-
-func (p *Platform) initSDCardNotifier() error {
-	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC)
-	if err != nil {
-		return fmt.Errorf("inotify_init1: %w", err)
-	}
-	f := os.NewFile(uintptr(fd), "inotify")
-	var flags uint32 = unix.IN_CREATE | unix.IN_DELETE
-	const dev = "/dev"
-	if _, err = unix.InotifyAddWatch(fd, dev, flags); err != nil {
-		f.Close()
-		return fmt.Errorf("inotify_add_watch: %w", err)
-	}
-	const sdcName = "mmcblk0"
-	inserted := true
-	if _, err := os.Stat(filepath.Join(dev, sdcName)); os.IsNotExist(err) {
-		inserted = false
-	}
-	go func() {
-		defer f.Close()
-		p.events <- gui.SDCardEvent{
-			Inserted: inserted,
-		}.Event()
-		var buf [(unix.SizeofInotifyEvent + unix.PathMax + 1) * 100]byte
-		for {
-			n, err := f.Read(buf[:])
-			if err != nil {
-				panic(err)
-			}
-			evts := buf[:n]
-			for len(evts) > 0 {
-				evt := (*unix.InotifyEvent)(unsafe.Pointer(&evts[0]))
-				evts = evts[unix.SizeofInotifyEvent:]
-				var name string
-				if evt.Len > 0 {
-					nameb := evts[:evt.Len-1]
-					evts = evts[evt.Len:]
-					nameb = bytes.TrimRight(nameb, "\000")
-					name = string(nameb)
-				}
-				if name == sdcName {
-					switch {
-					case evt.Mask&unix.IN_CREATE != 0:
-						p.events <- gui.SDCardEvent{Inserted: true}.Event()
-					case evt.Mask&unix.IN_DELETE != 0:
-						p.events <- gui.SDCardEvent{Inserted: false}.Event()
-					}
-				}
-			}
-		}
-	}()
-	return nil
-}
-
-func (p *Platform) initPrinterNotifier() error {
-	const devDir = "/dev/usb"
-	_ = os.MkdirAll(devDir, 0o755)
-	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
-	if err != nil {
-		return fmt.Errorf("printer inotify_init1: %w", err)
-	}
-	f := os.NewFile(uintptr(fd), "inotify-printer")
-	var flags uint32 = unix.IN_CREATE | unix.IN_DELETE
-	if _, err = unix.InotifyAddWatch(fd, devDir, flags); err != nil {
-		f.Close()
-		return fmt.Errorf("inotify_add_watch (%s): %w", devDir, err)
-	}
-
-	initialModel := readPrinterModel()
-	initial := initialModel != ""
-	go func() {
-		defer f.Close()
-		p.events <- gui.PrinterEvent{Connected: initial, Model: initialModel}.Event()
-		p.Wakeup()
-		var buf [(unix.SizeofInotifyEvent + unix.PathMax + 1) * 20]byte
-		for {
-			n, err := f.Read(buf[:])
-			if err != nil {
-				logutil.DebugLog("printer notifier read err: %v", err)
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-			evts := buf[:n]
-			for len(evts) > 0 {
-				evt := (*unix.InotifyEvent)(unsafe.Pointer(&evts[0]))
-				evts = evts[unix.SizeofInotifyEvent:]
-				var name string
-				if evt.Len > 0 {
-					nameb := evts[:evt.Len-1]
-					evts = evts[evt.Len:]
-					nameb = bytes.TrimRight(nameb, "\000")
-					name = string(nameb)
-				}
-				if !strings.HasPrefix(name, "lp") {
-					continue
-				}
-				switch {
-				case evt.Mask&unix.IN_CREATE != 0:
-					model := readPrinterModel()
-					p.printerCached = nil
-					p.supportsPCL = false
-					logutil.DebugLog("Printer event: connected model=%s", model)
-					p.events <- gui.PrinterEvent{Connected: true, Model: model}.Event()
-					p.Wakeup()
-				case evt.Mask&unix.IN_DELETE != 0:
-					p.printerCached = nil
-					p.supportsPCL = false
-					logutil.DebugLog("Printer event: disconnected")
-					p.events <- gui.PrinterEvent{Connected: false}.Event()
-					p.Wakeup()
-				}
-			}
-		}
-	}()
-
-	// Fallback poll in case inotify misses events.
-	go func() {
-		prevConnected, prevModel := initial, initialModel
-		for {
-			connected, model := p.PrinterStatus()
-			if connected != prevConnected || (model != "" && model != prevModel) {
-				prevConnected, prevModel = connected, model
-				p.printerCached = nil
-				p.supportsPCL = false
-				logutil.DebugLog("Printer poll: connected=%v model=%s", connected, model)
-				p.events <- gui.PrinterEvent{Connected: connected, Model: model}.Event()
-				p.Wakeup()
-			}
-			time.Sleep(500 * time.Millisecond)
-		}
-	}()
-	return nil
-}
-
-func readPrinterModel() string {
-	paths := []string{}
-	if matches, err := filepath.Glob("/sys/class/usb/lp*/device/ieee1284_id"); err == nil {
-		paths = append(paths, matches...)
-	}
-	if matches, err := filepath.Glob("/sys/bus/usb/devices/*/ieee1284_id"); err == nil {
-		paths = append(paths, matches...)
-	}
-	for _, p := range paths {
-		if data, err := os.ReadFile(p); err == nil {
-			if m := parseIEEE1284(string(data)); m != "" {
-				return m
-			}
-		}
-	}
-	// fallback to product string
-	for _, p := range []string{"/sys/class/usb/lp0/device/product"} {
-		if data, err := os.ReadFile(p); err == nil {
-			return strings.TrimSpace(string(data))
-		}
-	}
-	return ""
-}
-
-func parseIEEE1284(s string) string {
-	fields := strings.Split(strings.TrimSpace(s), ";")
-	var mfg, mdl string
-	for _, f := range fields {
-		parts := strings.SplitN(f, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		switch strings.ToUpper(parts[0]) {
-		case "MFG":
-			mfg = parts[1]
-		case "MDL":
-			mdl = parts[1]
-		}
-	}
-	if mfg != "" && mdl != "" {
-		return fmt.Sprintf("%s %s", mfg, mdl)
-	}
-	if mdl != "" {
-		return mdl
-	}
-	return ""
 }
 
 func mountFS() error {
@@ -578,9 +256,7 @@ func mountFS() error {
 	return nil
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+func releaseMemory() {
+	runtime.GC()
+	rdebug.FreeOSMemory()
 }

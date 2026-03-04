@@ -1,0 +1,8 @@
+FONTLOG for SeedEtcher
+======================
+
+This file records changes for the SeedEtcher font family.
+
+v1.0
+----
+- initial release for SeedEtcher etching optimized plate rendering

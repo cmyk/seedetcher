@@ -13,111 +13,12 @@ nix build .#image-gadget-debug
 If build fails because of has error use `--impure`
 Debug builds use `--print-build-logs`
 
+## Local Machine Notes
 
-## Developemnt Environmet
+Host/VM-specific setup notes are intentionally kept outside this repository.
 
-Ubuntu VM on Mac.
-
-### USB-GADET DETECTION on VM
-
-#### Recap of Added/Modified Files & Reloading udevadm
-
-##### 1. Added/Modified Files
-
-##### 1.1 /etc/udev/rules.d/99-serial-settings.rules
-- This is the `udev` rule that detects the Pi Zero’s USB serial interfaces and triggers the update script.
-- Example rule:
-  
-  `ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="0525", ATTRS{idProduct}=="a4a7", KERNEL=="ttyACM*", SYMLINK+="usbzero%n", RUN+="/usr/local/bin/usbdev_checker.sh"`
-
-##### 1.2 /usr/local/bin/usbdev_checker.sh
-- This script ensures both serial devices are present before running `update_usbdevs.sh`.
-- It prevents duplicate script execution.
-
-##### 1.3 /usr/local/bin/update_usbdevs.sh
-- This script assigns the detected serial devices and updates the environment variables.
-- It logs device assignments and prevents duplicate messages.
-
-**(ATTENTION: run source ~/.bashrc to update the USBDEVx shell vars)**
-
-#### 2. How to Reload udevadm
-
-##### Reload udev rules:
-
-```bash 
-sudo udevadm control --reload-rules
-```
-
-##### Apply changes immediately:
-
-```bash
-  sudo udevadm trigger
-```
-
-##### Check if udev triggered the script:
-
-```bash
-  journalctl -u systemd-udevd --no-pager | grep usbdev_checker.sh
-```
-
-##### Disabled ModemManager 
-
-```bash
-sudo systemctl stop ModemManager
-sudo systemctl disable ModemManager
-```
-
-##### Apparmor:
-
-```bash
-sudo systemctl stop apparmor
-sudo systemctl disable apparmor
-sudo reboot
-```
-
-
-## NixOS Stuff
-
-Install multiuser NixOS
-
-```bash
-sudo systemctl restart nix-daemon
-sudo systemctl status nix-daemon
-
-sudo nvim /etc/nix/nix.conf
->> 
-extra-experimental-features = nix-command flakes
-trusted-users = root <user>
-keep-outputs = true
-keep-derivations = true   
-auto-optimise-store = true
-```
-
-If you want to remove all temporary build artifacts (like failed derivations), run:
-nix-store --gc --print-dead | xargs nix-store --delete
-nix build .#<package-name> --show-trace
-
-nix-store --gc --print-dead
-nix-store --gc
-
-
-## Ubuntu config changes
-
-If you want /tmp to be stored in RAM (makes it faster but non-persistent):
-
-1️) Edit /etc/fstab:
-	
-	```bash
-	sudo nano /etc/fstab
-	```
-
-2️) Add this line:
-
-	```bash
-	tmpfs /tmp tmpfs defaults,noatime,mode=1777 0 0
-	```
-
-3) Reboot
+- keep private notes in your own local/private repo (example: `~/seedetcher-private-notes`)
+- optional symlink from this repo: `.tmp/private-notes`
 
 ## GO Dependecies trouble?
 
@@ -165,14 +66,16 @@ go run cmd/cli/main.go -w multisig \
 - `-o` (default: `/home/cmyk/PDF`): output directory (PDF)
 - `-papersize` (default: `A4`): paper size (`A4` or `Letter`)
 - `-verbose` (default: `false`): verbose logging
-- `-w` (default: `multisig`): wallet fixture (`singlesig`, `multisig`, `multisig-mainnet-2of3`, `multisig-3of5`, `multisig-7of10`)
-- `-png-out` (default: empty): optional output directory for plate PNGs
-- `-dpi` (default: `600`): raster output DPI
+- `-w` (default: `multisig`): wallet fixture (`seed-12`, `seed-15`, `seed-18`, `seed-21`, `singlesig`, `singlesig-longwords`, `singlesig-nested-p2sh-p2wpkh`, `multisig`, `multisig-mainnet-2of3`, `multisig-nested-2of3`, `multisig-2of2`, `multisig-2of4`, `multisig-3of4`, `multisig-3of5`, `multisig-4of7`, `multisig-5of7`, `multisig-7of10`)
+- `-png-out` (default: empty): optional output directory for plate PNGs (mirrored/inverted if set)
+- `-dpi` (default: `600`): raster output DPI when using `-png-out`
 - `-mirror` (default: `false`): mirror raster output horizontally (toner transfer)
 - `-invert` (default: `false`): invert raster output (white/black swap)
-- `-desc-qr-mm` (default: `75.0`): maximum descriptor QR size in millimeters
+- `-desc-qr-mm` (default: `80.0`): descriptor QR size in millimeters (includes safe zone)
 - `-pcl-out` (default: empty): optional output path for raw PCL
 - `-wallet-name` (default: empty): optional wallet name printed on plates (defaults to `SEEDETCHER`)
+- `-etch-stats-page` (default: `false`): append an additional etch stats page with per-plate coverage and PSU guidance
+- `-compact-2of3` (default: `false`): use compact single-sided layout for `sortedmulti` 2-of-3 descriptor shares
 
 ### Host-mode printer check (usblp)
 - `image`/`image-debug` load `usblp` automatically (CONFIG_USB_PRINTER). With a USB printer attached you should see dmesg like `usblp0: USB Bidirectional printer` and `/dev/usb/lp0` present.
@@ -187,6 +90,9 @@ go run cmd/cli/main.go -w multisig \
 - -png-out/-dpi/-mirror/-invert/-desc-qr-mm apply to raster plate generation; resulting PDF, PNG, and PCL outputs all reflect those settings.
 - `-pcl-out <path|dir>` writes raw PCL (mirrored/inverted if flags set). If a directory or trailing `/` is provided, the file is auto-named `<wallet>.pcl` inside it.
 - Send PCL over USB: `scripts/print_pcl.sh <file.pcl> [printer_dev]` (defaults `/dev/usb/lp0`, resets channel and streams with `dd bs=16k`).
+- On Pi host mode (`/dev/usb/lp0`), controller printing uses direct 1bpp plate-to-PCL streaming (lower memory, faster).
+- Gadget mode fallback (`/dev/ttyGS1`) still uses raster page composition + PDF serialization for capture/dev flows.
+- Plate QR circular data modules are intentionally undersized (`plateQRDotScale = 0.7` in `printer/raster.go`) to leave etch-growth headroom; structural islands (finder/alignment) remain square.
 
 ## Versioning
 
@@ -197,6 +103,66 @@ go run cmd/cli/main.go -w multisig \
   ```
   `version.String()` prefers `Build` when set, otherwise falls back to `Tag`.
 - The plate renderer uses `version.String()`.
+
+### Release image builds (`mkRelease`)
+
+Set the release tag in `version/version.go` and run:
+
+```bash
+nix run .#mkRelease
+```
+
+This builds from the current checkout by default (works on forks), then writes:
+
+```text
+release/seedetcher-vX.Y.Z.img
+```
+
+To override version explicitly:
+
+```bash
+nix run .#mkRelease -- vX.Y.Z
+```
+
+To build/stamp from a different flake ref, set:
+
+```bash
+SE_RELEASE_FLAKE=github:seedetcher/seedetcher/vX.Y.Z nix run .#mkRelease -- vX.Y.Z
+```
+
+### Reproducibility check
+
+Release images are intended to be deterministic. Verify your local build hash against the published artifact hash:
+
+```bash
+sha256sum release/seedetcher-vX.Y.Z.img
+# or on macOS:
+shasum -a 256 release/seedetcher-vX.Y.Z.img
+```
+
+### Third-party license release check
+
+Release images include third-party printing/runtime components (CUPS, cups-filters,
+Ghostscript, brlaser). Before publishing a release:
+
+1. Review/update [`THIRD_PARTY_LICENSES.md`](../THIRD_PARTY_LICENSES.md).
+2. Ensure `flake.lock` is committed in the release tag.
+3. In release notes, link to:
+   - the source tag/commit,
+   - `THIRD_PARTY_LICENSES.md`,
+   - any local patch/build changes for bundled GPL/AGPL components.
+
+Minimal release-note snippet:
+
+```md
+## Source and Licensing
+- Source tag: <TAG>
+- Third-party licenses: THIRD_PARTY_LICENSES.md
+- GPL/AGPL local patches: none
+```
+
+For the complete release flow, see:
+`docs/dev/release-checklist.md`
 
 ## Shell Commands on Zero
 

@@ -20,6 +20,8 @@ Build directly if needed: `nix build .#controller` or `nix build .#controller-de
 | `image-gadget`             | `controller`       | Gadget (`dwc2,g_serial`)         | Console on `ttyGS0`/HDMI; no debug hooks.                     |
 | `image-gadget-debug`       | `controller-debug` | Gadget (`dwc2,g_serial`)         | Adds serial console + reload flow via `/dev/ttyGS1`.          |
 
+All four image outputs above include the integrated HBP/CUPS runtime support.
+
 Build commands (examples):
 - `nix build .#image` → `result/seedetcher.img`
 - `nix build .#image-debug` → `result/seedetcher-debug.img`
@@ -37,7 +39,10 @@ Flash via `./scripts/flash-sdcard.sh -i seedetcher-debug.img` from macOS, pointi
 - Development with serial shell/hot reload: use `image-gadget-debug`.
 - Production/field use without shell: use `image`.
 - Printing directly to USB printer (no host PC in the loop): use `image`/`image-debug` (switches OTG to host and loads `usblp` so `/dev/usb/lp0` appears).
+- For HBP runtime behavior and operational details, see `docs/dev/hbp-runtime.md`.
 
 ## Host-mode notes
 - Host images set `dr_mode=host` (no `g_serial` in `cmdline.txt`) and auto-load `usblp`.
 - Host mode shell/debug path is UART (no gadget shell).
+- Host printing path uses direct 1bpp PCL streaming to `/dev/usb/lp0`.
+- Gadget images use raster-to-PDF fallback path for capture/dev (`/dev/ttyGS1`), not direct PCL.

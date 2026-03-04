@@ -1,10 +1,8 @@
 package gui
 
 import (
-	"encoding/hex"
 	"fmt"
 	"math"
-	"strings"
 
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/descriptor/shard"
@@ -102,14 +100,10 @@ func (s *ShardPreviewScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		title := layoutTitle(ctx, ops, dims.X, th.Text, "Descriptor Shares")
 
 		sh := s.Shares[0]
-		wid := strings.ToUpper(hex.EncodeToString(sh.WalletID[:]))
-		sid := strings.ToUpper(hex.EncodeToString(sh.SetID[:4]))
 		body := fmt.Sprintf(
-			"Need %d of %d descriptor shares to recover.\n\nWID: %s\nSET: %s\n\nContinue to wallet label and print setup.",
+			"Need %d of %d descriptor shares to recover.\n\nContinue to wallet label and print setup.",
 			sh.Threshold,
 			sh.Total,
-			wid,
-			sid,
 		)
 		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, title, body)
 

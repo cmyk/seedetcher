@@ -19,6 +19,7 @@ func main() {
 	if f.WalletName != "" {
 		printer.SetWalletLabel(f.WalletName)
 	}
+	printer.SetCompactDescriptor2of3Enabled(f.Compact2of3)
 
 	usr, err := user.Current()
 	if err != nil {
@@ -82,19 +83,33 @@ func main() {
 
 	printer.SetDescriptorQRSize(f.DescQRMM)
 	opts := printer.RasterOptions{
-		DPI:    float64(f.DPI),
-		Mirror: f.Mirror,
-		Invert: f.Invert,
+		DPI:           float64(f.DPI),
+		Mirror:        f.Mirror,
+		Invert:        f.Invert,
+		EtchStatsPage: f.EtchStatsPage,
 	}
 	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, 0, opts, nil)
 	if err != nil {
 		fmt.Printf("Error creating raster plates: %v\n", err)
 		os.Exit(1)
 	}
-	pages, err := printer.ComposePages(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, nil)
+	pages, err := printer.ComposePagesWithInvert(seedImgs, descImgs, printer.PaperSize(f.PaperSize), opts.DPI, opts.Invert, nil)
 	if err != nil {
 		fmt.Printf("Error composing pages: %v\n", err)
 		os.Exit(1)
+	}
+	if opts.EtchStatsPage {
+		report, err := printer.BuildEtchStatsReport(seedImgs, descImgs, opts.DPI, printer.PaperSize(f.PaperSize))
+		if err != nil {
+			fmt.Printf("Error building etch stats report: %v\n", err)
+			os.Exit(1)
+		}
+		statsPage, err := printer.RenderEtchStatsPage(report, printer.PaperSize(f.PaperSize), opts.DPI)
+		if err != nil {
+			fmt.Printf("Error rendering etch stats page: %v\n", err)
+			os.Exit(1)
+		}
+		pages = append(pages, statsPage)
 	}
 
 	file, err := os.Create(filepath.Join(outputDir, config.Name+".pdf"))

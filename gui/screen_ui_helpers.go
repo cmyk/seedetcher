@@ -12,10 +12,11 @@ import (
 )
 
 type ChoiceScreen struct {
-	Title   string
-	Lead    string
-	Choices []string
-	choice  int
+	Title    string
+	Lead     string
+	Choices  []string
+	LeadLeft bool
+	choice   int
 }
 
 func (s *ChoiceScreen) Choose(ctx *Context, ops op.Ctx, th *Colors) (int, bool) {
@@ -64,9 +65,38 @@ func (s *ChoiceScreen) Draw(ctx *Context, ops op.Ctx, th *Colors, dims image.Poi
 	layoutTitle(ctx, ops, dims.X, th.Text, "%s", s.Title)
 
 	_, bottom := r.CutTop(leadingSize)
-	sz := widget.Labelwf(ops.Begin(), ctx.Styles.lead, dims.X-2*8, th.Text, "%s", s.Lead)
-	content, lead := bottom.CutBottom(leadingSize)
-	op.Position(ops, ops.End(), lead.Center(sz))
+	leadStyle := ctx.Styles.lead
+	leadWidth := dims.X - 2*8
+	leadPosX := 8
+	if s.LeadLeft {
+		const (
+			leftPad  = 10
+			rightPad = 10
+			navGap   = 2
+		)
+		rightReserved := assets.NavBtnPrimary.Bounds().Dx() + navGap
+		leadWidth = dims.X - leftPad - rightPad - rightReserved
+		if leadWidth < 80 {
+			leadWidth = 80
+		}
+		leadPosX = leftPad
+		leadStyle.Alignment = text.AlignStart
+	}
+	sz := widget.Labelwf(ops.Begin(), leadStyle, leadWidth, th.Text, "%s", s.Lead)
+	leadHeight := leadingSize
+	if sz.Y > leadHeight {
+		leadHeight = sz.Y
+	}
+	content, lead := bottom.CutBottom(leadHeight)
+	if s.LeadLeft {
+		y := lead.Max.Y - sz.Y
+		if y < lead.Min.Y {
+			y = lead.Min.Y
+		}
+		op.Position(ops, ops.End(), image.Pt(leadPosX, y))
+	} else {
+		op.Position(ops, ops.End(), lead.Center(sz))
+	}
 
 	content = content.Shrink(16, 0, 16, 0)
 
@@ -126,7 +156,7 @@ type NavButton struct {
 	Progress float32
 }
 
-func layoutNavigation(ctx *Context, inp *InputTracker, ops op.Ctx, th *Colors, dims image.Point, btns ...NavButton) image.Rectangle {
+func layoutNavigation(_ *Context, inp *InputTracker, ops op.Ctx, th *Colors, dims image.Point, btns ...NavButton) image.Rectangle {
 	navsz := assets.NavBtnPrimary.Bounds().Size()
 	button := func(ops op.Ctx, b NavButton, pressed bool) {
 		if b.Style == StyleNone {
@@ -201,7 +231,7 @@ func layoutBodyLeftUnderTitle(ctx *Context, ops op.Ctx, dims image.Point, col co
 		leftPad      = 10
 		rightPad     = 10
 		titleBodyGap = 10
-		navGap       = 6
+		navGap       = 2
 	)
 	rightReserved := assets.NavBtnPrimary.Bounds().Dx() + navGap
 	width := dims.X - leftPad - rightPad - rightReserved

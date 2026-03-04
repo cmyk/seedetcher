@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -14,6 +15,7 @@ import (
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/descriptor/legacy"
 	"seedetcher.com/descriptor/shard"
+	"seedetcher.com/descriptor/urxor2of3"
 	"seedetcher.com/gui/assets"
 	"seedetcher.com/gui/op"
 	"seedetcher.com/gui/text"
@@ -23,9 +25,13 @@ import (
 
 // SDCardGateScreen enforces SD-card removal before entering sensitive flows.
 type SDCardGateScreen struct {
-	Theme *Colors
-	Next  Screen
-	warn  *ConfirmWarningScreen
+	Theme       *Colors
+	Next        Screen
+	warn        *ConfirmWarningScreen
+	prepStarted bool
+	prepDone    bool
+	prepErr     error
+	prepCh      chan error
 }
 
 func (s *SDCardGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
@@ -38,6 +44,41 @@ func (s *SDCardGateScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	th := s.Theme
 	if th == nil {
 		th = &singleTheme
+	}
+	// In PCL/PS-only mode we still mount SD-backed runtime at boot in host images.
+	// Detach those mounts before asking the user to physically pull the card.
+	if ctx != nil && !ctx.HBPRuntimeReady && !ctx.SDRemovalPrepared {
+		if !s.prepStarted {
+			s.prepStarted = true
+			s.prepCh = make(chan error, 1)
+			go func() {
+				s.prepCh <- ctx.Platform.PrepareSDForRemoval()
+			}()
+		}
+		if !s.prepDone {
+			select {
+			case err := <-s.prepCh:
+				s.prepDone = true
+				s.prepErr = err
+			default:
+			}
+		}
+		if s.prepDone && s.prepErr != nil {
+			showError(ctx, ops, th, fmt.Errorf("SD removal prep failed: %v", s.prepErr))
+			return &MainMenuScreen{}
+		}
+		if s.prepDone && s.prepErr == nil {
+			ctx.SDRemovalPrepared = true
+		}
+		if !s.prepDone {
+			dims := ctx.Platform.DisplaySize()
+			op.ColorOp(ops, th.Background)
+			titleRect := layoutTitle(ctx, ops, dims.X, th.Text, "Preparing SD removal")
+			layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, titleRect, "Detaching SD-backed runtime.\nPlease wait...")
+			ctx.WakeupAt(ctx.Platform.Now().Add(200 * time.Millisecond))
+			ctx.Frame()
+			return s
+		}
 	}
 	if s.warn == nil {
 		s.warn = &ConfirmWarningScreen{
@@ -91,6 +132,8 @@ type RecoverDescriptorFlowScreen struct {
 	recoveredURPayload  []byte
 	recoveredQR         image.Image
 	decodedShares       map[uint8]shard.Share
+	decodedURShares     map[string]struct{}
+	decodedURSeqLen     int
 	modeChoice          int
 	displayMode         recoverDisplayMode
 	viewQR              image.Image
@@ -112,6 +155,8 @@ func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			s.recoveredURPayload = nil
 			s.recoveredQR = nil
 			s.decodedShares = make(map[uint8]shard.Share)
+			s.decodedURShares = make(map[string]struct{})
+			s.decodedURSeqLen = 0
 		}
 	}()
 
@@ -121,6 +166,9 @@ func (s *RecoverDescriptorFlowScreen) Update(ctx *Context, ops op.Ctx) Screen {
 	}
 	if s.decodedShares == nil {
 		s.decodedShares = make(map[uint8]shard.Share)
+	}
+	if s.decodedURShares == nil {
+		s.decodedURShares = make(map[string]struct{})
 	}
 
 	switch s.stage {
@@ -148,8 +196,9 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 	}()
 
 	res, ok := (&ScanScreen{
-		Title: "Recover Descriptor",
-		Lead:  s.scanLead(),
+		Title:            "Recover Descriptor",
+		Lead:             s.scanLead(),
+		RawURXOR2of3Only: true,
 	}).Scan(ctx, ops)
 	if !ok {
 		if s.returnScreen != nil {
@@ -160,12 +209,70 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 
 	switch v := res.(type) {
 	case urtypes.OutputDescriptor:
-		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
+		showError(ctx, ops, th, fmt.Errorf("Not part of a descriptor share set!"))
 		return s
 	case []byte:
 		raw := strings.TrimSpace(string(v))
 		up := strings.ToUpper(raw)
+		if typ, _, seqLen, ok := urxor2of3.ParseShare(raw); ok && typ == "crypto-output" && seqLen >= urxor2of3.MinShares {
+			if len(s.decodedShares) > 0 {
+				showError(ctx, ops, th, fmt.Errorf("share set mismatch: mixed descriptor share formats"))
+				return s
+			}
+			if s.decodedURSeqLen == 0 {
+				s.decodedURSeqLen = seqLen
+			} else if s.decodedURSeqLen != seqLen {
+				showError(ctx, ops, th, fmt.Errorf("share set mismatch: mixed descriptor share sets"))
+				return s
+			}
+			key := strings.ToLower(strings.TrimSpace(raw))
+			if _, exists := s.decodedURShares[key]; exists {
+				showError(ctx, ops, th, fmt.Errorf("share already scanned"))
+				return s
+			}
+			s.decodedURShares[key] = struct{}{}
+			parts := make([]string, 0, len(s.decodedURShares))
+			for p := range s.decodedURShares {
+				parts = append(parts, p)
+			}
+			payload, err := urxor2of3.Combine(parts)
+			if err != nil {
+				if errors.Is(err, urxor2of3.ErrInsufficientShares) {
+					ctx.addToast(fmt.Sprintf("Captured share (%d/%d)", len(s.decodedURShares), s.decodedURSeqLen), 1700)
+					return s
+				}
+				delete(s.decodedURShares, key)
+				showError(ctx, ops, th, fmt.Errorf("combine shares failed: %v", err))
+				return s
+			}
+			rawPayload := append([]byte(nil), payload...)
+			recoveredUR, err := safeEncodeURPayload(rawPayload)
+			if err != nil {
+				showError(ctx, ops, th, fmt.Errorf("failed to encode recovered descriptor"))
+				logutil.DebugLog("recover UR encode failed: %v", err)
+				return s
+			}
+			s.recoveredUR = recoveredUR
+			s.recoveredText = buildDescriptorText(rawPayload)
+			s.recoveredPayloadRaw = rawPayload
+			s.recoveredURPayload = rawPayload
+			dims := ctx.Platform.DisplaySize()
+			qrSize := dims.X
+			if dims.Y < qrSize {
+				qrSize = dims.Y
+			}
+			qrSize -= 8
+			s.recoveredQR = renderQRImage(s.recoveredUR, qrSize)
+			s.returnScreen = &ActionChoiceScreen{Theme: th}
+			s.stage = recoverStageExport
+			ctx.addToast("Descriptor recovered", 1200)
+			return s
+		}
 		if strings.HasPrefix(up, shard.Prefix) {
+			if len(s.decodedURShares) > 0 {
+				showError(ctx, ops, th, fmt.Errorf("share set mismatch: mixed descriptor share formats"))
+				return s
+			}
 			sh, err := shard.Decode(up)
 			if err != nil {
 				showError(ctx, ops, th, fmt.Errorf("invalid share QR: %v", err))
@@ -222,13 +329,13 @@ func (s *RecoverDescriptorFlowScreen) scanStep(ctx *Context, ops op.Ctx, th *Col
 			ctx.addToast("Descriptor recovered", 1200)
 			return s
 		}
-		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
+		showError(ctx, ops, th, fmt.Errorf("Not part of a descriptor share set!"))
 		return s
 	case string:
-		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
+		showError(ctx, ops, th, fmt.Errorf("Not part of a descriptor share set!"))
 		return s
 	default:
-		showError(ctx, ops, th, fmt.Errorf("Not part of a shamir split descriptor!"))
+		showError(ctx, ops, th, fmt.Errorf("Not part of a descriptor share set!"))
 		return s
 	}
 }
@@ -257,6 +364,8 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 				s.recoveredURPayload = nil
 				s.recoveredQR = nil
 				s.decodedShares = make(map[uint8]shard.Share)
+				s.decodedURShares = make(map[string]struct{})
+				s.decodedURSeqLen = 0
 				s.stage = recoverStageScan
 				ctx.addToast("Recovery state deleted", 1200)
 				if s.returnScreen != nil {
@@ -285,15 +394,7 @@ func (s *RecoverDescriptorFlowScreen) exportStep(ctx *Context, ops op.Ctx, th *C
 		titleY := 8 // fixed top offset
 		op.Position(ops, ops.End(), image.Pt((dims.X-tsz.X)/2, titleY))
 
-		wid, sid := "", ""
-		if base, ok := firstDecodedShare(s.decodedShares); ok {
-			wid = strings.ToUpper(fmt.Sprintf("%x", base.WalletID))
-			sid = strings.ToUpper(fmt.Sprintf("%x", base.SetID[:4]))
-		}
 		lead := "Shares reconstructed successfully."
-		if wid != "" && sid != "" {
-			lead = fmt.Sprintf("Shares reconstructed successfully.\nWID: %s\nSET: %s", wid, sid)
-		}
 		leadStyle := ctx.Styles.lead
 		leadStyle.Alignment = text.AlignStart
 		lsz := widget.Labelwf(ops.Begin(), leadStyle, textW, th.Text, "%s", lead)
@@ -406,6 +507,13 @@ func (s *RecoverDescriptorFlowScreen) updateViewerQR(ctx *Context, dims image.Po
 }
 
 func (s *RecoverDescriptorFlowScreen) scanLead() string {
+	if len(s.decodedURShares) > 0 {
+		total := s.decodedURSeqLen
+		if total <= 0 {
+			total = urxor2of3.MinShares
+		}
+		return fmt.Sprintf("Captured %d/%d descriptor shares", len(s.decodedURShares), total)
+	}
 	if len(s.decodedShares) == 0 {
 		return "Scan descriptor share"
 	}
@@ -580,8 +688,7 @@ func buildDescriptorText(payload []byte) string {
 }
 
 func formatDescriptorText(desc urtypes.OutputDescriptor) string {
-	var wrap func(urtypes.Script, string) string
-	wrap = func(script urtypes.Script, inner string) string {
+	wrap := func(script urtypes.Script, inner string) string {
 		switch script {
 		case urtypes.P2WSH:
 			return "wsh(" + inner + ")"

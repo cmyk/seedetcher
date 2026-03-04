@@ -12,7 +12,7 @@ import (
 	"seedetcher.com/gui/widget"
 )
 
-const fingerprintsPerPage = 5
+const fingerprintsPerPage = 7
 
 // FingerprintsScreen reviews all cosigner fingerprints with pagination.
 type FingerprintsScreen struct {
@@ -97,8 +97,10 @@ func (s *FingerprintsScreen) Update(ctx *Context, ops op.Ctx) Screen {
 			fp := strings.ToUpper(fmt.Sprintf("%08x", s.Descriptor.Keys[i].MasterFingerprint))
 			lines = append(lines, fmt.Sprintf("%d. %s", i+1, fp))
 		}
-		lines = append(lines, "")
-		lines = append(lines, fmt.Sprintf("Page %d/%d", s.Page+1, totalPages))
+		if totalPages > 1 {
+			lines = append(lines, "")
+			lines = append(lines, fmt.Sprintf("Page %d/%d", s.Page+1, totalPages))
+		}
 		body := strings.Join(lines, "\n")
 		arrowW := assets.ArrowLeft.Bounds().Dx()
 		navW := assets.NavBtnPrimary.Bounds().Dx()
@@ -112,7 +114,7 @@ func (s *FingerprintsScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		if width < 80 {
 			width = 80
 		}
-		style := ctx.Styles.body
+		style := ctx.Styles.subtitle
 		style.Alignment = text.AlignStart
 		bodySize := widget.Labelwf(ops.Begin(), style, width, th.Text, "%s", body)
 		bodyPos := image.Pt(leftPad, title.Max.Y+10)

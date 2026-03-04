@@ -1,9 +1,7 @@
 package gui
 
 import (
-	"encoding/hex"
 	"fmt"
-	"strings"
 
 	"seedetcher.com/bc/urtypes"
 	"seedetcher.com/descriptor/shard"
@@ -63,12 +61,7 @@ func (s *ShardedPolicyScreen) Update(ctx *Context, ops op.Ctx) Screen {
 		op.ColorOp(ops, th.Background)
 		title := layoutTitle(ctx, ops, dims.X, th.Text, "Sharding")
 
-		walletID := "N/A"
-		setID := strings.ToUpper(hex.EncodeToString(s.SetID[:4]))
-		if len(s.Shares) > 0 {
-			walletID = strings.ToUpper(hex.EncodeToString(s.Shares[0].WalletID[:]))
-		}
-		body := fmt.Sprintf("Using descriptor values:\n\nt = %d\nn = %d\nWID: %s\nSET: %s", desc.Threshold, len(desc.Keys), walletID, setID)
+		body := fmt.Sprintf("Using descriptor values:\n\nt = %d\nn = %d", desc.Threshold, len(desc.Keys))
 		layoutBodyLeftUnderTitle(ctx, ops, dims, th.Text, title, body)
 
 		layoutNavigation(ctx, inp, ops, th, dims,
