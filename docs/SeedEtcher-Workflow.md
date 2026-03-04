@@ -118,7 +118,7 @@ The new layout is designed for maximal mask coverage of a 100x100mm plate. Put t
 
 *If you sanded to a brushed look, the direction of the brushed lines is important. Light breaks differently on brushed metal depending on the direction it runs. If you hold a plate towards a light source, horizontal lines will diffuse the light and reflections, vertical lines will reflect more. So, the brushed lines should run horizontally to your plate layout. The QR code is easier to scan when looking normally at the plate. This is a detail but it is worth mentioning.*
 
-1) ### SeedEtcher Transfer Stack
+3) ### SeedEtcher Transfer Stack
 With the SeedEtcher Transfer Stack it is now possible to heat transfer both sides of the plate at once.
 
 ![SeedEtcher Transfer Stack](assets/workflow/seedetcher-transfer-stack.png)
@@ -136,14 +136,14 @@ Pressure is important. Do it on the floor where you can really lean onto the iro
 Optional: Put a stack of steel plates on top of the hot plate (heat sink).
 Let it cool off completely! It will take a while (20m). The transfer paper should buckle and lift off the metal all by itself. The transfer paper should come off without any toner sticking to it. 
 
-1) ### Bake plate in oven (don't skip this step)
+5) ### Bake plate in oven (don't skip this step)
 Bake for 12 minutes at 180°C, no airflow.  
 This reflows the toner and makes it stick even more to the plate and closes pinholes.
 ***IMPORTANT:*** With the new layout most of the plate is covered in toner mask to the edges. Use a baking tray, put two silicon sheets next to each other (they are heat resistant). Place a tee cup that is high enough to lean the plate against on one sheet. The silcone prevents the cup and plate from sliding. Put Bottom edge of the plate on the silicone and the lean the top edege against the cup.
 Make the setup in cold oven.
 Let this cool down when done baking and only then move it. If the plate falls while it's hot your toner mask is ruined.
 
-1) ### Repairs
+6) ### Repairs
 If the transfer wasn’t perfect you can do repairs by using nail polish or stop out ground and a small brush or anti-etching pens ([amazon](https://a.co/d/5DnOhRR))
 
 ### Transfer Troubleshooting
