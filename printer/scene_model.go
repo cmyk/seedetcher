@@ -1,14 +1,23 @@
 package printer
 
 type PrimitiveKind string
+type FillMode string
 
 const (
 	PrimitiveRect   PrimitiveKind = "rect"
 	PrimitiveRound  PrimitiveKind = "rounded_rect"
 	PrimitiveCircle PrimitiveKind = "circle"
+	PrimitiveRing   PrimitiveKind = "ring"
 	PrimitiveText   PrimitiveKind = "text"
 	PrimitivePath   PrimitiveKind = "path"
 	PrimitiveGroup  PrimitiveKind = "group"
+)
+
+const (
+	FillModeNone   FillMode = "none"
+	FillModeHatch  FillMode = "hatch"
+	FillModeOffset FillMode = "offset"
+	FillModeSpiral FillMode = "spiral"
 )
 
 type TextDirection string
@@ -31,20 +40,22 @@ type ScenePrimitive struct {
 	Kind PrimitiveKind `json:"kind"`
 
 	// Geometry (mm-based scene space)
-	XMM      float64 `json:"x_mm,omitempty"`
-	YMM      float64 `json:"y_mm,omitempty"`
-	WidthMM  float64 `json:"width_mm,omitempty"`
-	HeightMM float64 `json:"height_mm,omitempty"`
-	CXMM     float64 `json:"cx_mm,omitempty"`
-	CYMM     float64 `json:"cy_mm,omitempty"`
-	RadiusMM float64 `json:"radius_mm,omitempty"`
-	PathData string  `json:"path_data,omitempty"`
+	XMM         float64 `json:"x_mm,omitempty"`
+	YMM         float64 `json:"y_mm,omitempty"`
+	WidthMM     float64 `json:"width_mm,omitempty"`
+	HeightMM    float64 `json:"height_mm,omitempty"`
+	ThicknessMM float64 `json:"thickness_mm,omitempty"`
+	CXMM        float64 `json:"cx_mm,omitempty"`
+	CYMM        float64 `json:"cy_mm,omitempty"`
+	RadiusMM    float64 `json:"radius_mm,omitempty"`
+	PathData    string  `json:"path_data,omitempty"`
 
 	// Paint/style
-	FillColor   string  `json:"fill_color,omitempty"`
-	FillRule    string  `json:"fill_rule,omitempty"`
-	StrokeColor string  `json:"stroke_color,omitempty"`
-	StrokeMM    float64 `json:"stroke_mm,omitempty"`
+	FillColor   string   `json:"fill_color,omitempty"`
+	FillRule    string   `json:"fill_rule,omitempty"`
+	FillMode    FillMode `json:"fill_mode,omitempty"`
+	StrokeColor string   `json:"stroke_color,omitempty"`
+	StrokeMM    float64  `json:"stroke_mm,omitempty"`
 
 	// Text
 	Text       string        `json:"text,omitempty"`

@@ -21,25 +21,25 @@ func TestWalletSceneSnapshots(t *testing.T) {
 			wallet:      "singlesig",
 			compact2of3: false,
 			wantScenes:  1,
-			wantHash:    "6fd6d6a121d41d72f24d6101aaa89f800ae36495f16f808d74d66165f5cf93fb",
+			wantHash:    "c8fabb706a6912bc263bf1413e05be9a7a5ade3de7f28b11f68c2f6a4b0b598b",
 		},
 		{
 			wallet:      "multisig-mainnet-2of3",
 			compact2of3: false,
 			wantScenes:  6,
-			wantHash:    "f9e0fcc598bfff542a7c6d99afdec9094e1502e56917bde69c40ed4297c8935c",
+			wantHash:    "0c825d956b5523a068dc29ad18368b6546b7361193938f196e5623e219c63a99",
 		},
 		{
 			wallet:      "multisig-3of5",
 			compact2of3: false,
 			wantScenes:  10,
-			wantHash:    "e028083dd4d32ce0aebc1dda96bd0818f13ed1778bd7326ca93b4ee51b716c59",
+			wantHash:    "382a077ff054d9c25e4dbf683e93629695e5ef0c0ab215eeca86655de536e076",
 		},
 		{
 			wallet:      "multisig",
 			compact2of3: true,
 			wantScenes:  3,
-			wantHash:    "7113fd7248bc84f7138ee541443d4ded31ee076d5cc51c11725831f7ce6ff3cd",
+			wantHash:    "2d81801128c2378e43ba4054a7bd633586c802d23c66aa853e833dd3e032daf2",
 		},
 	}
 

@@ -70,6 +70,10 @@ func renderPrimitiveSVG(b *strings.Builder, p ScenePrimitive, indent string) {
 	case PrimitiveCircle:
 		fmt.Fprintf(b, "%s<circle cx=\"%.4f\" cy=\"%.4f\" r=\"%.4f\" fill=\"%s\" stroke=\"%s\" stroke-width=\"%.4f\" />\n",
 			indent, p.CXMM, p.CYMM, p.RadiusMM, fill, stroke, p.StrokeMM)
+	case PrimitiveRing:
+		d := svgRingPathData(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM)
+		fmt.Fprintf(b, "%s<path d=\"%s\" fill=\"%s\" fill-rule=\"evenodd\" stroke=\"%s\" stroke-width=\"%.4f\" />\n",
+			indent, escapeXML(d), fill, stroke, p.StrokeMM)
 	case PrimitivePath:
 		if fillRule != "" {
 			fmt.Fprintf(b, "%s<path d=\"%s\" fill=\"%s\" fill-rule=\"%s\" stroke=\"%s\" stroke-width=\"%.4f\" />\n",
@@ -100,6 +104,46 @@ func renderPrimitiveSVG(b *strings.Builder, p ScenePrimitive, indent string) {
 		}
 		fmt.Fprintf(b, "%s</g>\n", indent)
 	}
+}
+
+func svgRingPathData(x, y, w, h, t, r float64) string {
+	if t < 0 {
+		t = 0
+	}
+	if 2*t > w {
+		t = w / 2
+	}
+	if 2*t > h {
+		t = h / 2
+	}
+	outer := svgRoundedRectPath(x, y, w, h, r)
+	inner := svgRoundedRectPath(x+t, y+t, w-2*t, h-2*t, r)
+	return strings.TrimSpace(outer + " " + inner)
+}
+
+func svgRoundedRectPath(x, y, w, h, r float64) string {
+	if w <= 0 || h <= 0 {
+		return ""
+	}
+	maxR := math.Min(w, h) / 2
+	if r < 0 {
+		r = 0
+	}
+	if r > maxR {
+		r = maxR
+	}
+	if r == 0 {
+		return fmt.Sprintf("M %.4f %.4f L %.4f %.4f L %.4f %.4f L %.4f %.4f Z",
+			x, y, x+w, y, x+w, y+h, x, y+h)
+	}
+	return fmt.Sprintf(
+		"M %.4f %.4f L %.4f %.4f Q %.4f %.4f %.4f %.4f L %.4f %.4f Q %.4f %.4f %.4f %.4f L %.4f %.4f Q %.4f %.4f %.4f %.4f L %.4f %.4f Q %.4f %.4f %.4f %.4f Z",
+		x+r, y,
+		x+w-r, y, x+w, y, x+w, y+r,
+		x+w, y+h-r, x+w, y+h, x+w-r, y+h,
+		x+r, y+h, x, y+h, x, y+h-r,
+		x, y+r, x, y, x+r, y,
+	)
 }
 
 const svgTextDPI = 600.0

@@ -1,11 +1,6 @@
 package printer
 
-import (
-	"fmt"
-	"strings"
-
-	"github.com/kortschak/qr"
-)
+import "github.com/kortschak/qr"
 
 func newSceneText(xMM, yMM float64, text string, sizePt, trackingEM float64, dir TextDirection, anchor TextAnchor) ScenePrimitive {
 	if dir == "" {
@@ -124,8 +119,12 @@ func sceneFinderAndAlignmentShapes(code *qr.Code, originX, originY, step, r floa
 		y := originY + float64(fy)*step
 		out = append(out, sceneRingPrimitive(x, y, 7*step, 7*step, 1*step, r))
 		out = append(out, ScenePrimitive{
-			Kind:      PrimitivePath,
-			PathData:  roundedRectPath(x+2*step, y+2*step, 3*step, 3*step, r, true),
+			Kind:      PrimitiveRound,
+			XMM:       x + 2*step,
+			YMM:       y + 2*step,
+			WidthMM:   3 * step,
+			HeightMM:  3 * step,
+			RadiusMM:  r,
 			FillColor: sceneBlack,
 		})
 	}
@@ -151,97 +150,15 @@ func sceneFinderAndAlignmentShapes(code *qr.Code, originX, originY, step, r floa
 }
 
 func sceneRingPrimitive(x, y, w, h, t, r float64) ScenePrimitive {
-	if t < 0 {
-		t = 0
-	}
-	if 2*t > w {
-		t = w / 2
-	}
-	if 2*t > h {
-		t = h / 2
-	}
-	outer := roundedRectPath(x, y, w, h, r, true)
-	inner := roundedRectPath(x+t, y+t, w-2*t, h-2*t, r, true)
 	return ScenePrimitive{
-		Kind:      PrimitivePath,
-		PathData:  strings.TrimSpace(outer + " " + inner),
-		FillColor: sceneBlack,
-		FillRule:  "evenodd",
+		Kind:        PrimitiveRing,
+		XMM:         x,
+		YMM:         y,
+		WidthMM:     w,
+		HeightMM:    h,
+		ThicknessMM: t,
+		RadiusMM:    r,
+		FillColor:   sceneBlack,
+		FillMode:    FillModeOffset,
 	}
-}
-
-func roundedRectPath(x, y, w, h, r float64, clockwise bool) string {
-	if w <= 0 || h <= 0 {
-		return ""
-	}
-	maxR := w / 2
-	if h/2 < maxR {
-		maxR = h / 2
-	}
-	if r < 0 {
-		r = 0
-	}
-	if r > maxR {
-		r = maxR
-	}
-
-	tl, tr, br, bl := r > 0, r > 0, r > 0, r > 0
-
-	s := func(format string, args ...any) string { return fmt.Sprintf(format, args...) }
-	if clockwise {
-		path := ""
-		if tl {
-			path += s("M %.4f %.4f ", x+r, y)
-		} else {
-			path += s("M %.4f %.4f ", x, y)
-		}
-		if tr {
-			path += s("L %.4f %.4f Q %.4f %.4f %.4f %.4f ", x+w-r, y, x+w, y, x+w, y+r)
-		} else {
-			path += s("L %.4f %.4f ", x+w, y)
-		}
-		if br {
-			path += s("L %.4f %.4f Q %.4f %.4f %.4f %.4f ", x+w, y+h-r, x+w, y+h, x+w-r, y+h)
-		} else {
-			path += s("L %.4f %.4f ", x+w, y+h)
-		}
-		if bl {
-			path += s("L %.4f %.4f Q %.4f %.4f %.4f %.4f ", x+r, y+h, x, y+h, x, y+h-r)
-		} else {
-			path += s("L %.4f %.4f ", x, y+h)
-		}
-		if tl {
-			path += s("L %.4f %.4f Q %.4f %.4f %.4f %.4f Z", x, y+r, x, y, x+r, y)
-		} else {
-			path += "Z"
-		}
-		return path
-	}
-	path := ""
-	if tl {
-		path += s("M %.4f %.4f ", x+r, y)
-	} else {
-		path += s("M %.4f %.4f ", x, y)
-	}
-	if bl {
-		path += s("L %.4f %.4f Q %.4f %.4f %.4f %.4f ", x, y+h-r, x, y+h, x+r, y+h)
-	} else {
-		path += s("L %.4f %.4f ", x, y+h)
-	}
-	if br {
-		path += s("L %.4f %.4f Q %.4f %.4f %.4f %.4f ", x+w-r, y+h, x+w, y+h, x+w, y+h-r)
-	} else {
-		path += s("L %.4f %.4f ", x+w, y+h)
-	}
-	if tr {
-		path += s("L %.4f %.4f Q %.4f %.4f %.4f %.4f ", x+w, y+r, x+w, y, x+w-r, y)
-	} else {
-		path += s("L %.4f %.4f ", x+w, y)
-	}
-	if tl {
-		path += s("L %.4f %.4f Q %.4f %.4f %.4f %.4f Z", x+r, y, x, y, x, y+r)
-	} else {
-		path += "Z"
-	}
-	return path
 }
