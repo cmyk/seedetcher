@@ -23,6 +23,8 @@ type Flags struct {
 	PCLOut          string
 	SceneJSONOut    string
 	SVGOut          string
+	GCodeOut        string
+	LaserMaxS       int
 	WalletName      string
 	EtchStatsPage   bool
 	Compact2of3     bool
@@ -50,6 +52,8 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.PCLOut, "pcl-out", "", "Optional output path for raw PCL (bitmap raster)")
 	flag.StringVar(&f.SceneJSONOut, "scene-json-out", "", "Optional output path for plate scene JSON (seed-side foundation)")
 	flag.StringVar(&f.SVGOut, "svg-out", "", "Optional output directory for per-plate scene SVGs (seed-side foundation)")
+	flag.StringVar(&f.GCodeOut, "gcode-out", "", "Optional output directory for per-plate scene G-code (file-only laser prototype)")
+	flag.IntVar(&f.LaserMaxS, "laser-max-s", 80, "Laser power S value used in generated G-code (for example 0..1000, default 80)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")
 	flag.BoolVar(&f.Compact2of3, "compact-2of3", false, "Use compact single-sided layout for sortedmulti 2-of-3 descriptor shares")

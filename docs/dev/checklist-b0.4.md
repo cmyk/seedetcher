@@ -30,7 +30,7 @@
   - [x] no backend-specific branches inside scene builders
 - [ ] Define renderer interfaces:
   - [ ] `SceneRasterRenderer` (for print path parity checks)
-  - [ ] `SceneGCodeRenderer` (for GRBL output)
+  - [x] `SceneGCodeRenderer` (for GRBL output)
   - [x] optional `SceneSVGRenderer` (debug only)
 - [ ] Add visual/debug CLI outputs from the same scene:
   - [x] `-scene-json-out <file>` (canonical scene dump for diff/tests)
@@ -65,14 +65,14 @@
 
 ### 3) Direct G-code backend (GRBL)
 - [ ] Add CLI output mode for laser:
-  - [ ] `-gcode-out <dir>`
+  - [x] `-gcode-out <dir>`
   - [ ] `-side seed|desc|both`
   - [ ] `-plate-mm` (default `100`)
   - [ ] laser params (`-laser-max-s`, `-laser-feed`, `-rapid-feed`)
-  - [ ] no-send mode by default (generate files first, stream later)
+  - [x] no-send mode by default (generate files first, stream later)
 - [ ] Emit GRBL-safe preamble/footer:
-  - [ ] `G21`, `G90`, `M4`/`M5`, sane feed defaults
-  - [ ] configurable power scaling `S`
+  - [x] `G21`, `G90`, `M4`/`M5`, sane feed defaults
+  - [x] configurable power scaling `S`
 - [ ] Implement fill/trace strategy for closed vector regions.
 - [ ] Add deterministic output tests for small canonical plate fixtures.
 

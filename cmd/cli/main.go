@@ -75,6 +75,10 @@ func main() {
 	if f.SVGOut != "" {
 		svgOutDir = strings.Replace(f.SVGOut, "~", usr.HomeDir, 1)
 	}
+	gcodeOutDir := ""
+	if f.GCodeOut != "" {
+		gcodeOutDir = strings.Replace(f.GCodeOut, "~", usr.HomeDir, 1)
+	}
 
 	if f.Verbose {
 		fmt.Println("Expanded output directory to:", outputDir)
@@ -89,6 +93,9 @@ func main() {
 		}
 		if svgOutDir != "" {
 			fmt.Println("Expanded SVG directory to:", svgOutDir)
+		}
+		if gcodeOutDir != "" {
+			fmt.Println("Expanded G-code directory to:", gcodeOutDir)
 		}
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -119,6 +126,12 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if gcodeOutDir != "" {
+		if err := os.MkdirAll(gcodeOutDir, 0755); err != nil {
+			fmt.Printf("Error creating G-code output directory: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	printer.SetDescriptorQRSize(f.DescQRMM)
 	opts := printer.RasterOptions{
@@ -128,7 +141,7 @@ func main() {
 		SinglesigLayout: singlesigLayout,
 		EtchStatsPage:   f.EtchStatsPage,
 	}
-	if sceneJSONPath != "" || svgOutDir != "" {
+	if sceneJSONPath != "" || svgOutDir != "" || gcodeOutDir != "" {
 		sceneDoc, err := printer.WalletSceneBuilder{
 			Mnemonics:       mnemonics,
 			Desc:            desc,
@@ -147,6 +160,14 @@ func main() {
 		if svgOutDir != "" {
 			if err := (printer.SceneSVGRenderer{}).Render(sceneDoc, svgOutDir); err != nil {
 				fmt.Printf("Error writing scene SVG: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		if gcodeOutDir != "" {
+			if err := (printer.SceneGCodeRenderer{
+				LaserMaxS: f.LaserMaxS,
+			}).Render(sceneDoc, gcodeOutDir); err != nil {
+				fmt.Printf("Error writing scene G-code: %v\n", err)
 				os.Exit(1)
 			}
 		}
