@@ -22,6 +22,12 @@
   - [ ] primitives: path, circle, rounded-rect, text outline, transform/group
   - [ ] layer tags: `mask`, `guide` (guide disabled by default)
   - [ ] deterministic origin and bounds (`100x100mm`)
+- [ ] Enforce OOP boundaries in Go:
+  - [ ] domain objects: `PlateDocument`, `PlateScene`, primitive structs
+  - [ ] builder interfaces: `SceneBuilder` (layout only)
+  - [ ] renderer interfaces: `SceneRenderer` (output only)
+  - [ ] concrete builders/renderers in separate files/packages
+  - [ ] no backend-specific branches inside scene builders
 - [ ] Define renderer interfaces:
   - [ ] `SceneRasterRenderer` (for print path parity checks)
   - [ ] `SceneGCodeRenderer` (for GRBL output)
