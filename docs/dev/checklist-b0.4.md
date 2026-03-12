@@ -93,6 +93,10 @@
   - [ ] descriptor side readability
   - [ ] scan success in Sparrow/Seed tools
 - [ ] Regression check: existing PCL/PS/HBP print flows unchanged.
+- [ ] After `v0.3.0-beta.2`, backport HBP model/PPD hotfix (`hotfix/b0.3-hbp-model-scaling`) into:
+  - [ ] `release/0.4.0-beta`
+  - [ ] `feature/b0.4-plate-scene-foundation`
+  - [ ] `docs/wallet-code-standard`
 
 ### 6) Documentation and release
 - [ ] Add `docs/dev/laser-grbl.md`:
