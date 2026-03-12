@@ -86,11 +86,11 @@ func runCLI(f *testutils.Flags) error {
 	printer.SetDescriptorQRSize(f.DescQRMM)
 
 	opts := printer.RasterOptions{
-		DPI:           float64(f.DPI),
-		Mirror:        f.Mirror,
-		Invert:        f.Invert,
+		DPI:             float64(f.DPI),
+		Mirror:          f.Mirror,
+		Invert:          f.Invert,
 		SinglesigLayout: singlesigLayout,
-		EtchStatsPage: f.EtchStatsPage,
+		EtchStatsPage:   f.EtchStatsPage,
 	}
 	printer.SetCompactDescriptor2of3Enabled(f.Compact2of3)
 	defer printer.SetCompactDescriptor2of3Enabled(false)

@@ -43,14 +43,9 @@ func RenderDescriptorPlateBitmap(desc *urtypes.OutputDescriptor, keyIdx, shareNu
 	margin := descriptorSingleQRLayout.MarginMM
 	ascentMM := capBaselineOffsetMM(descriptorFace, dpi)
 	maxMetaWidth := plateSizeMM - 2*margin
-	line1 := strings.Join([]string{typeTag, scriptTag, netTag}, " / ")
-	line2 := strings.Join([]string{thresholdTag, keysTag, keyTag}, " / ")
+	line1 := strings.Join([]string{typeTag, scriptTag, netTag}, "/")
+	line2 := strings.Join([]string{thresholdTag, keysTag, keyTag}, "/")
 	// Deterministic fixed-line layout; avoid mid-token wrapping.
-	if trackedTextWidthMM(descriptorFace, dpi, line1, descTrackPx) > maxMetaWidth ||
-		trackedTextWidthMM(descriptorFace, dpi, line2, descTrackPx) > maxMetaWidth {
-		line1 = strings.Join([]string{typeTag, scriptTag, netTag}, "/")
-		line2 = strings.Join([]string{thresholdTag, keysTag, keyTag}, "/")
-	}
 	if trackedTextWidthMM(descriptorFace, dpi, line1, descTrackPx) > maxMetaWidth ||
 		trackedTextWidthMM(descriptorFace, dpi, line2, descTrackPx) > maxMetaWidth {
 		line1 = strings.Join([]string{typeTag, scriptTag}, "/")

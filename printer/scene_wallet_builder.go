@@ -20,32 +20,63 @@ func (b WalletSceneBuilder) Build() (*PlateDocument, error) {
 	if len(b.Mnemonics) == 0 {
 		return nil, fmt.Errorf("no mnemonics provided")
 	}
-	totalShares := len(b.Mnemonics)
-	isSinglesigDesc := b.Desc != nil && len(b.Desc.Keys) == 1 && b.Desc.Type == urtypes.Singlesig
-	if b.Desc != nil && len(b.Desc.Keys) > 0 && !isSinglesigDesc {
-		totalShares = len(b.Desc.Keys)
+	selection := SelectLayout(RenderContext{
+		MnemonicCount:   len(b.Mnemonics),
+		Desc:            b.Desc,
+		SinglesigLayout: b.SinglesigLayout,
+		Compact2of3:     CompactDescriptor2of3Enabled(),
+	})
+	totalShares := selection.TotalShares
+
+	if selection.UseCompact2of3 {
+		shardQRPayloads, err := DescriptorPayloadsByShare(b.Desc, totalShares, selection.IsSinglesigDesc, selection.IncludeSinglesigDescriptorQR)
+		if err != nil {
+			return nil, err
+		}
+		doc := &PlateDocument{
+			Version: sceneVersion,
+			Scenes:  make([]PlateScene, 0, totalShares),
+		}
+		for i := 0; i < totalShares; i++ {
+			keyIdx := i % len(b.Desc.Keys)
+			descQR := ""
+			if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
+				descQR = shardQRPayloads[i][0]
+			}
+			scene, err := buildCompact2of3SeedScene(b.Mnemonics[i%len(b.Mnemonics)], b.Desc, keyIdx, descQR)
+			if err != nil {
+				return nil, err
+			}
+			scene.Name = fmt.Sprintf("seed_%02d", i+1)
+			doc.Scenes = append(doc.Scenes, scene)
+		}
+		return doc, nil
 	}
 
 	seedBuilder := SeedSceneBuilder{
-		Mnemonics: b.Mnemonics,
-		Desc:      b.Desc,
+		Mnemonics:       b.Mnemonics,
+		Desc:            b.Desc,
+		SinglesigLayout: b.SinglesigLayout,
 	}
 	seedDoc, err := seedBuilder.Build()
 	if err != nil {
 		return nil, err
 	}
 
-	includeSinglesigDescriptorSide := isSinglesigDesc && b.SinglesigLayout == SinglesigLayoutSeedWithDescriptorQR
-	hasDescScenes := b.Desc != nil && len(b.Desc.Keys) > 0 && (!isSinglesigDesc || includeSinglesigDescriptorSide)
+	hasDescScenes := selection.HasDescriptorSide
 	if !hasDescScenes {
 		return seedDoc, nil
 	}
 
+	qrPayloadsByShare, err := DescriptorPayloadsByShare(b.Desc, totalShares, selection.IsSinglesigDesc, selection.IncludeSinglesigDescriptorQR)
+	if err != nil {
+		return nil, err
+	}
 	for i := 0; i < totalShares; i++ {
 		keyIdx := i % len(b.Desc.Keys)
-		qrPayloads, err := descriptorScenePayloadsForShare(b.Desc, totalShares, keyIdx, isSinglesigDesc, includeSinglesigDescriptorSide)
-		if err != nil {
-			return nil, err
+		qrPayloads := []string(nil)
+		if i < len(qrPayloadsByShare) {
+			qrPayloads = qrPayloadsByShare[i]
 		}
 		scene, err := buildDescriptorPlateScene(b.Desc, keyIdx, i+1, totalShares, qrPayloads)
 		if err != nil {
@@ -55,20 +86,6 @@ func (b WalletSceneBuilder) Build() (*PlateDocument, error) {
 		seedDoc.Scenes = append(seedDoc.Scenes, scene)
 	}
 	return seedDoc, nil
-}
-
-func descriptorScenePayloadsForShare(desc *urtypes.OutputDescriptor, totalShares, keyIdx int, isSinglesigDesc, includeSinglesigDescriptorSide bool) ([]string, error) {
-	if isSinglesigDesc {
-		if !includeSinglesigDescriptorSide {
-			return nil, nil
-		}
-		q := createDescriptorQR(desc)
-		if q == "" {
-			return nil, fmt.Errorf("empty descriptor QR content")
-		}
-		return []string{q}, nil
-	}
-	return descriptorShardQRPayloadsForShare(desc, totalShares, keyIdx)
 }
 
 func buildDescriptorPlateScene(desc *urtypes.OutputDescriptor, keyIdx, shareNum, totalShares int, qrPayloads []string) (PlateScene, error) {
@@ -102,13 +119,8 @@ func buildDescriptorPlateScene(desc *urtypes.OutputDescriptor, keyIdx, shareNum,
 	thresholdTag := fmt.Sprintf("THRESHOLD:%d", desc.Threshold)
 	keysTag := fmt.Sprintf("KEYS:%d", len(desc.Keys))
 	keyTag := fmt.Sprintf("KEY:%d", keyIdx+1)
-	line1 := strings.Join([]string{typeTag, scriptTag, netTag}, " / ")
-	line2 := strings.Join([]string{thresholdTag, keysTag, keyTag}, " / ")
-	if trackedTextWidthMM(face, dpi, line1, trackPx) > maxMetaWidth ||
-		trackedTextWidthMM(face, dpi, line2, trackPx) > maxMetaWidth {
-		line1 = strings.Join([]string{typeTag, scriptTag, netTag}, "/")
-		line2 = strings.Join([]string{thresholdTag, keysTag, keyTag}, "/")
-	}
+	line1 := strings.Join([]string{typeTag, scriptTag, netTag}, "/")
+	line2 := strings.Join([]string{thresholdTag, keysTag, keyTag}, "/")
 	if trackedTextWidthMM(face, dpi, line1, trackPx) > maxMetaWidth ||
 		trackedTextWidthMM(face, dpi, line2, trackPx) > maxMetaWidth {
 		line1 = strings.Join([]string{typeTag, scriptTag}, "/")

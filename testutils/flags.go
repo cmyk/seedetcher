@@ -3,28 +3,28 @@ package testutils
 import "flag"
 
 type Flags struct {
-	Mnemonic      string
-	Descriptor    string
-	Output        string
-	PaperSize     string
-	Verbose       bool
-	WalletType    string // deprecated alias for Fixture
-	Fixture       string
-	WalletKind    string
-	NOfM          string
-	WordProfile   string
+	Mnemonic        string
+	Descriptor      string
+	Output          string
+	PaperSize       string
+	Verbose         bool
+	WalletType      string // deprecated alias for Fixture
+	Fixture         string
+	WalletKind      string
+	NOfM            string
+	WordProfile     string
 	SinglesigLayout string
-	BitmapDir     string
-	DPI           int
-	Mirror        bool
-	Invert        bool
-	DescQRMM      float64
-	PCLOut        string
-	SceneJSONOut  string
-	SVGOut        string
-	WalletName    string
-	EtchStatsPage bool
-	Compact2of3   bool
+	BitmapDir       string
+	DPI             int
+	Mirror          bool
+	Invert          bool
+	DescQRMM        float64
+	PCLOut          string
+	SceneJSONOut    string
+	SVGOut          string
+	WalletName      string
+	EtchStatsPage   bool
+	Compact2of3     bool
 }
 
 func DefineFlags() *Flags {

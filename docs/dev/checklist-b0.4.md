@@ -18,34 +18,49 @@
 ## Milestones
 
 ### 1) Architecture foundation (single source of truth)
-- [ ] Define `PlateScene` domain model (mm-based coordinates):
-  - [ ] primitives: path, circle, rounded-rect, text outline, transform/group
-  - [ ] layer tags: `mask`, `guide` (guide disabled by default)
+- [x] Define `PlateScene` domain model (mm-based coordinates):
+  - [x] primitives: path, circle, rounded-rect, text outline, transform/group
+  - [x] layer tags: `mask`, `guide` (guide disabled by default)
   - [ ] deterministic origin and bounds (`100x100mm`)
-- [ ] Enforce OOP boundaries in Go:
-  - [ ] domain objects: `PlateDocument`, `PlateScene`, primitive structs
-  - [ ] builder interfaces: `SceneBuilder` (layout only)
-  - [ ] renderer interfaces: `SceneRenderer` (output only)
-  - [ ] concrete builders/renderers in separate files/packages
+- [x] Enforce OOP boundaries in Go:
+  - [x] domain objects: `PlateDocument`, `PlateScene`, primitive structs
+  - [x] builder interfaces: `SceneBuilder` (layout only)
+  - [x] renderer interfaces: `SceneRenderer` (output only)
+  - [x] concrete builders/renderers in separate files/packages
   - [ ] no backend-specific branches inside scene builders
 - [ ] Define renderer interfaces:
   - [ ] `SceneRasterRenderer` (for print path parity checks)
   - [ ] `SceneGCodeRenderer` (for GRBL output)
-  - [ ] optional `SceneSVGRenderer` (debug only)
+  - [x] optional `SceneSVGRenderer` (debug only)
 - [ ] Add visual/debug CLI outputs from the same scene:
-  - [ ] `-scene-json-out <file>` (canonical scene dump for diff/tests)
-  - [ ] `-svg-out <dir>` (human visual inspection)
+  - [x] `-scene-json-out <file>` (canonical scene dump for diff/tests)
+  - [x] `-svg-out <dir>` (human visual inspection)
   - [ ] `-png-out <dir>` from scene raster renderer (quick morphology parity)
 - [ ] Keep current print pipeline untouched in this phase.
 
 ### 2) PlateScene builder (layout migration)
-- [ ] Build scene for seed plate from existing layout rules.
-- [ ] Build scene for descriptor plate from existing layout rules.
+- [x] Build scene for seed plate from existing layout rules.
+- [x] Build scene for descriptor plate from existing layout rules.
+- [ ] Add explicit layout-variant architecture (avoid branchy/procedural drift):
+  - [ ] define `LayoutSpec` interface (layout semantics only):
+    - [ ] `Name()`
+    - [ ] `Supports(RenderContext)`
+    - [ ] `BuildSeedScene(...)`
+    - [ ] `BuildDescriptorScene(...)`
+  - [ ] define `LayoutRegistry`/selector:
+    - [ ] maps flags/context to exactly one active layout spec
+    - [ ] no scattered `if compact2of3/...` checks in render loops
+  - [ ] first concrete specs:
+    - [ ] `ClassicSeedDescriptorLayout`
+    - [ ] `Compact2of3Layout`
+    - [ ] `SinglesigSeedInfoLayout`
+    - [ ] `SinglesigSeedDescLayout`
+  - [ ] ensure scene and raster backends consume the same selected layout plan.
 - [ ] Preserve current styling semantics:
   - [ ] QR data modules as circles (dot scale parity)
   - [ ] registration/finder islands as rounded squares
   - [ ] exact text anchors/margins/tracking behavior
-- [ ] Add scene-level geometry snapshot tests for key fixtures.
+- [x] Add scene-level geometry snapshot tests for key fixtures.
 
 ### 3) Direct G-code backend (GRBL)
 - [ ] Add CLI output mode for laser:
@@ -90,5 +105,5 @@
 
 ## Stretch goals
 - [ ] Real-time progress reporting for GRBL send in UI.
-- [ ] Optional SVG export from `PlateScene` for inspection/debug.
+- [x] Optional SVG export from `PlateScene` for inspection/debug.
 - [ ] Optional path optimization pass (travel reduction).

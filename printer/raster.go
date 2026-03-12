@@ -101,62 +101,26 @@ var (
 
 // CreatePlateBitmaps renders seed/descriptor plates to 1-bit bitmaps using the existing layout.
 func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, keyIdx int, opts RasterOptions, progress ProgressFunc) ([]*image.Paletted, []*image.Paletted, error) {
-	totalShares := len(mnemonics)
-	isSinglesigDesc := desc != nil && len(desc.Keys) == 1 && desc.Type == urtypes.Singlesig
-	includeSinglesigInfo := isSinglesigDesc && opts.SinglesigLayout == SinglesigLayoutSeedWithInfo
-	includeSinglesigDescriptorSide := isSinglesigDesc && opts.SinglesigLayout == SinglesigLayoutSeedWithDescriptorQR
-	isSinglesigJob := desc == nil || isSinglesigDesc
-	if desc != nil && len(desc.Keys) > 0 && !isSinglesigDesc {
-		totalShares = len(desc.Keys)
-	}
-	// Singlesig seed-side variant: give space for optional right-edge metadata.
-	seedLayout := defaultSeedPlateLayout(totalShares, isSinglesigDesc)
-	if isSinglesigJob {
-		// Plate marker is wallet-key pagination, not physical copy count.
-		seedLayout.ShareNum = 1
-		seedLayout.ShareTotal = 1
-	}
-	if includeSinglesigInfo {
-		path := strings.ToUpper(derivationPathForKey(desc.Keys[0], desc.Script))
-		seedLayout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, desc.Script.Tag(), descriptorNetworkTag(desc.Keys[0].Network))
-	}
+	selection := SelectLayout(RenderContext{
+		MnemonicCount:   len(mnemonics),
+		Desc:            desc,
+		SinglesigLayout: opts.SinglesigLayout,
+		Compact2of3:     CompactDescriptor2of3Enabled(),
+	})
+	totalShares := selection.TotalShares
+	seedLayout := selection.SeedLayout(desc)
 
 	seedImgs := make([]*image.Paletted, totalShares)
 	var descImgs []*image.Paletted
-	hasDesc := desc != nil && len(desc.Keys) > 0 && (!isSinglesigDesc || includeSinglesigDescriptorSide)
+	hasDesc := selection.HasDescriptorSide
 	if hasDesc {
 		descImgs = make([]*image.Paletted, totalShares)
 	}
-	var shardQRPayloads [][]string
-	if hasDesc {
-		if isSinglesigDesc && includeSinglesigDescriptorSide {
-			qrPayload := createDescriptorQR(desc)
-			if qrPayload == "" {
-				return nil, nil, fmt.Errorf("empty descriptor QR content")
-			}
-			shardQRPayloads = make([][]string, totalShares)
-			for i := range shardQRPayloads {
-				shardQRPayloads[i] = []string{qrPayload}
-			}
-		} else {
-			shardQRPayloads = make([][]string, totalShares)
-			for i := 0; i < totalShares; i++ {
-				descKeyIdx := i % len(desc.Keys)
-				payloads, err := descriptorShardQRPayloadsForShare(desc, totalShares, descKeyIdx)
-				if err != nil {
-					return nil, nil, err
-				}
-				shardQRPayloads[i] = payloads
-			}
-		}
+	shardQRPayloads, err := DescriptorPayloadsByShare(desc, totalShares, selection.IsSinglesigDesc, selection.IncludeSinglesigDescriptorQR)
+	if err != nil {
+		return nil, nil, err
 	}
-	compactSingleSided := hasDesc &&
-		CompactDescriptor2of3Enabled() &&
-		desc.Type == urtypes.SortedMulti &&
-		desc.Threshold == 2 &&
-		len(desc.Keys) == 3 &&
-		totalShares == 3 &&
-		len(shardQRPayloads) == 3
+	compactSingleSided := selection.UseCompact2of3
 	if compactSingleSided {
 		descImgs = nil
 	}

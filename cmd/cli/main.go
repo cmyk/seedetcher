@@ -118,11 +118,11 @@ func main() {
 
 	printer.SetDescriptorQRSize(f.DescQRMM)
 	opts := printer.RasterOptions{
-		DPI:           float64(f.DPI),
-		Mirror:        f.Mirror,
-		Invert:        f.Invert,
+		DPI:             float64(f.DPI),
+		Mirror:          f.Mirror,
+		Invert:          f.Invert,
 		SinglesigLayout: singlesigLayout,
-		EtchStatsPage: f.EtchStatsPage,
+		EtchStatsPage:   f.EtchStatsPage,
 	}
 	if sceneJSONPath != "" || svgOutDir != "" {
 		sceneDoc, err := printer.WalletSceneBuilder{

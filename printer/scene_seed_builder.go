@@ -20,28 +20,23 @@ const (
 )
 
 type SeedSceneBuilder struct {
-	Mnemonics []bip39.Mnemonic
-	Desc      *urtypes.OutputDescriptor
+	Mnemonics       []bip39.Mnemonic
+	Desc            *urtypes.OutputDescriptor
+	SinglesigLayout SinglesigLayoutMode
 }
 
 func (b SeedSceneBuilder) Build() (*PlateDocument, error) {
 	if len(b.Mnemonics) == 0 {
 		return nil, fmt.Errorf("no mnemonics provided")
 	}
-	totalShares := len(b.Mnemonics)
-	isSinglesigDesc := b.Desc != nil && len(b.Desc.Keys) == 1 && b.Desc.Type == urtypes.Singlesig
-	if b.Desc != nil && len(b.Desc.Keys) > 0 && !isSinglesigDesc {
-		totalShares = len(b.Desc.Keys)
-	}
-	seedLayout := defaultSeedPlateLayout(totalShares, isSinglesigDesc)
-	if b.Desc == nil || isSinglesigDesc {
-		seedLayout.ShareNum = 1
-		seedLayout.ShareTotal = 1
-	}
-	if isSinglesigDesc {
-		path := strings.ToUpper(derivationPathForKey(b.Desc.Keys[0], b.Desc.Script))
-		seedLayout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, b.Desc.Script.Tag(), descriptorNetworkTag(b.Desc.Keys[0].Network))
-	}
+	selection := SelectLayout(RenderContext{
+		MnemonicCount:   len(b.Mnemonics),
+		Desc:            b.Desc,
+		SinglesigLayout: b.SinglesigLayout,
+		Compact2of3:     false,
+	})
+	totalShares := selection.TotalShares
+	seedLayout := selection.SeedLayout(b.Desc)
 
 	doc := &PlateDocument{
 		Version: sceneVersion,
