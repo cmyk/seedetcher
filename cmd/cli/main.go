@@ -15,6 +15,10 @@ import (
 func main() {
 	f := testutils.DefineFlags()
 	flag.Parse()
+	if f.ListFixtures {
+		fmt.Println(testutils.FixtureListText())
+		return
+	}
 
 	if f.WalletName != "" {
 		printer.SetWalletLabel(f.WalletName)

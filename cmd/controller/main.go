@@ -60,6 +60,10 @@ func main() {
 }
 
 func runCLI(f *testutils.Flags) error {
+	if f.ListFixtures {
+		fmt.Println(testutils.FixtureListText())
+		return nil
+	}
 	config, wordProfileMnemonicOverride, err := testutils.ResolveWalletSelection(f)
 	if err != nil {
 		return fmt.Errorf("error selecting wallet fixture: %w", err)

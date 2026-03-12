@@ -8,6 +8,7 @@ type Flags struct {
 	Output          string
 	PaperSize       string
 	Verbose         bool
+	ListFixtures    bool
 	WalletType      string // deprecated alias for Fixture
 	Fixture         string
 	WalletKind      string
@@ -34,8 +35,9 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.Output, "o", "/home/cmyk/PDF", "Output directory")
 	flag.StringVar(&f.PaperSize, "papersize", "A4", "Paper size (A4 or Letter)")
 	flag.BoolVar(&f.Verbose, "verbose", false, "Enable verbose logging")
+	flag.BoolVar(&f.ListFixtures, "list-fixtures", false, "List available fixtures and exit")
 	flag.StringVar(&f.WalletType, "w", "multisig", "DEPRECATED alias for -fixture")
-	flag.StringVar(&f.Fixture, "fixture", "", "Named wallet fixture (seed-12, seed-15, seed-18, seed-21, singlesig, singlesig-longwords, singlesig-nested-p2sh-p2wpkh, multisig, multisig-mainnet-2of3, multisig-nested-2of3, multisig-2of2, multisig-2of4, multisig-3of4, multisig-3of5, multisig-4of7, multisig-5of7, multisig-7of10)")
+	flag.StringVar(&f.Fixture, "fixture", "", "Named wallet fixture (use -list-fixtures)")
 	flag.StringVar(&f.WalletKind, "wallet-type", "", "Parametric wallet type (singlesig or multisig)")
 	flag.StringVar(&f.NOfM, "n-of-m", "", "Parametric multisig threshold and key-count (for example 3of5)")
 	flag.StringVar(&f.WordProfile, "word-profile", "normal", "Seed word profile (normal or longwords)")
