@@ -47,8 +47,8 @@ func TestSceneGCodeRenderer_Render(t *testing.T) {
 		"Workspace: 100.000mm",
 		"M4 S1000",
 		"M5",
-		"G0 X5.000 Y5.000",
-		"G1 X25.000 Y5.000",
+		"G0 X5.000 Y95.000",
+		"G1 X25.000 Y95.000",
 		"M2",
 	} {
 		if !strings.Contains(s, want) {

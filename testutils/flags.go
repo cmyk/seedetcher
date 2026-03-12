@@ -27,6 +27,8 @@ type Flags struct {
 	GCodeSide       string
 	PlateMM         float64
 	LaserMaxS       int
+	LaserFeed       float64
+	RapidFeed       float64
 	WalletName      string
 	EtchStatsPage   bool
 	Compact2of3     bool
@@ -58,6 +60,8 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.GCodeSide, "side", "both", "G-code scene side selection (seed, desc, or both)")
 	flag.Float64Var(&f.PlateMM, "plate-mm", 100.0, "Laser workspace size in mm used for G-code bounds checks")
 	flag.IntVar(&f.LaserMaxS, "laser-max-s", 80, "Laser power S value used in generated G-code (for example 0..1000, default 80)")
+	flag.Float64Var(&f.LaserFeed, "laser-feed", 900.0, "Cut feed in mm/min for generated G-code (default 900)")
+	flag.Float64Var(&f.RapidFeed, "rapid-feed", 3000.0, "Rapid move feed in mm/min for generated G-code (default 3000)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")
 	flag.BoolVar(&f.Compact2of3, "compact-2of3", false, "Use compact single-sided layout for sortedmulti 2-of-3 descriptor shares")

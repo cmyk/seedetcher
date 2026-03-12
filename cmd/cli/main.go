@@ -170,8 +170,10 @@ func main() {
 				os.Exit(1)
 			}
 			if err := (printer.SceneGCodeRenderer{
-				LaserMaxS: f.LaserMaxS,
-				PlateMM:   f.PlateMM,
+				LaserMaxS:      f.LaserMaxS,
+				CutFeedMMMin:   f.LaserFeed,
+				RapidFeedMMMin: f.RapidFeed,
+				PlateMM:        f.PlateMM,
 			}).Render(sideScenes, gcodeOutDir); err != nil {
 				fmt.Printf("Error writing scene G-code: %v\n", err)
 				os.Exit(1)

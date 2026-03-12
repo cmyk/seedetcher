@@ -18,6 +18,8 @@ type SceneGCodeRenderer struct {
 	RapidFeedMMMin float64
 	CurveSteps     int
 	PlateMM        float64
+	LaserFlipX     bool
+	LaserFlipY     bool
 }
 
 func (r SceneGCodeRenderer) Render(doc *PlateDocument, outDir string) error {
@@ -63,6 +65,12 @@ func (r SceneGCodeRenderer) withDefaults() SceneGCodeRenderer {
 	}
 	if r.PlateMM <= 0 {
 		r.PlateMM = 100
+	}
+	// Scene space uses top-left origin with +Y downward.
+	// GRBL/LB commonly uses bottom-left with +Y upward.
+	// Default to Y-flip for sane laser orientation.
+	if !r.LaserFlipX && !r.LaserFlipY {
+		r.LaserFlipY = true
 	}
 	return r
 }
@@ -168,6 +176,7 @@ func (e *gcodeEmitter) tracePolyline(poly []gcodePt) {
 }
 
 func (e *gcodeEmitter) rapidTo(x, y float64) {
+	x, y = e.mapXY(x, y)
 	if !e.validXY(x, y) {
 		return
 	}
@@ -176,6 +185,7 @@ func (e *gcodeEmitter) rapidTo(x, y float64) {
 }
 
 func (e *gcodeEmitter) cutTo(x, y float64) {
+	x, y = e.mapXY(x, y)
 	if !e.validXY(x, y) {
 		return
 	}
@@ -216,6 +226,16 @@ func (e *gcodeEmitter) validXY(x, y float64) bool {
 		return false
 	}
 	return true
+}
+
+func (e *gcodeEmitter) mapXY(x, y float64) (float64, float64) {
+	if e.cfg.LaserFlipX {
+		x = e.maxXY - x
+	}
+	if e.cfg.LaserFlipY {
+		y = e.maxXY - y
+	}
+	return x, y
 }
 
 func circlePolyline(cx, cy, r float64, segments int) []gcodePt {
