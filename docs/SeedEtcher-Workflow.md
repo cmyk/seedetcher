@@ -23,7 +23,7 @@ As for thickness: 1.5mm is the minimum. 2mm is substantial.
 - [ ] Micro-USB male to USB-A female ([amazon](https://a.co/d/drLFF49))
 - [ ] Steel Plates, 304/316L, 10x10cm (make sure they are really flat). You can get them on ebay or amazon or cut your own.
 - [ ] Iron (for ironing clothes)
-- [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for SeedEtcher Transfer Stack, cut 2 pieces of 110x110mm.
+- [ ] 0.5-2mm thick silicone sheet ([amazon](https://a.co/d/2F59LSZ)) for SeedEtcher Transfer Stack™, cut 2 pieces of 110x110mm.
 - [ ] Wood board, cork mat (optional)
 - [ ] Toner Transfer Paper ([amazon](https://a.co/d/dmR4RUL))
 - [ ] Anti-etching pens ([amazon](https://a.co/d/5DnOhRR)), stop out ground e.g. from [Lascaux](https://lascaux.ch/en/products/brushes-printmaking-sets-various/lascaux-etching?shp3_product=1704) or [Charbonnel](https://intaglioprintmaker.com/product/charbonnel-lamour-black-covering-varnish/) or nail polish
@@ -118,10 +118,10 @@ The new layout is designed for maximal mask coverage of a 100x100mm plate. Put t
 
 *If you sanded to a brushed look, the direction of the brushed lines is important. Light breaks differently on brushed metal depending on the direction it runs. If you hold a plate towards a light source, horizontal lines will diffuse the light and reflections, vertical lines will reflect more. So, the brushed lines should run horizontally to your plate layout. The QR code is easier to scan when looking normally at the plate. This is a detail but it is worth mentioning.*
 
-3) ### SeedEtcher Transfer Stack
+3) ### SeedEtcher Transfer Stack™
 With the SeedEtcher Transfer Stack it is now possible to heat transfer both sides of the plate at once.
 
-![SeedEtcher Transfer Stack](assets/workflow/seedetcher-transfer-stack.png)
+![SeedEtcher Transfer Stack™](assets/workflow/seedetcher-transfer-stack.png)
 
 Pre-heat the iron to around 175°C. (the temperature has to be between 150°C and 180°C but no more than 180°C). Tip: Use a thermometer to figure out how hot your iron gets.
 Put a paper towel folded 4 times on your wood board (optionally use cork, even better insulator). The board should be on the floor and it should not wiggle.

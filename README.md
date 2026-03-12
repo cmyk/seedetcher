@@ -12,7 +12,7 @@ The following things were substantially improved or added:
 - All Brother lasers are supported (even host-based). PCL/PS remains the recommended way to print. HBP (host based printing) is capped to 600dpi (memory limit of pi zero)
 All other brands that support true PCL or PostScript should work too. See: [printers.md](docs/printers.md)
 - Print output can be sent non-inverted and non-mirrored for checking before printing to transfer paper.
-- A new method (SeedEtcher Transfer Stack<sup>TM</sup>) leverages the use of silicone sheets to reliably transfer toner masks to both sides of a metal plate at once.
+- A new method (SeedEtcher Transfer Stack™) leverages the use of silicone sheets to reliably transfer toner masks to both sides of a metal plate at once.
 This means, you can also etch both sides at once!
 - A new plate layout design optimizes for etching. All rounded forms, including a custom designed font face and QRs with circle modules. Also the mask area now covers the whole plate except for the side where you tape it for transfer. This means you only need to tape one side before etching.
 - I designed a 3d printable etching container for optimal etching performance. No manual movement required. It will be released after geyser.io campaign, presumably.
@@ -93,6 +93,12 @@ Run controller on Pi:
 ## License
 Licensed under Apache License 2.0: [LICENSE](LICENSE) and [NOTICE](NOTICE)
 Third-party component licenses: [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
+
+SeedEtcher™ and SeedEtcher Transfer Stack™ are trademarks of the SeedEtcher project.
+
+The Apache License 2.0 applies only to the code, documentation, and design
+files in this repository and does not grant rights to use the SeedEtcher
+name, logos, or branding.
 
 ---
 
