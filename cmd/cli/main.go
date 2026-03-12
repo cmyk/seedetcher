@@ -26,14 +26,23 @@ func main() {
 		fmt.Printf("Error getting current user: %v\n", err)
 		os.Exit(1)
 	}
-	config, ok := testutils.WalletConfigs[f.WalletType]
-	if !ok {
-		fmt.Printf("Invalid wallet type. Use 'singlesig' or 'multisig'\n")
+	config, wordProfileMnemonicOverride, err := testutils.ResolveWalletSelection(f)
+	if err != nil {
+		fmt.Printf("Error selecting wallet fixture: %v\n", err)
 		os.Exit(1)
 	}
-	mnemonics, desc, err := testutils.ParseWallet(config, f.Mnemonic, f.Descriptor)
+	mnemonicOverride := f.Mnemonic
+	if mnemonicOverride == "" {
+		mnemonicOverride = wordProfileMnemonicOverride
+	}
+	mnemonics, desc, err := testutils.ParseWallet(config, mnemonicOverride, f.Descriptor)
 	if err != nil {
 		fmt.Printf("Error parsing wallet: %v\n", err)
+		os.Exit(1)
+	}
+	singlesigLayout, err := parseSinglesigLayoutFlag(f.SinglesigLayout)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
 	if f.Verbose {
@@ -112,6 +121,7 @@ func main() {
 		DPI:           float64(f.DPI),
 		Mirror:        f.Mirror,
 		Invert:        f.Invert,
+		SinglesigLayout: singlesigLayout,
 		EtchStatsPage: f.EtchStatsPage,
 	}
 	if sceneJSONPath != "" || svgOutDir != "" {
@@ -225,6 +235,19 @@ func main() {
 		if f.Verbose {
 			fmt.Printf("Generated PCL at %s (pages=%d mirror=%v invert=%v dpi=%d)\n", pclPath, len(pages), f.Mirror, f.Invert, f.DPI)
 		}
+	}
+}
+
+func parseSinglesigLayoutFlag(v string) (printer.SinglesigLayoutMode, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "seed-info":
+		return printer.SinglesigLayoutSeedWithInfo, nil
+	case "seed-only":
+		return printer.SinglesigLayoutSeedOnly, nil
+	case "seed-desc":
+		return printer.SinglesigLayoutSeedWithDescriptorQR, nil
+	default:
+		return 0, fmt.Errorf("invalid -singlesig-layout: %s (allowed: seed-info, seed-only, seed-desc)", v)
 	}
 }
 

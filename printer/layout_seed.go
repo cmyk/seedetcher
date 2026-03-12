@@ -21,7 +21,6 @@ func defaultSeedPlateLayout(totalShares int, singlesigVariant bool) seedPlateLay
 		QRLeftMM:    49.0,
 	}
 	if totalShares == 1 || singlesigVariant {
-		layout.LeftColXMM = 8.0
 		layout.RightColXMM = 47.0
 		layout.QRLeftMM = 47.0
 	}

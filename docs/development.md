@@ -66,7 +66,12 @@ go run cmd/cli/main.go -w multisig \
 - `-o` (default: `/home/cmyk/PDF`): output directory (PDF)
 - `-papersize` (default: `A4`): paper size (`A4` or `Letter`)
 - `-verbose` (default: `false`): verbose logging
-- `-w` (default: `multisig`): wallet fixture (`seed-12`, `seed-15`, `seed-18`, `seed-21`, `singlesig`, `singlesig-longwords`, `singlesig-nested-p2sh-p2wpkh`, `multisig`, `multisig-mainnet-2of3`, `multisig-nested-2of3`, `multisig-2of2`, `multisig-2of4`, `multisig-3of4`, `multisig-3of5`, `multisig-4of7`, `multisig-5of7`, `multisig-7of10`)
+- `-w` (default: `multisig`): deprecated alias for `-fixture`
+- `-fixture` (default: empty): named wallet fixture (`seed-12`, `seed-15`, `seed-18`, `seed-21`, `singlesig`, `singlesig-longwords`, `singlesig-nested-p2sh-p2wpkh`, `multisig`, `multisig-mainnet-2of3`, `multisig-nested-2of3`, `multisig-2of2`, `multisig-2of4`, `multisig-3of4`, `multisig-3of5`, `multisig-4of7`, `multisig-5of7`, `multisig-7of10`)
+- `-wallet-type` (default: empty): parametric wallet type (`singlesig` or `multisig`)
+- `-n-of-m` (default: empty): parametric multisig threshold/key-count (for example `3of5`)
+- `-word-profile` (default: `normal`): seed word profile (`normal` or `longwords`)
+- `-singlesig-layout` (default: `seed-info`): singlesig render mode (`seed-info`, `seed-only`, `seed-desc`)
 - `-png-out` (default: empty): optional output directory for plate PNGs (mirrored/inverted if set)
 - `-dpi` (default: `600`): raster output DPI when using `-png-out`
 - `-mirror` (default: `false`): mirror raster output horizontally (toner transfer)
@@ -76,6 +81,15 @@ go run cmd/cli/main.go -w multisig \
 - `-wallet-name` (default: empty): optional wallet name printed on plates (defaults to `SEEDETCHER`)
 - `-etch-stats-page` (default: `false`): append an additional etch stats page with per-plate coverage and PSU guidance
 - `-compact-2of3` (default: `false`): use compact single-sided layout for `sortedmulti` 2-of-3 descriptor shares
+
+#### Fixture vs parametric mode
+- Use either fixture mode (`-fixture` or legacy `-w`) or parametric mode (`-wallet-type` with optional `-n-of-m`), not both.
+
+#### Validity note for test layouts
+- All fixture/parametric CLI outputs are for development/layout testing only.
+- Never use these generated test wallets as real backups.
+- Fixture/default runs are descriptor-consistent test wallets (useful for regression/unit tests).
+- `-word-profile longwords` is a layout stress mode and may break seed-to-descriptor consistency.
 
 ### Host-mode printer check (usblp)
 - `image`/`image-debug` load `usblp` automatically (CONFIG_USB_PRINTER). With a USB printer attached you should see dmesg like `usblp0: USB Bidirectional printer` and `/dev/usb/lp0` present.

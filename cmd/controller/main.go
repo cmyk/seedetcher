@@ -60,13 +60,21 @@ func main() {
 }
 
 func runCLI(f *testutils.Flags) error {
-	config, ok := testutils.WalletConfigs[f.WalletType]
-	if !ok {
-		return fmt.Errorf("invalid wallet type: %s", f.WalletType)
+	config, wordProfileMnemonicOverride, err := testutils.ResolveWalletSelection(f)
+	if err != nil {
+		return fmt.Errorf("error selecting wallet fixture: %w", err)
 	}
-	mnemonics, desc, err := testutils.ParseWallet(config, f.Mnemonic, f.Descriptor)
+	mnemonicOverride := f.Mnemonic
+	if mnemonicOverride == "" {
+		mnemonicOverride = wordProfileMnemonicOverride
+	}
+	mnemonics, desc, err := testutils.ParseWallet(config, mnemonicOverride, f.Descriptor)
 	if err != nil {
 		return fmt.Errorf("error parsing wallet: %v", err)
+	}
+	singlesigLayout, err := parseSinglesigLayoutFlag(f.SinglesigLayout)
+	if err != nil {
+		return err
 	}
 	if f.Verbose {
 		logutil.DebugLog("Processing %s wallet", config.Name)
@@ -81,6 +89,7 @@ func runCLI(f *testutils.Flags) error {
 		DPI:           float64(f.DPI),
 		Mirror:        f.Mirror,
 		Invert:        f.Invert,
+		SinglesigLayout: singlesigLayout,
 		EtchStatsPage: f.EtchStatsPage,
 	}
 	printer.SetCompactDescriptor2of3Enabled(f.Compact2of3)
@@ -179,6 +188,19 @@ func runCLI(f *testutils.Flags) error {
 	}
 
 	return nil
+}
+
+func parseSinglesigLayoutFlag(v string) (printer.SinglesigLayoutMode, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", "seed-info":
+		return printer.SinglesigLayoutSeedWithInfo, nil
+	case "seed-only":
+		return printer.SinglesigLayoutSeedOnly, nil
+	case "seed-desc":
+		return printer.SinglesigLayoutSeedWithDescriptorQR, nil
+	default:
+		return 0, fmt.Errorf("invalid -singlesig-layout: %s (allowed: seed-info, seed-only, seed-desc)", v)
+	}
 }
 
 func adjustDPILowMem(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, paper printer.PaperSize, opts printer.RasterOptions, compact2of3 bool) (float64, string, error) {

@@ -19,7 +19,7 @@ func TestWalletSceneSnapshots(t *testing.T) {
 		{
 			wallet:     "singlesig",
 			wantScenes: 1,
-			wantHash:   "d288cb327b810de61c9082a233712b5fe1bafb3c21058e2dcc8108dc34f91f54",
+			wantHash:   "17e9fd052839062ee7b7c2ecc276cab80971ec6d06005de6d38a290bdb0a854d",
 		},
 		{
 			wallet:     "multisig-mainnet-2of3",
