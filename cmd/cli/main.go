@@ -54,6 +54,14 @@ func main() {
 			pclPath = filepath.Join(strings.TrimRight(pclPath, "/"), base)
 		}
 	}
+	sceneJSONPath := ""
+	if f.SceneJSONOut != "" {
+		sceneJSONPath = strings.Replace(f.SceneJSONOut, "~", usr.HomeDir, 1)
+	}
+	svgOutDir := ""
+	if f.SVGOut != "" {
+		svgOutDir = strings.Replace(f.SVGOut, "~", usr.HomeDir, 1)
+	}
 
 	if f.Verbose {
 		fmt.Println("Expanded output directory to:", outputDir)
@@ -62,6 +70,12 @@ func main() {
 		}
 		if pclPath != "" {
 			fmt.Println("Expanded PCL path to:", pclPath)
+		}
+		if sceneJSONPath != "" {
+			fmt.Println("Expanded scene JSON path to:", sceneJSONPath)
+		}
+		if svgOutDir != "" {
+			fmt.Println("Expanded SVG directory to:", svgOutDir)
 		}
 	}
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -80,6 +94,18 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if sceneJSONPath != "" {
+		if err := os.MkdirAll(filepath.Dir(sceneJSONPath), 0755); err != nil {
+			fmt.Printf("Error creating scene JSON output directory: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	if svgOutDir != "" {
+		if err := os.MkdirAll(svgOutDir, 0755); err != nil {
+			fmt.Printf("Error creating SVG output directory: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
 	printer.SetDescriptorQRSize(f.DescQRMM)
 	opts := printer.RasterOptions{
@@ -87,6 +113,32 @@ func main() {
 		Mirror:        f.Mirror,
 		Invert:        f.Invert,
 		EtchStatsPage: f.EtchStatsPage,
+	}
+	if sceneJSONPath != "" || svgOutDir != "" {
+		sceneDoc, err := printer.WalletSceneBuilder{
+			Mnemonics:       mnemonics,
+			Desc:            desc,
+			SinglesigLayout: opts.SinglesigLayout,
+		}.Build()
+		if err != nil {
+			fmt.Printf("Error building plate scene document: %v\n", err)
+			os.Exit(1)
+		}
+		if sceneJSONPath != "" {
+			if err := (printer.SceneJSONRenderer{}).Render(sceneDoc, sceneJSONPath); err != nil {
+				fmt.Printf("Error writing scene JSON: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		if svgOutDir != "" {
+			if err := (printer.SceneSVGRenderer{}).Render(sceneDoc, svgOutDir); err != nil {
+				fmt.Printf("Error writing scene SVG: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		if f.Verbose {
+			fmt.Printf("Generated %d seed scene(s)\n", len(sceneDoc.Scenes))
+		}
 	}
 	seedImgs, descImgs, err := printer.CreatePlateBitmaps(mnemonics, desc, 0, opts, nil)
 	if err != nil {

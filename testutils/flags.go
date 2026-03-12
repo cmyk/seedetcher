@@ -15,6 +15,8 @@ type Flags struct {
 	Invert        bool
 	DescQRMM      float64
 	PCLOut        string
+	SceneJSONOut  string
+	SVGOut        string
 	WalletName    string
 	EtchStatsPage bool
 	Compact2of3   bool
@@ -34,6 +36,8 @@ func DefineFlags() *Flags {
 	flag.BoolVar(&f.Invert, "invert", false, "Invert raster output (white/black swap)")
 	flag.Float64Var(&f.DescQRMM, "desc-qr-mm", 80.0, "Maximum descriptor QR size in millimeters")
 	flag.StringVar(&f.PCLOut, "pcl-out", "", "Optional output path for raw PCL (bitmap raster)")
+	flag.StringVar(&f.SceneJSONOut, "scene-json-out", "", "Optional output path for plate scene JSON (seed-side foundation)")
+	flag.StringVar(&f.SVGOut, "svg-out", "", "Optional output directory for per-plate scene SVGs (seed-side foundation)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")
 	flag.BoolVar(&f.Compact2of3, "compact-2of3", false, "Use compact single-sided layout for sortedmulti 2-of-3 descriptor shares")
