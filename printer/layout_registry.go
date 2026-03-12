@@ -24,36 +24,6 @@ type LayoutSelection struct {
 	UseCompact2of3               bool
 }
 
-func SelectLayout(ctx RenderContext) LayoutSelection {
-	totalShares := ctx.MnemonicCount
-	isSinglesigDesc := ctx.Desc != nil && len(ctx.Desc.Keys) == 1 && ctx.Desc.Type == urtypes.Singlesig
-	if ctx.Desc != nil && len(ctx.Desc.Keys) > 0 && !isSinglesigDesc {
-		totalShares = len(ctx.Desc.Keys)
-	}
-	includeSinglesigInfo := isSinglesigDesc && ctx.SinglesigLayout == SinglesigLayoutSeedWithInfo
-	includeSinglesigDescriptorQR := isSinglesigDesc && ctx.SinglesigLayout == SinglesigLayoutSeedWithDescriptorQR
-	hasDesc := ctx.Desc != nil && len(ctx.Desc.Keys) > 0 && (!isSinglesigDesc || includeSinglesigDescriptorQR)
-	useCompact2of3 := hasDesc &&
-		ctx.Compact2of3 &&
-		ctx.Desc.Type == urtypes.SortedMulti &&
-		ctx.Desc.Threshold == 2 &&
-		len(ctx.Desc.Keys) == 3 &&
-		totalShares == 3
-	name := "classic"
-	if useCompact2of3 {
-		name = "compact-2of3"
-	}
-	return LayoutSelection{
-		Name:                         name,
-		TotalShares:                  totalShares,
-		IsSinglesigDesc:              isSinglesigDesc,
-		IncludeSinglesigInfo:         includeSinglesigInfo,
-		IncludeSinglesigDescriptorQR: includeSinglesigDescriptorQR,
-		HasDescriptorSide:            hasDesc,
-		UseCompact2of3:               useCompact2of3,
-	}
-}
-
 func (s LayoutSelection) SeedLayout(desc *urtypes.OutputDescriptor) seedPlateLayout {
 	layout := defaultSeedPlateLayout(s.TotalShares, s.IsSinglesigDesc)
 	if desc == nil || s.IsSinglesigDesc {
@@ -65,6 +35,80 @@ func (s LayoutSelection) SeedLayout(desc *urtypes.OutputDescriptor) seedPlateLay
 		layout.RightMetaText = fmt.Sprintf("%s/%s/NET:%s", path, desc.Script.Tag(), descriptorNetworkTag(desc.Keys[0].Network))
 	}
 	return layout
+}
+
+type LayoutSpec interface {
+	Name() string
+	Supports(ctx RenderContext, sel LayoutSelection) bool
+	Apply(ctx RenderContext, sel LayoutSelection) LayoutSelection
+}
+
+type ClassicLayoutSpec struct{}
+
+func (ClassicLayoutSpec) Name() string { return "classic" }
+func (ClassicLayoutSpec) Supports(_ RenderContext, _ LayoutSelection) bool {
+	return true
+}
+func (ClassicLayoutSpec) Apply(_ RenderContext, sel LayoutSelection) LayoutSelection {
+	sel.Name = "classic"
+	sel.UseCompact2of3 = false
+	return sel
+}
+
+type Compact2of3LayoutSpec struct{}
+
+func (Compact2of3LayoutSpec) Name() string { return "compact-2of3" }
+func (Compact2of3LayoutSpec) Supports(ctx RenderContext, sel LayoutSelection) bool {
+	if !ctx.Compact2of3 || !sel.HasDescriptorSide || ctx.Desc == nil {
+		return false
+	}
+	return ctx.Desc.Type == urtypes.SortedMulti &&
+		ctx.Desc.Threshold == 2 &&
+		len(ctx.Desc.Keys) == 3 &&
+		sel.TotalShares == 3
+}
+func (Compact2of3LayoutSpec) Apply(_ RenderContext, sel LayoutSelection) LayoutSelection {
+	sel.Name = "compact-2of3"
+	sel.UseCompact2of3 = true
+	return sel
+}
+
+func baseSelection(ctx RenderContext) LayoutSelection {
+	totalShares := ctx.MnemonicCount
+	isSinglesigDesc := ctx.Desc != nil && len(ctx.Desc.Keys) == 1 && ctx.Desc.Type == urtypes.Singlesig
+	if ctx.Desc != nil && len(ctx.Desc.Keys) > 0 && !isSinglesigDesc {
+		totalShares = len(ctx.Desc.Keys)
+	}
+	includeSinglesigInfo := isSinglesigDesc && ctx.SinglesigLayout == SinglesigLayoutSeedWithInfo
+	includeSinglesigDescriptorQR := isSinglesigDesc && ctx.SinglesigLayout == SinglesigLayoutSeedWithDescriptorQR
+	hasDesc := ctx.Desc != nil && len(ctx.Desc.Keys) > 0 && (!isSinglesigDesc || includeSinglesigDescriptorQR)
+	return LayoutSelection{
+		Name:                         "classic",
+		TotalShares:                  totalShares,
+		IsSinglesigDesc:              isSinglesigDesc,
+		IncludeSinglesigInfo:         includeSinglesigInfo,
+		IncludeSinglesigDescriptorQR: includeSinglesigDescriptorQR,
+		HasDescriptorSide:            hasDesc,
+		UseCompact2of3:               false,
+	}
+}
+
+func layoutRegistry() []LayoutSpec {
+	// Priority order matters: more specific first.
+	return []LayoutSpec{
+		Compact2of3LayoutSpec{},
+		ClassicLayoutSpec{},
+	}
+}
+
+func SelectLayout(ctx RenderContext) LayoutSelection {
+	sel := baseSelection(ctx)
+	for _, spec := range layoutRegistry() {
+		if spec.Supports(ctx, sel) {
+			return spec.Apply(ctx, sel)
+		}
+	}
+	return sel
 }
 
 func DescriptorPayloadsByShare(desc *urtypes.OutputDescriptor, totalShares int, isSinglesigDesc, includeSinglesigDescriptorSide bool) ([][]string, error) {
