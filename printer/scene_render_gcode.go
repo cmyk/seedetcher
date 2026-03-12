@@ -17,6 +17,7 @@ type SceneGCodeRenderer struct {
 	CutFeedMMMin   float64
 	RapidFeedMMMin float64
 	CurveSteps     int
+	PlateMM        float64
 }
 
 func (r SceneGCodeRenderer) Render(doc *PlateDocument, outDir string) error {
@@ -30,7 +31,11 @@ func (r SceneGCodeRenderer) Render(doc *PlateDocument, outDir string) error {
 			name = fmt.Sprintf("scene_%02d", i+1)
 		}
 		path := filepath.Join(outDir, sanitizeSceneFilename(name)+".gcode")
-		if err := os.WriteFile(path, []byte(renderSceneGCode(s, cfg)), 0644); err != nil {
+		gcode, err := renderSceneGCode(s, cfg)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(path, []byte(gcode), 0644); err != nil {
 			return err
 		}
 	}
@@ -56,6 +61,9 @@ func (r SceneGCodeRenderer) withDefaults() SceneGCodeRenderer {
 	if r.CurveSteps <= 0 {
 		r.CurveSteps = 10
 	}
+	if r.PlateMM <= 0 {
+		r.PlateMM = 100
+	}
 	return r
 }
 
@@ -70,12 +78,18 @@ type gcodeEmitter struct {
 	x       float64
 	y       float64
 	laserOn bool
+	maxXY   float64
+	err     error
 }
 
-func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) string {
-	e := &gcodeEmitter{cfg: cfg}
+func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) {
+	e := &gcodeEmitter{cfg: cfg, maxXY: cfg.PlateMM}
+	if scene.WidthMM > cfg.PlateMM || scene.HeightMM > cfg.PlateMM {
+		return "", fmt.Errorf("scene '%s' exceeds plate bounds: %.3fx%.3fmm > %.3fmm", scene.Name, scene.WidthMM, scene.HeightMM, cfg.PlateMM)
+	}
 	fmt.Fprintf(&e.b, "; SeedEtcher scene: %s\n", scene.Name)
 	fmt.Fprintf(&e.b, "; Size: %.3fmm x %.3fmm\n", scene.WidthMM, scene.HeightMM)
+	fmt.Fprintf(&e.b, "; Workspace: %.3fmm\n", cfg.PlateMM)
 	e.b.WriteString("G21\n")
 	e.b.WriteString("G90\n")
 	fmt.Fprintf(&e.b, "G0 F%.1f\n", cfg.RapidFeedMMMin)
@@ -87,15 +101,24 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) string {
 		fmt.Fprintf(&e.b, "; Layer: %s\n", layer.Tag)
 		for _, p := range layer.Primitives {
 			e.renderPrimitive(p)
+			if e.err != nil {
+				return "", e.err
+			}
 		}
 	}
 	e.laserOffSafe()
+	if e.err != nil {
+		return "", e.err
+	}
 	e.b.WriteString("G0 X0.000 Y0.000\n")
 	e.b.WriteString("M2\n")
-	return e.b.String()
+	return e.b.String(), nil
 }
 
 func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
+	if e.err != nil {
+		return
+	}
 	switch p.Kind {
 	case PrimitiveGroup:
 		for _, c := range p.Children {
@@ -129,6 +152,9 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 }
 
 func (e *gcodeEmitter) tracePolyline(poly []gcodePt) {
+	if e.err != nil {
+		return
+	}
 	if len(poly) < 2 {
 		return
 	}
@@ -142,11 +168,17 @@ func (e *gcodeEmitter) tracePolyline(poly []gcodePt) {
 }
 
 func (e *gcodeEmitter) rapidTo(x, y float64) {
+	if !e.validXY(x, y) {
+		return
+	}
 	fmt.Fprintf(&e.b, "G0 X%.3f Y%.3f\n", x, y)
 	e.x, e.y = x, y
 }
 
 func (e *gcodeEmitter) cutTo(x, y float64) {
+	if !e.validXY(x, y) {
+		return
+	}
 	fmt.Fprintf(&e.b, "G1 X%.3f Y%.3f\n", x, y)
 	e.x, e.y = x, y
 }
@@ -160,12 +192,30 @@ func (e *gcodeEmitter) laserOnStart() {
 }
 
 func (e *gcodeEmitter) laserOffSafe() {
+	if e.err != nil {
+		return
+	}
 	if !e.laserOn {
 		return
 	}
 	e.b.WriteString(e.cfg.LaserOffCmd)
 	e.b.WriteByte('\n')
 	e.laserOn = false
+}
+
+func (e *gcodeEmitter) validXY(x, y float64) bool {
+	if e.err != nil {
+		return false
+	}
+	if math.IsNaN(x) || math.IsNaN(y) || math.IsInf(x, 0) || math.IsInf(y, 0) {
+		e.err = fmt.Errorf("invalid coordinate (NaN/Inf): x=%v y=%v", x, y)
+		return false
+	}
+	if x < 0 || y < 0 || x > e.maxXY || y > e.maxXY {
+		e.err = fmt.Errorf("gcode coordinate out of bounds: x=%.3f y=%.3f workspace=0..%.3f", x, y, e.maxXY)
+		return false
+	}
+	return true
 }
 
 func circlePolyline(cx, cy, r float64, segments int) []gcodePt {

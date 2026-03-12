@@ -164,9 +164,15 @@ func main() {
 			}
 		}
 		if gcodeOutDir != "" {
+			sideScenes, err := filterScenesForSide(sceneDoc, f.GCodeSide)
+			if err != nil {
+				fmt.Printf("Error selecting G-code side: %v\n", err)
+				os.Exit(1)
+			}
 			if err := (printer.SceneGCodeRenderer{
 				LaserMaxS: f.LaserMaxS,
-			}).Render(sceneDoc, gcodeOutDir); err != nil {
+				PlateMM:   f.PlateMM,
+			}).Render(sideScenes, gcodeOutDir); err != nil {
 				fmt.Printf("Error writing scene G-code: %v\n", err)
 				os.Exit(1)
 			}
@@ -274,6 +280,42 @@ func parseSinglesigLayoutFlag(v string) (printer.SinglesigLayoutMode, error) {
 	default:
 		return 0, fmt.Errorf("invalid -singlesig-layout: %s (allowed: seed-info, seed-only, seed-desc)", v)
 	}
+}
+
+func filterScenesForSide(doc *printer.PlateDocument, side string) (*printer.PlateDocument, error) {
+	if doc == nil {
+		return nil, fmt.Errorf("scene document is nil")
+	}
+	mode := strings.ToLower(strings.TrimSpace(side))
+	if mode == "" {
+		mode = "both"
+	}
+	out := &printer.PlateDocument{
+		Version: doc.Version,
+		Scenes:  make([]printer.PlateScene, 0, len(doc.Scenes)),
+	}
+	switch mode {
+	case "both":
+		out.Scenes = append(out.Scenes, doc.Scenes...)
+	case "seed":
+		for _, s := range doc.Scenes {
+			if strings.HasPrefix(s.Name, "seed_") {
+				out.Scenes = append(out.Scenes, s)
+			}
+		}
+	case "desc":
+		for _, s := range doc.Scenes {
+			if strings.HasPrefix(s.Name, "desc_") {
+				out.Scenes = append(out.Scenes, s)
+			}
+		}
+	default:
+		return nil, fmt.Errorf("invalid -side: %s (allowed: seed, desc, both)", side)
+	}
+	if len(out.Scenes) == 0 {
+		return nil, fmt.Errorf("no scenes selected for -side=%s", mode)
+	}
+	return out, nil
 }
 
 type walletConfig struct {

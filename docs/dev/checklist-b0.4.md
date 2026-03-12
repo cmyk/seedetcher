@@ -66,9 +66,12 @@
 ### 3) Direct G-code backend (GRBL)
 - [ ] Add CLI output mode for laser:
   - [x] `-gcode-out <dir>`
-  - [ ] `-side seed|desc|both`
-  - [ ] `-plate-mm` (default `100`)
-  - [ ] laser params (`-laser-max-s`, `-laser-feed`, `-rapid-feed`)
+  - [x] `-side seed|desc|both`
+  - [x] `-plate-mm` (default `100`)
+  - [ ] laser params:
+    - [x] `-laser-max-s`
+    - [ ] `-laser-feed`
+    - [ ] `-rapid-feed`
   - [x] no-send mode by default (generate files first, stream later)
 - [ ] Emit GRBL-safe preamble/footer:
   - [x] `G21`, `G90`, `M4`/`M5`, sane feed defaults

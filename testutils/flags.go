@@ -24,6 +24,8 @@ type Flags struct {
 	SceneJSONOut    string
 	SVGOut          string
 	GCodeOut        string
+	GCodeSide       string
+	PlateMM         float64
 	LaserMaxS       int
 	WalletName      string
 	EtchStatsPage   bool
@@ -53,6 +55,8 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.SceneJSONOut, "scene-json-out", "", "Optional output path for plate scene JSON (seed-side foundation)")
 	flag.StringVar(&f.SVGOut, "svg-out", "", "Optional output directory for per-plate scene SVGs (seed-side foundation)")
 	flag.StringVar(&f.GCodeOut, "gcode-out", "", "Optional output directory for per-plate scene G-code (file-only laser prototype)")
+	flag.StringVar(&f.GCodeSide, "side", "both", "G-code scene side selection (seed, desc, or both)")
+	flag.Float64Var(&f.PlateMM, "plate-mm", 100.0, "Laser workspace size in mm used for G-code bounds checks")
 	flag.IntVar(&f.LaserMaxS, "laser-max-s", 80, "Laser power S value used in generated G-code (for example 0..1000, default 80)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")
