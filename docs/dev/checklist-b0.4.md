@@ -26,6 +26,10 @@
   - [ ] `SceneRasterRenderer` (for print path parity checks)
   - [ ] `SceneGCodeRenderer` (for GRBL output)
   - [ ] optional `SceneSVGRenderer` (debug only)
+- [ ] Add visual/debug CLI outputs from the same scene:
+  - [ ] `-scene-json-out <file>` (canonical scene dump for diff/tests)
+  - [ ] `-svg-out <dir>` (human visual inspection)
+  - [ ] `-png-out <dir>` from scene raster renderer (quick morphology parity)
 - [ ] Keep current print pipeline untouched in this phase.
 
 ### 2) PlateScene builder (layout migration)
@@ -43,6 +47,7 @@
   - [ ] `-side seed|desc|both`
   - [ ] `-plate-mm` (default `100`)
   - [ ] laser params (`-laser-max-s`, `-laser-feed`, `-rapid-feed`)
+  - [ ] no-send mode by default (generate files first, stream later)
 - [ ] Emit GRBL-safe preamble/footer:
   - [ ] `G21`, `G90`, `M4`/`M5`, sane feed defaults
   - [ ] configurable power scaling `S`
