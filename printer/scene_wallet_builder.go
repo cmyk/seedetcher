@@ -131,7 +131,9 @@ func buildDescriptorPlateScene(desc *urtypes.OutputDescriptor, keyIdx, shareNum,
 	pathText := fmt.Sprintf("PATH:%s", derivationPathForKey(desc.Keys[keyIdx], desc.Script))
 
 	if dual {
-		pathY := y + 2*lineSpacing + descriptorSingleQRLayout.PathGapMM
+		// Keep dual-QR descriptor text spacing identical to raster path:
+		// baseline(line2) + PathGapMM, then guide starts one line below + guide gap.
+		pathY := y + lineSpacing + descriptorSingleQRLayout.PathGapMM
 		mask.Primitives = append(mask.Primitives, newSceneText(margin, pathY, pathText, 11, trackEM, TextDirHorizontal, TextAnchorBaselineLeft))
 		guide := fmt.Sprintf("RECOVER: SCAN BOTH QRS FROM >=%d PLATES", desc.Threshold)
 		gLines := wrapTrackedParagraphs(face, dpi, guide, plateSizeMM-2*margin, trackPx)
