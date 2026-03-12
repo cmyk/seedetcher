@@ -75,25 +75,18 @@ func renderPrimitiveSVG(b *strings.Builder, p ScenePrimitive, indent string) {
 	case PrimitiveText:
 		pathData, ok := svgTextPath(p)
 		if ok {
-			transform := ""
-			if p.RotateDeg != 0 {
-				transform = fmt.Sprintf(" transform=\"rotate(%.2f %.4f %.4f)\"", p.RotateDeg, p.XMM, p.YMM)
-			}
-			fmt.Fprintf(b, "%s<path d=\"%s\" fill=\"%s\" stroke=\"none\"%s />\n", indent, pathData, fill, transform)
+			fmt.Fprintf(b, "%s<path d=\"%s\" fill=\"%s\" stroke=\"none\" />\n", indent, pathData, fill)
 			return
 		}
 		// Fallback if outline conversion fails.
 		transform := ""
-		if p.RotateDeg != 0 {
-			transform = fmt.Sprintf(" transform=\"rotate(%.2f %.4f %.4f)\"", p.RotateDeg, p.XMM, p.YMM)
-		}
 		letterSpacing := ""
 		if p.TrackingEM != 0 {
 			letterSpacing = fmt.Sprintf(" letter-spacing=\"%.4fem\"", p.TrackingEM)
 		}
 		fontSizeMM := p.FontSizePt * 25.4 / 72.0
 		fmt.Fprintf(b, "%s<text x=\"%.4f\" y=\"%.4f\" fill=\"%s\" font-family=\"%s\" font-size=\"%.4fmm\"%s%s>%s</text>\n",
-			indent, p.XMM, p.YMM, fill, escapeXML(svgFontFamily(p.FontFamily)), fontSizeMM, letterSpacing, transform, escapeXML(p.Text))
+			indent, p.XMM, p.YMM, fill, escapeXML(svgFallbackFontFamily(p.FontFamily)), fontSizeMM, letterSpacing, transform, escapeXML(p.Text))
 	case PrimitiveGroup:
 		fmt.Fprintf(b, "%s<g>\n", indent)
 		for _, c := range p.Children {
@@ -331,7 +324,7 @@ func pxToMM(px float64) float64 {
 	return px * 25.4 / svgTextDPI
 }
 
-func svgFontFamily(in string) string {
+func svgFallbackFontFamily(in string) string {
 	base := strings.TrimSpace(in)
 	if strings.EqualFold(base, "SeedEtcher-Regular") || base == "" {
 		base = "SeedEtcher"

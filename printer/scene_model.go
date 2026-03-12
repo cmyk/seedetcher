@@ -52,7 +52,6 @@ type ScenePrimitive struct {
 	TrackingEM float64       `json:"tracking_em,omitempty"`
 	Direction  TextDirection `json:"direction,omitempty"`
 	Anchor     TextAnchor    `json:"anchor,omitempty"`
-	RotateDeg  float64       `json:"rotate_deg,omitempty"` // legacy/debug only
 
 	Children []ScenePrimitive `json:"children,omitempty"`
 }
