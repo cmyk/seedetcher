@@ -2,9 +2,11 @@ package printer
 
 import (
 	"fmt"
+	"image"
 	"strings"
 
 	"seedetcher.com/bc/urtypes"
+	"seedetcher.com/bip39"
 )
 
 type RenderContext struct {
@@ -41,6 +43,8 @@ type LayoutSpec interface {
 	Name() string
 	Supports(ctx RenderContext, sel LayoutSelection) bool
 	Apply(ctx RenderContext, sel LayoutSelection) LayoutSelection
+	RenderBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, opts RasterOptions, sel LayoutSelection, progress ProgressFunc) ([]*image.Paletted, []*image.Paletted, error)
+	BuildScenes(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescriptor, singlesigLayout SinglesigLayoutMode, sel LayoutSelection) (*PlateDocument, error)
 }
 
 type ClassicLayoutSpec struct{}

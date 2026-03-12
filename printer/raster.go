@@ -107,72 +107,8 @@ func CreatePlateBitmaps(mnemonics []bip39.Mnemonic, desc *urtypes.OutputDescript
 		SinglesigLayout: opts.SinglesigLayout,
 		Compact2of3:     CompactDescriptor2of3Enabled(),
 	})
-	totalShares := selection.TotalShares
-	seedLayout := selection.SeedLayout(desc)
-
-	seedImgs := make([]*image.Paletted, totalShares)
-	var descImgs []*image.Paletted
-	hasDesc := selection.HasDescriptorSide
-	if hasDesc {
-		descImgs = make([]*image.Paletted, totalShares)
-	}
-	shardQRPayloads, err := DescriptorPayloadsByShare(desc, totalShares, selection.IsSinglesigDesc, selection.IncludeSinglesigDescriptorQR)
-	if err != nil {
-		return nil, nil, err
-	}
-	compactSingleSided := selection.UseCompact2of3
-	if compactSingleSided {
-		descImgs = nil
-	}
-
-	prepareTotal := int64(totalShares)
-	if hasDesc && !compactSingleSided {
-		prepareTotal *= 2
-	}
-	prepareDone := int64(0)
-
-	for i := 0; i < totalShares; i++ {
-		mnemonic := mnemonics[i%len(mnemonics)]
-		seedImg, err := renderSeedPlateBitmapWithLayout(mnemonic, i+1, totalShares, opts, seedLayout)
-		if err != nil {
-			return nil, nil, err
-		}
-		if compactSingleSided {
-			descKeyIdx := i % len(desc.Keys)
-			sharePayload := ""
-			if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
-				sharePayload = shardQRPayloads[i][0]
-			}
-			seedImg, err = renderCompact2of3PlateBitmap(mnemonic, desc, descKeyIdx, opts, sharePayload)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-		seedImgs[i] = seedImg
-		prepareDone++
-		if progress != nil && prepareTotal > 0 {
-			progress(StagePrepare, prepareDone, prepareTotal)
-		}
-
-		if hasDesc && !compactSingleSided {
-			descKeyIdx := i % len(desc.Keys)
-			var descQRs []string
-			if i < len(shardQRPayloads) {
-				descQRs = shardQRPayloads[i]
-			}
-			descImg, err := RenderDescriptorPlateBitmap(desc, descKeyIdx, i+1, totalShares, opts, descQRs)
-			if err != nil {
-				return nil, nil, err
-			}
-			descImgs[i] = descImg
-			prepareDone++
-			if progress != nil && prepareTotal > 0 {
-				progress(StagePrepare, prepareDone, prepareTotal)
-			}
-		}
-	}
-
-	return seedImgs, descImgs, nil
+	_ = keyIdx
+	return layoutSpecForSelection(selection).RenderBitmaps(mnemonics, desc, opts, selection, progress)
 }
 
 // RenderCompact2of3PlateBitmap renders a single-sided compact 2-of-3 plate

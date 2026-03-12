@@ -26,66 +26,7 @@ func (b WalletSceneBuilder) Build() (*PlateDocument, error) {
 		SinglesigLayout: b.SinglesigLayout,
 		Compact2of3:     CompactDescriptor2of3Enabled(),
 	})
-	totalShares := selection.TotalShares
-
-	if selection.UseCompact2of3 {
-		shardQRPayloads, err := DescriptorPayloadsByShare(b.Desc, totalShares, selection.IsSinglesigDesc, selection.IncludeSinglesigDescriptorQR)
-		if err != nil {
-			return nil, err
-		}
-		doc := &PlateDocument{
-			Version: sceneVersion,
-			Scenes:  make([]PlateScene, 0, totalShares),
-		}
-		for i := 0; i < totalShares; i++ {
-			keyIdx := i % len(b.Desc.Keys)
-			descQR := ""
-			if i < len(shardQRPayloads) && len(shardQRPayloads[i]) > 0 {
-				descQR = shardQRPayloads[i][0]
-			}
-			scene, err := buildCompact2of3SeedScene(b.Mnemonics[i%len(b.Mnemonics)], b.Desc, keyIdx, descQR)
-			if err != nil {
-				return nil, err
-			}
-			scene.Name = fmt.Sprintf("seed_%02d", i+1)
-			doc.Scenes = append(doc.Scenes, scene)
-		}
-		return doc, nil
-	}
-
-	seedBuilder := SeedSceneBuilder{
-		Mnemonics:       b.Mnemonics,
-		Desc:            b.Desc,
-		SinglesigLayout: b.SinglesigLayout,
-	}
-	seedDoc, err := seedBuilder.Build()
-	if err != nil {
-		return nil, err
-	}
-
-	hasDescScenes := selection.HasDescriptorSide
-	if !hasDescScenes {
-		return seedDoc, nil
-	}
-
-	qrPayloadsByShare, err := DescriptorPayloadsByShare(b.Desc, totalShares, selection.IsSinglesigDesc, selection.IncludeSinglesigDescriptorQR)
-	if err != nil {
-		return nil, err
-	}
-	for i := 0; i < totalShares; i++ {
-		keyIdx := i % len(b.Desc.Keys)
-		qrPayloads := []string(nil)
-		if i < len(qrPayloadsByShare) {
-			qrPayloads = qrPayloadsByShare[i]
-		}
-		scene, err := buildDescriptorPlateScene(b.Desc, keyIdx, i+1, totalShares, qrPayloads)
-		if err != nil {
-			return nil, err
-		}
-		scene.Name = fmt.Sprintf("desc_%02d", i+1)
-		seedDoc.Scenes = append(seedDoc.Scenes, scene)
-	}
-	return seedDoc, nil
+	return layoutSpecForSelection(selection).BuildScenes(b.Mnemonics, b.Desc, b.SinglesigLayout, selection)
 }
 
 func buildDescriptorPlateScene(desc *urtypes.OutputDescriptor, keyIdx, shareNum, totalShares int, qrPayloads []string) (PlateScene, error) {
