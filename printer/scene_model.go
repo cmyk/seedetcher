@@ -42,6 +42,7 @@ type ScenePrimitive struct {
 
 	// Paint/style
 	FillColor   string  `json:"fill_color,omitempty"`
+	FillRule    string  `json:"fill_rule,omitempty"`
 	StrokeColor string  `json:"stroke_color,omitempty"`
 	StrokeMM    float64 `json:"stroke_mm,omitempty"`
 

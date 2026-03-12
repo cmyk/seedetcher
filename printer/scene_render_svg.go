@@ -55,6 +55,7 @@ func renderPrimitiveSVG(b *strings.Builder, p ScenePrimitive, indent string) {
 	if fill == "" {
 		fill = "none"
 	}
+	fillRule := p.FillRule
 	stroke := p.StrokeColor
 	if stroke == "" {
 		stroke = "none"
@@ -70,8 +71,13 @@ func renderPrimitiveSVG(b *strings.Builder, p ScenePrimitive, indent string) {
 		fmt.Fprintf(b, "%s<circle cx=\"%.4f\" cy=\"%.4f\" r=\"%.4f\" fill=\"%s\" stroke=\"%s\" stroke-width=\"%.4f\" />\n",
 			indent, p.CXMM, p.CYMM, p.RadiusMM, fill, stroke, p.StrokeMM)
 	case PrimitivePath:
-		fmt.Fprintf(b, "%s<path d=\"%s\" fill=\"%s\" stroke=\"%s\" stroke-width=\"%.4f\" />\n",
-			indent, escapeXML(p.PathData), fill, stroke, p.StrokeMM)
+		if fillRule != "" {
+			fmt.Fprintf(b, "%s<path d=\"%s\" fill=\"%s\" fill-rule=\"%s\" stroke=\"%s\" stroke-width=\"%.4f\" />\n",
+				indent, escapeXML(p.PathData), escapeXML(fill), escapeXML(fillRule), stroke, p.StrokeMM)
+		} else {
+			fmt.Fprintf(b, "%s<path d=\"%s\" fill=\"%s\" stroke=\"%s\" stroke-width=\"%.4f\" />\n",
+				indent, escapeXML(p.PathData), fill, stroke, p.StrokeMM)
+		}
 	case PrimitiveText:
 		pathData, ok := svgTextPath(p)
 		if ok {
