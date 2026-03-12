@@ -380,20 +380,46 @@ find_runtime_brlaser_ppd() {
   model_dir="$CUPS_RUNTIME_DATA/model"
   [ -d "$model_dir" ] || return 0
 
+  model_candidates() {
+    in_model="$1"
+    [ -n "$in_model" ] || return 0
+    base="$(printf '%s' "$in_model" | sed 's/[[:space:]]\+[Ss][Ee][Rr][Ii][Ee][Ss]$//')"
+    {
+      printf '%s\n' "$in_model"
+      [ "$base" = "$in_model" ] || printf '%s\n' "$base"
+      case "$base" in
+        *DW)
+          printf '%s\n' "${base%DW}D"
+          printf '%s\n' "${base%DW}DN"
+          ;;
+        *DN)
+          printf '%s\n' "${base%DN}D"
+          printf '%s\n' "${base%DN}DW"
+          ;;
+        *D)
+          printf '%s\n' "${base%D}DW"
+          printf '%s\n' "${base%D}DN"
+          ;;
+      esac
+    } | awk 'NF && !seen[$0]++'
+  }
   if [ -n "$model" ]; then
-    ppd="$(find "$model_dir" -type f \( -iname "*${model}*.ppd" -o -iname "*${model}*.ppd.gz" \) | head -n 1)"
-    [ -n "$ppd" ] && { echo "$ppd"; return 0; }
-
-    ppd="$(grep -RilsF "ModelName: \"Brother $model\"" "$model_dir" 2>/dev/null | head -n 1)"
-    [ -n "$ppd" ] && { echo "$ppd"; return 0; }
-
-    ppd="$(grep -RilsF "MDL:$model;" "$model_dir" 2>/dev/null | head -n 1)"
-    [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+    while IFS= read -r cand; do
+      [ -n "$cand" ] || continue
+      ppd="$(grep -RilsF "MDL:${cand};" "$model_dir" 2>/dev/null | head -n 1)"
+      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+    done <<EOF
+$(model_candidates "$model")
+EOF
+    while IFS= read -r cand; do
+      [ -n "$cand" ] || continue
+      ppd="$(grep -RilsF "ModelName: \"Brother ${cand}\"" "$model_dir" 2>/dev/null | head -n 1)"
+      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+    done <<EOF
+$(model_candidates "$model")
+EOF
   fi
-
-  find "$model_dir" -type f \
-    \( -iname 'brl*.ppd' -o -iname 'brl*.ppd.gz' -o -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) \
-    | head -n 1
+  return 0
 }
 
 provision_hbp_queue() {
@@ -405,8 +431,27 @@ provision_hbp_queue() {
     return 0
   fi
 
+  model_from_uri_path() {
+    printf '%s' "$1" | sed -n 's@^usb://Brother/\([^?]*\).*$@\1@p' | sed 's/%20/ /g'
+  }
+  model_from_usb_enum() {
+    uri="$1"
+    enum="$2"
+    [ -n "$enum" ] || return 0
+    line="$(printf '%s\n' "$enum" | awk -v u="$uri" '$1=="direct" && $2==u {print; exit}')"
+    [ -n "$line" ] || line="$(printf '%s\n' "$enum" | awk '$1=="direct" && $2 ~ /^usb:\/\/Brother\// {print; exit}')"
+    [ -n "$line" ] || return 0
+    printf '%s\n' "$line" | sed -n 's/.*MDL:\([^;"]*\).*/\1/p' | head -n 1
+  }
+
   ppd=""
-  model_name="$(printf '%s' "$queue_uri" | sed -n 's@^usb://Brother/\([^?]*\).*$@\1@p' | sed 's/%20/ /g')"
+  usb_enum=""
+  if [ -x /var/cups-serverbin/lib/cups/backend/usb ]; then
+    usb_enum="$(/var/cups-serverbin/lib/cups/backend/usb 2>/dev/null || true)"
+  fi
+  model_uri="$(model_from_uri_path "$queue_uri")"
+  model_mdl="$(model_from_usb_enum "$queue_uri" "$usb_enum")"
+  model_name="${model_mdl:-$model_uri}"
   if [ -d "$CUPS_RUNTIME_DATA/model" ]; then
     ppd="$(find_runtime_brlaser_ppd "$model_name")"
   fi
@@ -419,9 +464,9 @@ provision_hbp_queue() {
   if [ -n "$ppd" ]; then
     /bin/lpadmin -h "$SOCK" -x test-hbp >/dev/null 2>&1 || true
     /bin/lpadmin -h "$SOCK" -p test-hbp -E -v "$queue_uri" -P "$ppd" >> /log/cups.log 2>&1 || true
-    debug_echo "queue test-hbp configured ppd=$ppd"
+    debug_echo "queue test-hbp configured model_uri='${model_uri:-<none>}' model_mdl='${model_mdl:-<none>}' model_used='${model_name:-<none>}' ppd=$ppd"
   else
-    debug_echo "no brlaser PPD found for non-raw queue"
+    debug_echo "no exact brlaser PPD found for model='${model_name:-<none>}'"
   fi
 }
 

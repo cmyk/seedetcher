@@ -73,40 +73,74 @@ ensure_hbp_queue() {
   lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1 && return 0
 
   URI=""
+  USB_ENUM=""
   if lpstat -h "$SOCK" -p test >/dev/null 2>&1; then
     URI="$(lpstat -h "$SOCK" -v 2>/dev/null | awk '$1=="device" && $3=="test:" {print $4; exit}')"
   fi
   if [ -z "$URI" ] && [ -x /var/cups-serverbin/lib/cups/backend/usb ]; then
-    URI="$(/var/cups-serverbin/lib/cups/backend/usb 2>/dev/null | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
+    USB_ENUM="$(/var/cups-serverbin/lib/cups/backend/usb 2>/dev/null || true)"
+    URI="$(printf '%s\n' "$USB_ENUM" | awk '$1=="direct" && $2 ~ /^usb:\/\// {print $2; exit}')"
   fi
   [ -n "$URI" ] || return 1
 
-  model_from_uri() {
+  model_from_uri_path() {
     # usb://Brother/HL-L5000D%20series?serial=... -> HL-L5000D series
     printf '%s' "$1" | sed -n 's@^usb://Brother/\([^?]*\).*$@\1@p' | sed 's/%20/ /g'
   }
-  MODEL_NAME="$(model_from_uri "$URI")"
+  model_from_usb_enum() {
+    uri="$1"
+    enum="$2"
+    [ -n "$enum" ] || return 0
+    line="$(printf '%s\n' "$enum" | awk -v u="$uri" '$1=="direct" && $2==u {print; exit}')"
+    [ -n "$line" ] || line="$(printf '%s\n' "$enum" | awk '$1=="direct" && $2 ~ /^usb:\/\/Brother\// {print; exit}')"
+    [ -n "$line" ] || return 0
+    printf '%s\n' "$line" | sed -n 's/.*MDL:\([^;"]*\).*/\1/p' | head -n 1
+  }
+  model_candidates() {
+    model="$1"
+    [ -n "$model" ] || return 0
+    base="$(printf '%s' "$model" | sed 's/[[:space:]]\+[Ss][Ee][Rr][Ii][Ee][Ss]$//')"
+    {
+      printf '%s\n' "$model"
+      [ "$base" = "$model" ] || printf '%s\n' "$base"
+      case "$base" in
+        *DW)
+          printf '%s\n' "${base%DW}D"
+          printf '%s\n' "${base%DW}DN"
+          ;;
+        *DN)
+          printf '%s\n' "${base%DN}D"
+          printf '%s\n' "${base%DN}DW"
+          ;;
+        *D)
+          printf '%s\n' "${base%D}DW"
+          printf '%s\n' "${base%D}DN"
+          ;;
+      esac
+    } | awk 'NF && !seen[$0]++'
+  }
   find_brlaser_ppd() {
     model="$1"
     model_dir="/var/cups-data/model"
     [ -d "$model_dir" ] || return 0
 
     if [ -n "$model" ]; then
-      # Fast path: direct filename match.
-      ppd="$(find "$model_dir" -type f \( -iname "*${model}*.ppd" -o -iname "*${model}*.ppd.gz" \) | head -n 1)"
-      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
-
-      # ppdc-generated brlaser files are often named like brl5000d.ppd, so also match content.
-      ppd="$(grep -RilsF "ModelName: \"Brother $model\"" "$model_dir" 2>/dev/null | head -n 1)"
-      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
-
-      ppd="$(grep -RilsF "MDL:$model;" "$model_dir" 2>/dev/null | head -n 1)"
-      [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+      while IFS= read -r cand; do
+        [ -n "$cand" ] || continue
+        ppd="$(grep -RilsF "MDL:${cand};" "$model_dir" 2>/dev/null | head -n 1)"
+        [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+      done <<EOF
+$(model_candidates "$model")
+EOF
+      while IFS= read -r cand; do
+        [ -n "$cand" ] || continue
+        ppd="$(grep -RilsF "ModelName: \"Brother ${cand}\"" "$model_dir" 2>/dev/null | head -n 1)"
+        [ -n "$ppd" ] && { echo "$ppd"; return 0; }
+      done <<EOF
+$(model_candidates "$model")
+EOF
     fi
-
-    find "$model_dir" -type f \
-      \( -iname 'brl*.ppd' -o -iname 'brl*.ppd.gz' -o -iname '*Brother*HL-*.ppd' -o -iname '*Brother*HL-*.ppd.gz' \) \
-      | head -n 1
+    return 0
   }
   run_ppdc_brlaser() {
     out_dir="$1"
@@ -127,7 +161,12 @@ ensure_hbp_queue() {
     /bin/timeout 60 "$@" >/tmp/ppdc-hbp.out 2>/tmp/ppdc-hbp.err
   }
 
-  # Prefer PPD path to avoid cups-driverd/dvr:/// dependency.
+  MODEL_URI="$(model_from_uri_path "$URI")"
+  MODEL_MDL="$(model_from_usb_enum "$URI" "$USB_ENUM")"
+  MODEL_NAME="${MODEL_MDL:-$MODEL_URI}"
+  [ -n "$MODEL_NAME" ] || MODEL_NAME="$MODEL_URI"
+
+  # Prefer exact model-driven PPD path to avoid cups-driverd/dvr:/// dependency.
   PPD=""
   if [ -d /var/cups-data/model ]; then
     PPD="$(find_brlaser_ppd "$MODEL_NAME")"
@@ -138,7 +177,7 @@ ensure_hbp_queue() {
     PPD="$(find_brlaser_ppd "$MODEL_NAME")"
   fi
 
-  echo "print-hbp-pdf: queue='$QUEUE' model='$MODEL_NAME' uri='$URI' ppd='${PPD:-<none>}' dpi='$DPI' effective_dpi='$EFFECTIVE_DPI'" >&2
+  echo "print-hbp-pdf: queue='$QUEUE' model_uri='${MODEL_URI:-<none>}' model_mdl='${MODEL_MDL:-<none>}' model_used='${MODEL_NAME:-<none>}' uri='$URI' ppd='${PPD:-<none>}' dpi='$DPI' effective_dpi='$EFFECTIVE_DPI'" >&2
   lpadmin -h "$SOCK" -x "$QUEUE" >/dev/null 2>&1 || true
   if [ -n "$PPD" ]; then
     if ! lpadmin -h "$SOCK" -p "$QUEUE" -E -v "$URI" -P "$PPD" >/tmp/lpadmin-hbp.out 2>/tmp/lpadmin-hbp.err; then
@@ -152,6 +191,23 @@ ensure_hbp_queue() {
   if ! lpstat -h "$SOCK" -p "$QUEUE" >/dev/null 2>&1; then
     echo "queue '$QUEUE' still missing after lpadmin (see /tmp/lpadmin-hbp.err)" >&2
     return 1
+  fi
+  queue_ppd="/etc/cups/ppd/${QUEUE}.ppd"
+  if [ -f "$queue_ppd" ] && [ -n "$MODEL_NAME" ]; then
+    ok=""
+    while IFS= read -r cand; do
+      [ -n "$cand" ] || continue
+      if grep -F "MDL:${cand};" "$queue_ppd" >/dev/null 2>&1; then
+        ok=1
+        break
+      fi
+    done <<EOF
+$(model_candidates "$MODEL_NAME")
+EOF
+    if [ -z "$ok" ]; then
+      echo "queue '$QUEUE' PPD MDL mismatch for detected model '$MODEL_NAME'" >&2
+      return 1
+    fi
   fi
 }
 
@@ -204,5 +260,6 @@ fi
 lp -h "$SOCK" -d "$QUEUE" \
   -o media=A4 \
   -o Resolution="${EFFECTIVE_DPI}dpi" \
+  -o print-scaling=none \
   -o document-format=application/vnd.cups-raster \
   "$RAS"
