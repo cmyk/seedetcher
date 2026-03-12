@@ -27,7 +27,7 @@
   - [x] builder interfaces: `SceneBuilder` (layout only)
   - [x] renderer interfaces: `SceneRenderer` (output only)
   - [x] concrete builders/renderers in separate files/packages
-  - [ ] no backend-specific branches inside scene builders
+  - [x] no backend-specific branches inside scene builders
 - [ ] Define renderer interfaces:
   - [ ] `SceneRasterRenderer` (for print path parity checks)
   - [ ] `SceneGCodeRenderer` (for GRBL output)
@@ -41,21 +41,22 @@
 ### 2) PlateScene builder (layout migration)
 - [x] Build scene for seed plate from existing layout rules.
 - [x] Build scene for descriptor plate from existing layout rules.
-- [ ] Add explicit layout-variant architecture (avoid branchy/procedural drift):
-  - [ ] define `LayoutSpec` interface (layout semantics only):
-    - [ ] `Name()`
-    - [ ] `Supports(RenderContext)`
-    - [ ] `BuildSeedScene(...)`
-    - [ ] `BuildDescriptorScene(...)`
-  - [ ] define `LayoutRegistry`/selector:
-    - [ ] maps flags/context to exactly one active layout spec
-    - [ ] no scattered `if compact2of3/...` checks in render loops
+- [x] Add explicit layout-variant architecture (avoid branchy/procedural drift):
+  - [x] define `LayoutSpec` interface (implemented shape):
+    - [x] `Name()`
+    - [x] `Supports(RenderContext, LayoutSelection)`
+    - [x] `Apply(RenderContext, LayoutSelection)`
+    - [x] `RenderBitmaps(...)`
+    - [x] `BuildScenes(...)`
+  - [x] define `LayoutRegistry`/selector:
+    - [x] maps flags/context to exactly one active layout spec
+    - [x] no scattered `if compact2of3/...` checks in render loops
   - [ ] first concrete specs:
-    - [ ] `ClassicSeedDescriptorLayout`
-    - [ ] `Compact2of3Layout`
+    - [x] `ClassicLayoutSpec`
+    - [x] `Compact2of3LayoutSpec`
     - [ ] `SinglesigSeedInfoLayout`
     - [ ] `SinglesigSeedDescLayout`
-  - [ ] ensure scene and raster backends consume the same selected layout plan.
+  - [x] ensure scene and raster backends consume the same selected layout plan.
 - [ ] Preserve current styling semantics:
   - [ ] QR data modules as circles (dot scale parity)
   - [ ] registration/finder islands as rounded squares
