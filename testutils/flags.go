@@ -36,6 +36,8 @@ type Flags struct {
 	PlateMM              float64
 	PlateOriginXMM       float64
 	PlateOriginYMM       float64
+	MachineOffsetXMM     float64
+	MachineOffsetYMM     float64
 	LaserMaxS            int
 	LaserFeed            float64
 	RapidFeed            float64
@@ -77,8 +79,12 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.CalibrationFeeds, "calibration-feeds", "400,600,800,1000", "Comma-separated feed values for laser calibration jobs")
 	flag.Float64Var(&f.BedMM, "bed-mm", 150.0, "Laser machine workspace size in mm (K1 default 150)")
 	flag.Float64Var(&f.PlateMM, "plate-mm", 100.0, "Physical plate size in mm used for centered scene placement")
-	flag.Float64Var(&f.PlateOriginXMM, "plate-origin-x", 0.0, "Plate origin X in machine coordinates (bottom-left)")
-	flag.Float64Var(&f.PlateOriginYMM, "plate-origin-y", 0.0, "Plate origin Y in machine coordinates (bottom-left)")
+	flag.Float64Var(&f.PlateOriginXMM, "plate-origin-x", 0.0, "DEPRECATED alias for -work-origin-x")
+	flag.Float64Var(&f.PlateOriginYMM, "plate-origin-y", 0.0, "DEPRECATED alias for -work-origin-y")
+	flag.Float64Var(&f.PlateOriginXMM, "work-origin-x", 0.0, "Plate origin X on the calibrated work surface (bottom-left)")
+	flag.Float64Var(&f.PlateOriginYMM, "work-origin-y", 0.0, "Plate origin Y on the calibrated work surface (bottom-left)")
+	flag.Float64Var(&f.MachineOffsetXMM, "machine-offset-x", 0.0, "Advanced: fixed machine X correction added after work-surface coordinates; leave at 0 when using a calibrated bed cover")
+	flag.Float64Var(&f.MachineOffsetYMM, "machine-offset-y", 0.0, "Advanced: fixed machine Y correction added after work-surface coordinates; leave at 0 when using a calibrated bed cover")
 	flag.IntVar(&f.LaserMaxS, "laser-max-s", 80, "Laser power S value used in generated G-code (for example 0..1000, default 80)")
 	flag.Float64Var(&f.LaserFeed, "laser-feed", 900.0, "Cut feed in mm/min for generated G-code (default 900)")
 	flag.Float64Var(&f.RapidFeed, "rapid-feed", 3000.0, "Rapid move feed in mm/min for generated G-code (default 3000)")

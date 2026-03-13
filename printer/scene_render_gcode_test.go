@@ -45,7 +45,7 @@ func TestSceneGCodeRenderer_Render(t *testing.T) {
 		"G21",
 		"G90",
 		"Bed: 100.000mm",
-		"Plate: 100.000mm at origin X=0.000mm Y=0.000mm",
+		"Plate: 100.000mm at work origin X=0.000mm Y=0.000mm",
 		"Layout offset in plate: X=5.000mm Y=5.000mm",
 		"M4 S1000",
 		"M5",
@@ -59,6 +59,12 @@ func TestSceneGCodeRenderer_Render(t *testing.T) {
 	}
 	if strings.Count(s, "G1 X") < 20 {
 		t.Fatalf("expected many cut segments, got %d", strings.Count(s, "G1 X"))
+	}
+	if strings.Contains(s, "G0 X0.000 Y0.000") {
+		t.Fatalf("unexpected forced return-to-origin in output")
+	}
+	if strings.Contains(s, "Machine offset:") {
+		t.Fatalf("unexpected machine offset line for zero offset config")
 	}
 }
 
@@ -128,7 +134,7 @@ func TestSceneGCodeRenderer_Render_WithOffsets(t *testing.T) {
 	s := string(data)
 	for _, want := range []string{
 		"Bed: 150.000mm",
-		"Plate: 100.000mm at origin X=2.000mm Y=3.000mm",
+		"Plate: 100.000mm at work origin X=2.000mm Y=3.000mm",
 		"Layout offset in plate: X=5.000mm Y=5.000mm",
 		"G0 X12.000 Y93.000",
 		"G1 X32.000 Y93.000",
@@ -176,8 +182,13 @@ func TestSceneGCodeRenderer_Render_CalibrationAnchorUsesPlateOrigin(t *testing.T
 	}
 	s := string(data)
 	for _, want := range []string{
-		"Plate: 100.000mm at origin X=0.000mm Y=0.000mm",
+		"Plate: 100.000mm at work origin X=0.000mm Y=0.000mm",
 		"Layout offset in plate: X=0.000mm Y=0.000mm",
+		"; Preview frame (laser off)",
+		"G0 X0.000 Y50.000",
+		"G0 X50.000 Y50.000",
+		"G0 X50.000 Y0.000",
+		"G0 X0.000 Y0.000",
 		"G0 X5.000 Y45.000",
 		"G1 X25.000 Y45.000",
 	} {
@@ -229,6 +240,55 @@ func TestSceneGCodeRenderer_Render_CalibrationAnchorUsesPlateOffset(t *testing.T
 		"Layout offset in plate: X=50.000mm Y=50.000mm",
 		"G0 X55.000 Y95.000",
 		"G1 X75.000 Y95.000",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in output", want)
+		}
+	}
+}
+
+func TestSceneGCodeRenderer_Render_WithMachineOffset(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:     "seed_01",
+				WidthMM:  90,
+				HeightMM: 90,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 5, YMM: 5, WidthMM: 20, HeightMM: 10, StrokeColor: sceneBlack, StrokeMM: 0.2},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		BedMM:            150,
+		PlateMM:          100,
+		PlateOriginXMM:   1,
+		PlateOriginYMM:   0,
+		MachineOffsetXMM: -1,
+		MachineOffsetYMM: 4,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render with machine offset: %v", err)
+	}
+	path := filepath.Join(outDir, "seed_01.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	for _, want := range []string{
+		"Plate: 100.000mm at work origin X=1.000mm Y=0.000mm",
+		"Machine offset: X=-1.000mm Y=4.000mm",
+		"G0 X10.000 Y94.000",
+		"G1 X30.000 Y94.000",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing %q in output", want)

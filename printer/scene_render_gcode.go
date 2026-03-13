@@ -11,20 +11,22 @@ import (
 )
 
 type SceneGCodeRenderer struct {
-	LaserOnCmd     string
-	LaserOffCmd    string
-	LaserMaxS      int
-	CutFeedMMMin   float64
-	RapidFeedMMMin float64
-	CurveSteps     int
-	FillStepMM     float64
-	SpiralStepMM   float64
-	BedMM          float64
-	PlateMM        float64
-	PlateOriginXMM float64
-	PlateOriginYMM float64
-	LaserFlipX     bool
-	LaserFlipY     bool
+	LaserOnCmd       string
+	LaserOffCmd      string
+	LaserMaxS        int
+	CutFeedMMMin     float64
+	RapidFeedMMMin   float64
+	CurveSteps       int
+	FillStepMM       float64
+	SpiralStepMM     float64
+	BedMM            float64
+	PlateMM          float64
+	PlateOriginXMM   float64
+	PlateOriginYMM   float64
+	MachineOffsetXMM float64
+	MachineOffsetYMM float64
+	LaserFlipX       bool
+	LaserFlipY       bool
 }
 
 func (r SceneGCodeRenderer) Render(doc *PlateDocument, outDir string) error {
@@ -109,10 +111,12 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 	if scene.WidthMM > cfg.PlateMM || scene.HeightMM > cfg.PlateMM {
 		return "", fmt.Errorf("scene '%s' exceeds plate bounds: %.3fx%.3fmm > plate %.3fmm", scene.Name, scene.WidthMM, scene.HeightMM, cfg.PlateMM)
 	}
-	if cfg.PlateOriginXMM < 0 || cfg.PlateOriginYMM < 0 || cfg.PlateOriginXMM+cfg.PlateMM > cfg.BedMM || cfg.PlateOriginYMM+cfg.PlateMM > cfg.BedMM {
+	plateMinX := cfg.PlateOriginXMM + cfg.MachineOffsetXMM
+	plateMinY := cfg.PlateOriginYMM + cfg.MachineOffsetYMM
+	if plateMinX < 0 || plateMinY < 0 || plateMinX+cfg.PlateMM > cfg.BedMM || plateMinY+cfg.PlateMM > cfg.BedMM {
 		return "", fmt.Errorf(
-			"scene '%s' plate origin out of workspace: plate=%.3f origin=(%.3f,%.3f) workspace=0..%.3f",
-			scene.Name, cfg.PlateMM, cfg.PlateOriginXMM, cfg.PlateOriginYMM, cfg.BedMM,
+			"scene '%s' plate origin out of workspace: plate=%.3f work-origin=(%.3f,%.3f) machine-offset=(%.3f,%.3f) workspace=0..%.3f",
+			scene.Name, cfg.PlateMM, cfg.PlateOriginXMM, cfg.PlateOriginYMM, cfg.MachineOffsetXMM, cfg.MachineOffsetYMM, cfg.BedMM,
 		)
 	}
 	// Default wallet behavior centers the scene in the physical plate.
@@ -136,12 +140,21 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 	fmt.Fprintf(&e.b, "; SeedEtcher scene: %s\n", scene.Name)
 	fmt.Fprintf(&e.b, "; Size: %.3fmm x %.3fmm\n", scene.WidthMM, scene.HeightMM)
 	fmt.Fprintf(&e.b, "; Bed: %.3fmm\n", cfg.BedMM)
-	fmt.Fprintf(&e.b, "; Plate: %.3fmm at origin X=%.3fmm Y=%.3fmm\n", cfg.PlateMM, cfg.PlateOriginXMM, cfg.PlateOriginYMM)
+	fmt.Fprintf(&e.b, "; Plate: %.3fmm at work origin X=%.3fmm Y=%.3fmm\n", cfg.PlateMM, cfg.PlateOriginXMM, cfg.PlateOriginYMM)
+	if cfg.MachineOffsetXMM != 0 || cfg.MachineOffsetYMM != 0 {
+		fmt.Fprintf(&e.b, "; Machine offset: X=%.3fmm Y=%.3fmm\n", cfg.MachineOffsetXMM, cfg.MachineOffsetYMM)
+	}
 	fmt.Fprintf(&e.b, "; Layout offset in plate: X=%.3fmm Y=%.3fmm\n", e.layoutOffsetX, e.layoutOffsetY)
 	e.b.WriteString("G21\n")
 	e.b.WriteString("G90\n")
 	fmt.Fprintf(&e.b, "G0 F%.1f\n", cfg.RapidFeedMMMin)
 	fmt.Fprintf(&e.b, "G1 F%.1f\n", cfg.CutFeedMMMin)
+	if strings.HasPrefix(scene.Name, "laser_calibration_") {
+		e.emitPreviewFrame()
+		if e.err != nil {
+			return "", e.err
+		}
+	}
 	for _, layer := range scene.Layers {
 		if !layer.Visible {
 			continue
@@ -158,9 +171,26 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 	if e.err != nil {
 		return "", e.err
 	}
-	e.b.WriteString("G0 X0.000 Y0.000\n")
 	e.b.WriteString("M2\n")
 	return e.b.String(), nil
+}
+
+func (e *gcodeEmitter) emitPreviewFrame() {
+	e.laserOffSafe()
+	e.b.WriteString("; Preview frame (laser off)\n")
+	frame := []gcodePt{
+		{x: 0, y: 0},
+		{x: e.sceneW, y: 0},
+		{x: e.sceneW, y: e.sceneH},
+		{x: 0, y: e.sceneH},
+		{x: 0, y: 0},
+	}
+	for _, pt := range frame {
+		e.rapidTo(pt.x, pt.y)
+		if e.err != nil {
+			return
+		}
+	}
 }
 
 func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
@@ -380,13 +410,13 @@ func (e *gcodeEmitter) validXY(x, y float64) bool {
 func (e *gcodeEmitter) mapXY(x, y float64) (float64, float64) {
 	// Scene space uses graphic-design coordinates: top-left origin, +Y downward.
 	// Machine space is Cartesian: bottom-left origin, +Y upward.
-	ax := e.cfg.PlateOriginXMM + x
-	ay := e.cfg.PlateOriginYMM + (e.layoutOffsetY + e.sceneH - (y - e.layoutOffsetY))
+	ax := e.cfg.PlateOriginXMM + e.cfg.MachineOffsetXMM + x
+	ay := e.cfg.PlateOriginYMM + e.cfg.MachineOffsetYMM + (e.layoutOffsetY + e.sceneH - (y - e.layoutOffsetY))
 	if e.cfg.LaserFlipX {
-		ax = e.cfg.PlateOriginXMM + e.cfg.PlateMM - x
+		ax = e.cfg.PlateOriginXMM + e.cfg.MachineOffsetXMM + e.cfg.PlateMM - x
 	}
 	if e.cfg.LaserFlipY {
-		ay = e.cfg.PlateOriginYMM + y
+		ay = e.cfg.PlateOriginYMM + e.cfg.MachineOffsetYMM + y
 	}
 	return ax, ay
 }

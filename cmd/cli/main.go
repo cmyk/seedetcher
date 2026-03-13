@@ -175,13 +175,15 @@ func main() {
 				os.Exit(1)
 			}
 			if err := (printer.SceneGCodeRenderer{
-				LaserMaxS:      f.LaserMaxS,
-				CutFeedMMMin:   f.LaserFeed,
-				RapidFeedMMMin: f.RapidFeed,
-				BedMM:          f.BedMM,
-				PlateMM:        f.PlateMM,
-				PlateOriginXMM: f.PlateOriginXMM,
-				PlateOriginYMM: f.PlateOriginYMM,
+				LaserMaxS:        f.LaserMaxS,
+				CutFeedMMMin:     f.LaserFeed,
+				RapidFeedMMMin:   f.RapidFeed,
+				BedMM:            f.BedMM,
+				PlateMM:          f.PlateMM,
+				PlateOriginXMM:   f.PlateOriginXMM,
+				PlateOriginYMM:   f.PlateOriginYMM,
+				MachineOffsetXMM: f.MachineOffsetXMM,
+				MachineOffsetYMM: f.MachineOffsetYMM,
 			}).Render(sideScenes, gcodeOutDir); err != nil {
 				fmt.Printf("Error writing scene G-code: %v\n", err)
 				os.Exit(1)
@@ -381,13 +383,15 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 	}
 	if gcodeOutDir != "" {
 		if err := (printer.SceneGCodeRenderer{
-			LaserMaxS:      f.LaserMaxS,
-			CutFeedMMMin:   f.LaserFeed,
-			RapidFeedMMMin: f.RapidFeed,
-			BedMM:          f.BedMM,
-			PlateMM:        f.PlateMM,
-			PlateOriginXMM: f.PlateOriginXMM,
-			PlateOriginYMM: f.PlateOriginYMM,
+			LaserMaxS:        f.LaserMaxS,
+			CutFeedMMMin:     f.LaserFeed,
+			RapidFeedMMMin:   f.RapidFeed,
+			BedMM:            f.BedMM,
+			PlateMM:          f.PlateMM,
+			PlateOriginXMM:   f.PlateOriginXMM,
+			PlateOriginYMM:   f.PlateOriginYMM,
+			MachineOffsetXMM: f.MachineOffsetXMM,
+			MachineOffsetYMM: f.MachineOffsetYMM,
 		}).Render(doc, gcodeOutDir); err != nil {
 			fmt.Printf("Error writing scene G-code: %v\n", err)
 			os.Exit(1)
