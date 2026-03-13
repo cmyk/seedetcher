@@ -45,10 +45,11 @@ func TestSceneGCodeRenderer_Render(t *testing.T) {
 		"G21",
 		"G90",
 		"Workspace: 100.000mm",
+		"Offset: X=5.000mm Y=5.000mm",
 		"M4 S1000",
 		"M5",
-		"G0 X5.000 Y95.000",
-		"G1 X25.000 Y95.000",
+		"G0 X10.000 Y90.000",
+		"G1 X30.000 Y90.000",
 		"M2",
 	} {
 		if !strings.Contains(s, want) {

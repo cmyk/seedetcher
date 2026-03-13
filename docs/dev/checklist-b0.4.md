@@ -96,6 +96,12 @@
   - [ ] seed side readability (words + QR)
   - [ ] descriptor side readability
   - [ ] scan success in Sparrow/Seed tools
+- [ ] Laser calibration tooling:
+  - [ ] generate power/speed matrix job (`S` x feed)
+  - [ ] generate fill-pitch matrix job (e.g. `0.08/0.10/0.12/0.14mm`)
+  - [ ] generate dot/line resolution test job (small circles + thin strokes)
+  - [ ] generate origin/frame calibration job for jig alignment
+  - [ ] document a recommended calibration flow in `docs/dev/laser-grbl.md`
 - [ ] Regression check: existing PCL/PS/HBP print flows unchanged.
 - [ ] After `v0.3.0-beta.2`, backport HBP model/PPD hotfix (`hotfix/b0.3-hbp-model-scaling`) into:
   - [ ] `release/0.4.0-beta`

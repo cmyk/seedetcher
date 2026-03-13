@@ -97,6 +97,8 @@ type gcodeEmitter struct {
 	maxXY   float64
 	sceneW  float64
 	sceneH  float64
+	offsetX float64
+	offsetY float64
 	err     error
 }
 
@@ -105,9 +107,17 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 	if scene.WidthMM > cfg.PlateMM || scene.HeightMM > cfg.PlateMM {
 		return "", fmt.Errorf("scene '%s' exceeds plate bounds: %.3fx%.3fmm > %.3fmm", scene.Name, scene.WidthMM, scene.HeightMM, cfg.PlateMM)
 	}
+	// Center smaller scenes on the physical plate/work area.
+	if cfg.PlateMM > scene.WidthMM {
+		e.offsetX = (cfg.PlateMM - scene.WidthMM) / 2
+	}
+	if cfg.PlateMM > scene.HeightMM {
+		e.offsetY = (cfg.PlateMM - scene.HeightMM) / 2
+	}
 	fmt.Fprintf(&e.b, "; SeedEtcher scene: %s\n", scene.Name)
 	fmt.Fprintf(&e.b, "; Size: %.3fmm x %.3fmm\n", scene.WidthMM, scene.HeightMM)
 	fmt.Fprintf(&e.b, "; Workspace: %.3fmm\n", cfg.PlateMM)
+	fmt.Fprintf(&e.b, "; Offset: X=%.3fmm Y=%.3fmm\n", e.offsetX, e.offsetY)
 	e.b.WriteString("G21\n")
 	e.b.WriteString("G90\n")
 	fmt.Fprintf(&e.b, "G0 F%.1f\n", cfg.RapidFeedMMMin)
@@ -283,6 +293,8 @@ func (e *gcodeEmitter) tracePolyline(poly []gcodePt) {
 }
 
 func (e *gcodeEmitter) rapidTo(x, y float64) {
+	x += e.offsetX
+	y += e.offsetY
 	x, y = e.mapXY(x, y)
 	if !e.validXY(x, y) {
 		return
@@ -292,6 +304,8 @@ func (e *gcodeEmitter) rapidTo(x, y float64) {
 }
 
 func (e *gcodeEmitter) cutTo(x, y float64) {
+	x += e.offsetX
+	y += e.offsetY
 	x, y = e.mapXY(x, y)
 	if !e.validXY(x, y) {
 		return
