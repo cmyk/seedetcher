@@ -15,3 +15,5 @@ tmux-client-14578.log
 tmux-client*
 **/*.afdesign~lock~
 .tmp/
+__pycache__/
+*.pyc

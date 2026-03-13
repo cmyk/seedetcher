@@ -154,14 +154,19 @@ def main() -> int:
     ap.add_argument("--startup-wait", type=float, default=2.0, help="seconds to wait after wakeup")
     ap.add_argument("--line-timeout", type=float, default=10.0, help="timeout per line response")
     ap.add_argument("--unlock", action="store_true", help="send $X after wakeup")
-    ap.add_argument("--home", action="store_true", help="send $H homing cycle before job")
-    ap.add_argument("--home-only", action="store_true", help="connect, optionally unlock, home, then exit (no gcode send)")
+    ap.add_argument("--home", action="store_true", help="send $H before job (default behavior for job sends)")
+    ap.add_argument("--no-home", action="store_true", help="do not home before sending a job")
+    ap.add_argument("--home-only", action="store_true", help="connect, optionally unlock, home, then exit")
     ap.add_argument("--dry-run", action="store_true", help="force laser-off: rewrite M3/M4 to M5 and strip S words")
     args = ap.parse_args()
 
     if not args.port:
         print("ERROR: no serial port found; pass --port explicitly", file=sys.stderr)
         return 2
+    if args.home_only and args.no_home:
+        print("ERROR: --home-only and --no-home conflict", file=sys.stderr)
+        return 2
+    do_home = args.home_only or args.home or (not args.no_home and args.gcode is not None)
 
     lines: list[str] = []
     if not args.home_only:
@@ -185,7 +190,7 @@ def main() -> int:
 
         if args.unlock:
             send_and_wait_ok(fd, "$X", args.line_timeout)
-        if args.home:
+        if do_home:
             send_and_wait_ok(fd, "$H", max(args.line_timeout, 60.0))
         if args.home_only:
             print("Home-only complete.")
