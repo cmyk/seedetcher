@@ -3,6 +3,7 @@
 
 Usage:
   python3 scripts/send-gcode.py --port /dev/ttyUSB0 --baud 115200 file.gcode
+  python3 scripts/send-gcode.py --cmd '$$'
 """
 
 from __future__ import annotations
@@ -149,6 +150,7 @@ def main() -> int:
     default_port = detect_default_port()
     ap = argparse.ArgumentParser(description="Send G-code to GRBL with handshake")
     ap.add_argument("gcode", nargs="?", help="path to .gcode file")
+    ap.add_argument("--cmd", help="send a single GRBL/controller command and exit (for example '$#', '$$', '?')")
     ap.add_argument("--port", default=default_port, help="serial port, default: autodetect (/dev/ttyACM0, /dev/ttyUSB0)")
     ap.add_argument("--baud", type=int, default=115200, help="serial baud (default 115200)")
     ap.add_argument("--startup-wait", type=float, default=2.0, help="seconds to wait after wakeup")
@@ -166,12 +168,15 @@ def main() -> int:
     if args.home_only and args.no_home:
         print("ERROR: --home-only and --no-home conflict", file=sys.stderr)
         return 2
+    if args.cmd and args.gcode:
+        print("ERROR: pass either a gcode file or --cmd, not both", file=sys.stderr)
+        return 2
     do_home = args.home_only or args.home or (not args.no_home and args.gcode is not None)
 
     lines: list[str] = []
-    if not args.home_only:
+    if not args.home_only and not args.cmd:
         if not args.gcode:
-            print("ERROR: gcode file required unless --home-only is set", file=sys.stderr)
+            print("ERROR: gcode file required unless --home-only or --cmd is set", file=sys.stderr)
             return 2
         lines = load_lines(args.gcode, dry_run=args.dry_run)
         if not lines:
@@ -195,6 +200,32 @@ def main() -> int:
         if args.home_only:
             print("Home-only complete.")
             return 0
+        if args.cmd:
+            cmd = args.cmd.strip()
+            if not cmd:
+                print("ERROR: empty --cmd", file=sys.stderr)
+                return 2
+            os.write(fd, (cmd + "\n").encode("ascii", errors="ignore"))
+            deadline = time.time() + max(args.line_timeout, 2.0)
+            saw_output = False
+            while time.time() < deadline:
+                line = read_line(fd, 0.25)
+                if line is None:
+                    continue
+                if not line:
+                    continue
+                print(f"<< {line}")
+                saw_output = True
+                low = line.lower()
+                if low == "ok":
+                    return 0
+                if low.startswith("error") or low.startswith("alarm"):
+                    raise RuntimeError(f"controller rejected command '{cmd}': {line}")
+                if cmd == "?":
+                    return 0
+            if saw_output:
+                return 0
+            raise TimeoutError(f"timeout waiting for response to: {cmd}")
 
         total = len(lines)
         print(f"Sending {total} lines...")
