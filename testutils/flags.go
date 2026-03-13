@@ -25,7 +25,10 @@ type Flags struct {
 	SVGOut          string
 	GCodeOut        string
 	GCodeSide       string
+	BedMM           float64
 	PlateMM         float64
+	PlateOriginXMM  float64
+	PlateOriginYMM  float64
 	LaserMaxS       int
 	LaserFeed       float64
 	RapidFeed       float64
@@ -58,7 +61,10 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.SVGOut, "svg-out", "", "Optional output directory for per-plate scene SVGs (seed-side foundation)")
 	flag.StringVar(&f.GCodeOut, "gcode-out", "", "Optional output directory for per-plate scene G-code (file-only laser prototype)")
 	flag.StringVar(&f.GCodeSide, "side", "both", "G-code scene side selection (seed, desc, or both)")
-	flag.Float64Var(&f.PlateMM, "plate-mm", 100.0, "Laser workspace size in mm used for G-code bounds checks")
+	flag.Float64Var(&f.BedMM, "bed-mm", 150.0, "Laser machine workspace size in mm (K1 default 150)")
+	flag.Float64Var(&f.PlateMM, "plate-mm", 100.0, "Physical plate size in mm used for centered scene placement")
+	flag.Float64Var(&f.PlateOriginXMM, "plate-origin-x", 0.0, "Plate origin X in machine coordinates (bottom-left)")
+	flag.Float64Var(&f.PlateOriginYMM, "plate-origin-y", 0.0, "Plate origin Y in machine coordinates (bottom-left)")
 	flag.IntVar(&f.LaserMaxS, "laser-max-s", 80, "Laser power S value used in generated G-code (for example 0..1000, default 80)")
 	flag.Float64Var(&f.LaserFeed, "laser-feed", 900.0, "Cut feed in mm/min for generated G-code (default 900)")
 	flag.Float64Var(&f.RapidFeed, "rapid-feed", 3000.0, "Rapid move feed in mm/min for generated G-code (default 3000)")

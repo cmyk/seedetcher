@@ -173,7 +173,10 @@ func main() {
 				LaserMaxS:      f.LaserMaxS,
 				CutFeedMMMin:   f.LaserFeed,
 				RapidFeedMMMin: f.RapidFeed,
+				BedMM:          f.BedMM,
 				PlateMM:        f.PlateMM,
+				PlateOriginXMM: f.PlateOriginXMM,
+				PlateOriginYMM: f.PlateOriginYMM,
 			}).Render(sideScenes, gcodeOutDir); err != nil {
 				fmt.Printf("Error writing scene G-code: %v\n", err)
 				os.Exit(1)

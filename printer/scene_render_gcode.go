@@ -19,7 +19,10 @@ type SceneGCodeRenderer struct {
 	CurveSteps     int
 	FillStepMM     float64
 	SpiralStepMM   float64
+	BedMM          float64
 	PlateMM        float64
+	PlateOriginXMM float64
+	PlateOriginYMM float64
 	LaserFlipX     bool
 	LaserFlipY     bool
 }
@@ -74,6 +77,9 @@ func (r SceneGCodeRenderer) withDefaults() SceneGCodeRenderer {
 	if r.PlateMM <= 0 {
 		r.PlateMM = 100
 	}
+	if r.BedMM <= 0 {
+		r.BedMM = r.PlateMM
+	}
 	// Scene space uses top-left origin with +Y downward.
 	// GRBL/LB commonly uses bottom-left with +Y upward.
 	// Default to Y-flip for sane laser orientation.
@@ -89,39 +95,47 @@ type gcodePt struct {
 }
 
 type gcodeEmitter struct {
-	b       strings.Builder
-	cfg     SceneGCodeRenderer
-	x       float64
-	y       float64
-	laserOn bool
-	maxXY   float64
-	sceneW  float64
-	sceneH  float64
-	offsetX float64
-	offsetY float64
-	err     error
+	b             strings.Builder
+	cfg           SceneGCodeRenderer
+	x             float64
+	y             float64
+	laserOn       bool
+	bedMax        float64
+	sceneW        float64
+	sceneH        float64
+	layoutOffsetX float64
+	layoutOffsetY float64
+	err           error
 }
 
 func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) {
-	e := &gcodeEmitter{cfg: cfg, maxXY: cfg.PlateMM, sceneW: scene.WidthMM, sceneH: scene.HeightMM}
+	e := &gcodeEmitter{cfg: cfg, bedMax: cfg.BedMM, sceneW: scene.WidthMM, sceneH: scene.HeightMM}
 	if scene.WidthMM > cfg.PlateMM || scene.HeightMM > cfg.PlateMM {
-		return "", fmt.Errorf("scene '%s' exceeds plate bounds: %.3fx%.3fmm > %.3fmm", scene.Name, scene.WidthMM, scene.HeightMM, cfg.PlateMM)
+		return "", fmt.Errorf("scene '%s' exceeds plate bounds: %.3fx%.3fmm > plate %.3fmm", scene.Name, scene.WidthMM, scene.HeightMM, cfg.PlateMM)
 	}
-	// Center smaller scenes on the physical plate/work area.
+	if cfg.PlateOriginXMM < 0 || cfg.PlateOriginYMM < 0 || cfg.PlateOriginXMM+cfg.PlateMM > cfg.BedMM || cfg.PlateOriginYMM+cfg.PlateMM > cfg.BedMM {
+		return "", fmt.Errorf(
+			"scene '%s' plate origin out of workspace: plate=%.3f origin=(%.3f,%.3f) workspace=0..%.3f",
+			scene.Name, cfg.PlateMM, cfg.PlateOriginXMM, cfg.PlateOriginYMM, cfg.BedMM,
+		)
+	}
+	// Center scene within physical plate.
 	if cfg.PlateMM > scene.WidthMM {
-		e.offsetX = (cfg.PlateMM - scene.WidthMM) / 2
+		e.layoutOffsetX = (cfg.PlateMM - scene.WidthMM) / 2
 	}
 	if cfg.PlateMM > scene.HeightMM {
-		e.offsetY = (cfg.PlateMM - scene.HeightMM) / 2
+		e.layoutOffsetY = (cfg.PlateMM - scene.HeightMM) / 2
 	}
 	fmt.Fprintf(&e.b, "; SeedEtcher scene: %s\n", scene.Name)
 	fmt.Fprintf(&e.b, "; Size: %.3fmm x %.3fmm\n", scene.WidthMM, scene.HeightMM)
-	fmt.Fprintf(&e.b, "; Workspace: %.3fmm\n", cfg.PlateMM)
-	fmt.Fprintf(&e.b, "; Offset: X=%.3fmm Y=%.3fmm\n", e.offsetX, e.offsetY)
+	fmt.Fprintf(&e.b, "; Bed: %.3fmm\n", cfg.BedMM)
+	fmt.Fprintf(&e.b, "; Plate: %.3fmm at origin X=%.3fmm Y=%.3fmm\n", cfg.PlateMM, cfg.PlateOriginXMM, cfg.PlateOriginYMM)
+	fmt.Fprintf(&e.b, "; Layout offset in plate: X=%.3fmm Y=%.3fmm\n", e.layoutOffsetX, e.layoutOffsetY)
 	e.b.WriteString("G21\n")
 	e.b.WriteString("G90\n")
 	fmt.Fprintf(&e.b, "G0 F%.1f\n", cfg.RapidFeedMMMin)
 	fmt.Fprintf(&e.b, "G1 F%.1f\n", cfg.CutFeedMMMin)
+	e.emitPlateGuideFrame()
 	for _, layer := range scene.Layers {
 		if !layer.Visible {
 			continue
@@ -141,6 +155,44 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 	e.b.WriteString("G0 X0.000 Y0.000\n")
 	e.b.WriteString("M2\n")
 	return e.b.String(), nil
+}
+
+func (e *gcodeEmitter) emitPlateGuideFrame() {
+	// Travel-only (laser-off) frame of the physical plate to make placement explicit.
+	// This is intentionally non-burning.
+	x0 := e.cfg.PlateOriginXMM
+	y0 := e.cfg.PlateOriginYMM
+	x1 := x0 + e.cfg.PlateMM
+	y1 := y0 + e.cfg.PlateMM
+
+	e.laserOffSafe()
+	// map via inverse of mapXY expectations (scene local + offsets) by writing directly as absolute moves.
+	// Use current flip settings so guide matches job orientation.
+	pts := [][2]float64{
+		{x0, y0},
+		{x1, y0},
+		{x1, y1},
+		{x0, y1},
+		{x0, y0},
+	}
+	for i, p := range pts {
+		x := p[0]
+		y := p[1]
+		if e.cfg.LaserFlipX {
+			x = e.cfg.BedMM - x
+		}
+		if e.cfg.LaserFlipY {
+			y = e.cfg.BedMM - y
+		}
+		if !e.validXY(x, y) {
+			return
+		}
+		if i == 0 {
+			fmt.Fprintf(&e.b, "G0 X%.3f Y%.3f\n", x, y)
+		} else {
+			fmt.Fprintf(&e.b, "G0 X%.3f Y%.3f\n", x, y)
+		}
+	}
 }
 
 func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
@@ -293,8 +345,8 @@ func (e *gcodeEmitter) tracePolyline(poly []gcodePt) {
 }
 
 func (e *gcodeEmitter) rapidTo(x, y float64) {
-	x += e.offsetX
-	y += e.offsetY
+	x += e.layoutOffsetX
+	y += e.layoutOffsetY
 	x, y = e.mapXY(x, y)
 	if !e.validXY(x, y) {
 		return
@@ -304,8 +356,8 @@ func (e *gcodeEmitter) rapidTo(x, y float64) {
 }
 
 func (e *gcodeEmitter) cutTo(x, y float64) {
-	x += e.offsetX
-	y += e.offsetY
+	x += e.layoutOffsetX
+	y += e.layoutOffsetY
 	x, y = e.mapXY(x, y)
 	if !e.validXY(x, y) {
 		return
@@ -342,21 +394,24 @@ func (e *gcodeEmitter) validXY(x, y float64) bool {
 		e.err = fmt.Errorf("invalid coordinate (NaN/Inf): x=%v y=%v", x, y)
 		return false
 	}
-	if x < 0 || y < 0 || x > e.maxXY || y > e.maxXY {
-		e.err = fmt.Errorf("gcode coordinate out of bounds: x=%.3f y=%.3f workspace=0..%.3f", x, y, e.maxXY)
+	if x < 0 || y < 0 || x > e.bedMax || y > e.bedMax {
+		e.err = fmt.Errorf("gcode coordinate out of bounds: x=%.3f y=%.3f workspace=0..%.3f", x, y, e.bedMax)
 		return false
 	}
 	return true
 }
 
 func (e *gcodeEmitter) mapXY(x, y float64) (float64, float64) {
+	// x,y are scene-local top-left coordinates translated into plate-local coordinates.
+	ax := e.cfg.PlateOriginXMM + x
+	ay := e.cfg.PlateOriginYMM + y
 	if e.cfg.LaserFlipX {
-		x = e.maxXY - x
+		ax = e.cfg.PlateOriginXMM + e.cfg.PlateMM - x
 	}
 	if e.cfg.LaserFlipY {
-		y = e.maxXY - y
+		ay = e.cfg.PlateOriginYMM + e.cfg.PlateMM - y
 	}
-	return x, y
+	return ax, ay
 }
 
 func circlePolyline(cx, cy, r float64, segments int) []gcodePt {

@@ -44,8 +44,9 @@ func TestSceneGCodeRenderer_Render(t *testing.T) {
 	for _, want := range []string{
 		"G21",
 		"G90",
-		"Workspace: 100.000mm",
-		"Offset: X=5.000mm Y=5.000mm",
+		"Bed: 100.000mm",
+		"Plate: 100.000mm at origin X=0.000mm Y=0.000mm",
+		"Layout offset in plate: X=5.000mm Y=5.000mm",
 		"M4 S1000",
 		"M5",
 		"G0 X10.000 Y90.000",
@@ -86,6 +87,87 @@ func TestSceneGCodeRenderer_Render_OutOfBoundsFails(t *testing.T) {
 		t.Fatalf("expected bounds error")
 	}
 	if !strings.Contains(err.Error(), "out of bounds") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSceneGCodeRenderer_Render_WithOffsets(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:     "seed_01",
+				WidthMM:  90,
+				HeightMM: 90,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 5, YMM: 5, WidthMM: 20, HeightMM: 10, StrokeColor: sceneBlack, StrokeMM: 0.2},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		BedMM:          150,
+		PlateMM:        100,
+		PlateOriginXMM: 2,
+		PlateOriginYMM: 3,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render with offsets: %v", err)
+	}
+	path := filepath.Join(outDir, "seed_01.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	for _, want := range []string{
+		"Bed: 150.000mm",
+		"Plate: 100.000mm at origin X=2.000mm Y=3.000mm",
+		"Layout offset in plate: X=5.000mm Y=5.000mm",
+		"G0 X12.000 Y93.000",
+		"G1 X32.000 Y93.000",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in output", want)
+		}
+	}
+}
+
+func TestSceneGCodeRenderer_Render_OffsetOutOfBoundsFails(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:     "seed_01",
+				WidthMM:  90,
+				HeightMM: 90,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 5, YMM: 5, WidthMM: 20, HeightMM: 10, StrokeColor: sceneBlack, StrokeMM: 0.2},
+						},
+					},
+				},
+			},
+		},
+	}
+	err := (SceneGCodeRenderer{
+		BedMM:          100,
+		PlateMM:        100,
+		PlateOriginXMM: 20,
+	}).Render(doc, t.TempDir())
+	if err == nil {
+		t.Fatalf("expected out-of-bounds error for offset placement")
+	}
+	if !strings.Contains(err.Error(), "plate origin out of workspace") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
