@@ -139,6 +139,103 @@ func TestSceneGCodeRenderer_Render_WithOffsets(t *testing.T) {
 	}
 }
 
+func TestSceneGCodeRenderer_Render_CalibrationAnchorUsesPlateOrigin(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:          "laser_calibration_power_grid",
+				WidthMM:       50,
+				HeightMM:      50,
+				AnchorInPlate: "origin",
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 5, YMM: 5, WidthMM: 20, HeightMM: 10, StrokeColor: sceneBlack, StrokeMM: 0.2},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		BedMM:          150,
+		PlateMM:        100,
+		PlateOriginXMM: 0,
+		PlateOriginYMM: 0,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render calibration anchor: %v", err)
+	}
+	path := filepath.Join(outDir, "laser_calibration_power_grid.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	for _, want := range []string{
+		"Plate: 100.000mm at origin X=0.000mm Y=0.000mm",
+		"Layout offset in plate: X=0.000mm Y=0.000mm",
+		"G0 X5.000 Y45.000",
+		"G1 X25.000 Y45.000",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in output", want)
+		}
+	}
+}
+
+func TestSceneGCodeRenderer_Render_CalibrationAnchorUsesPlateOffset(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:             "laser_calibration_power_grid",
+				WidthMM:          50,
+				HeightMM:         50,
+				AnchorInPlate:    "origin",
+				OffsetInPlateXMM: 50,
+				OffsetInPlateYMM: 50,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 5, YMM: 5, WidthMM: 20, HeightMM: 10, StrokeColor: sceneBlack, StrokeMM: 0.2},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		BedMM:          150,
+		PlateMM:        100,
+		PlateOriginXMM: 0,
+		PlateOriginYMM: 0,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render calibration offset: %v", err)
+	}
+	path := filepath.Join(outDir, "laser_calibration_power_grid.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	for _, want := range []string{
+		"Layout offset in plate: X=50.000mm Y=50.000mm",
+		"G0 X55.000 Y95.000",
+		"G1 X75.000 Y95.000",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in output", want)
+		}
+	}
+}
+
 func TestSceneGCodeRenderer_Render_OffsetOutOfBoundsFails(t *testing.T) {
 	doc := &PlateDocument{
 		Version: sceneVersion,

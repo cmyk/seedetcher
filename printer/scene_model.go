@@ -56,6 +56,8 @@ type ScenePrimitive struct {
 	FillMode    FillMode `json:"fill_mode,omitempty"`
 	StrokeColor string   `json:"stroke_color,omitempty"`
 	StrokeMM    float64  `json:"stroke_mm,omitempty"`
+	PowerS      int      `json:"power_s,omitempty"`
+	FeedMMMin   float64  `json:"feed_mm_min,omitempty"`
 
 	// Text
 	Text       string        `json:"text,omitempty"`
@@ -75,10 +77,13 @@ type SceneLayer struct {
 }
 
 type PlateScene struct {
-	Name     string       `json:"name"`
-	WidthMM  float64      `json:"width_mm"`
-	HeightMM float64      `json:"height_mm"`
-	Layers   []SceneLayer `json:"layers"`
+	Name             string       `json:"name"`
+	WidthMM          float64      `json:"width_mm"`
+	HeightMM         float64      `json:"height_mm"`
+	AnchorInPlate    string       `json:"anchor_in_plate,omitempty"`
+	OffsetInPlateXMM float64      `json:"offset_in_plate_x_mm,omitempty"`
+	OffsetInPlateYMM float64      `json:"offset_in_plate_y_mm,omitempty"`
+	Layers           []SceneLayer `json:"layers"`
 }
 
 type PlateDocument struct {

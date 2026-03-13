@@ -80,12 +80,6 @@ func (r SceneGCodeRenderer) withDefaults() SceneGCodeRenderer {
 	if r.BedMM <= 0 {
 		r.BedMM = r.PlateMM
 	}
-	// Scene space uses top-left origin with +Y downward.
-	// GRBL/LB commonly uses bottom-left with +Y upward.
-	// Default to Y-flip for sane laser orientation.
-	if !r.LaserFlipX && !r.LaserFlipY {
-		r.LaserFlipY = true
-	}
 	return r
 }
 
@@ -100,6 +94,8 @@ type gcodeEmitter struct {
 	x             float64
 	y             float64
 	laserOn       bool
+	activeFeed    float64
+	activePowerS  int
 	bedMax        float64
 	sceneW        float64
 	sceneH        float64
@@ -119,12 +115,23 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 			scene.Name, cfg.PlateMM, cfg.PlateOriginXMM, cfg.PlateOriginYMM, cfg.BedMM,
 		)
 	}
-	// Center scene within physical plate.
-	if cfg.PlateMM > scene.WidthMM {
-		e.layoutOffsetX = (cfg.PlateMM - scene.WidthMM) / 2
+	// Default wallet behavior centers the scene in the physical plate.
+	// Calibration scenes can opt into plate-origin anchoring.
+	if !strings.EqualFold(scene.AnchorInPlate, "origin") {
+		if cfg.PlateMM > scene.WidthMM {
+			e.layoutOffsetX = (cfg.PlateMM - scene.WidthMM) / 2
+		}
+		if cfg.PlateMM > scene.HeightMM {
+			e.layoutOffsetY = (cfg.PlateMM - scene.HeightMM) / 2
+		}
 	}
-	if cfg.PlateMM > scene.HeightMM {
-		e.layoutOffsetY = (cfg.PlateMM - scene.HeightMM) / 2
+	e.layoutOffsetX += scene.OffsetInPlateXMM
+	e.layoutOffsetY += scene.OffsetInPlateYMM
+	if e.layoutOffsetX < 0 || e.layoutOffsetY < 0 || e.layoutOffsetX+scene.WidthMM > cfg.PlateMM || e.layoutOffsetY+scene.HeightMM > cfg.PlateMM {
+		return "", fmt.Errorf(
+			"scene '%s' offset in plate out of bounds: scene=%.3fx%.3f offset=(%.3f,%.3f) plate=%.3f",
+			scene.Name, scene.WidthMM, scene.HeightMM, e.layoutOffsetX, e.layoutOffsetY, cfg.PlateMM,
+		)
 	}
 	fmt.Fprintf(&e.b, "; SeedEtcher scene: %s\n", scene.Name)
 	fmt.Fprintf(&e.b, "; Size: %.3fmm x %.3fmm\n", scene.WidthMM, scene.HeightMM)
@@ -135,7 +142,6 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 	e.b.WriteString("G90\n")
 	fmt.Fprintf(&e.b, "G0 F%.1f\n", cfg.RapidFeedMMMin)
 	fmt.Fprintf(&e.b, "G1 F%.1f\n", cfg.CutFeedMMMin)
-	e.emitPlateGuideFrame()
 	for _, layer := range scene.Layers {
 		if !layer.Visible {
 			continue
@@ -157,44 +163,6 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 	return e.b.String(), nil
 }
 
-func (e *gcodeEmitter) emitPlateGuideFrame() {
-	// Travel-only (laser-off) frame of the physical plate to make placement explicit.
-	// This is intentionally non-burning.
-	x0 := e.cfg.PlateOriginXMM
-	y0 := e.cfg.PlateOriginYMM
-	x1 := x0 + e.cfg.PlateMM
-	y1 := y0 + e.cfg.PlateMM
-
-	e.laserOffSafe()
-	// map via inverse of mapXY expectations (scene local + offsets) by writing directly as absolute moves.
-	// Use current flip settings so guide matches job orientation.
-	pts := [][2]float64{
-		{x0, y0},
-		{x1, y0},
-		{x1, y1},
-		{x0, y1},
-		{x0, y0},
-	}
-	for i, p := range pts {
-		x := p[0]
-		y := p[1]
-		if e.cfg.LaserFlipX {
-			x = e.cfg.BedMM - x
-		}
-		if e.cfg.LaserFlipY {
-			y = e.cfg.BedMM - y
-		}
-		if !e.validXY(x, y) {
-			return
-		}
-		if i == 0 {
-			fmt.Fprintf(&e.b, "G0 X%.3f Y%.3f\n", x, y)
-		} else {
-			fmt.Fprintf(&e.b, "G0 X%.3f Y%.3f\n", x, y)
-		}
-	}
-}
-
 func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 	if e.err != nil {
 		return
@@ -203,6 +171,8 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 		return
 	}
 	fillMode := effectiveFillMode(p)
+	cutFeed := effectiveCutFeed(e.cfg, p)
+	powerS := effectivePowerS(e.cfg, p)
 	switch p.Kind {
 	case PrimitiveGroup:
 		for _, c := range p.Children {
@@ -216,40 +186,40 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 			{x: p.XMM, y: p.YMM + p.HeightMM},
 			{x: p.XMM, y: p.YMM},
 		}
-		e.fillOrTrace(fillMode, [][]gcodePt{loop})
+		e.fillOrTrace(fillMode, [][]gcodePt{loop}, cutFeed, powerS)
 	case PrimitiveRound:
-		e.fillOrTrace(fillMode, [][]gcodePt{roundRectPolyline(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.RadiusMM, 6)})
+		e.fillOrTrace(fillMode, [][]gcodePt{roundRectPolyline(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.RadiusMM, 6)}, cutFeed, powerS)
 	case PrimitiveCircle:
 		if fillMode == FillModeSpiral {
-			e.tracePolyline(circleSpiralPolyline(p.CXMM, p.CYMM, p.RadiusMM, e.cfg.SpiralStepMM))
-			e.tracePolyline(circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40))
+			e.tracePolyline(circleSpiralPolyline(p.CXMM, p.CYMM, p.RadiusMM, e.cfg.SpiralStepMM), cutFeed, powerS)
+			e.tracePolyline(circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40), cutFeed, powerS)
 		} else {
-			e.fillOrTrace(fillMode, [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)})
+			e.fillOrTrace(fillMode, [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)}, cutFeed, powerS)
 		}
 	case PrimitiveRing:
 		outer, inner := ringOutlines(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM)
 		if fillMode == FillModeOffset {
 			for _, loop := range ringOffsetLoops(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM, e.cfg.FillStepMM) {
-				e.tracePolyline(loop)
+				e.tracePolyline(loop, cutFeed, powerS)
 			}
-			e.tracePolyline(outer)
-			e.tracePolyline(inner)
+			e.tracePolyline(outer, cutFeed, powerS)
+			e.tracePolyline(inner, cutFeed, powerS)
 		} else {
-			e.fillOrTrace(fillMode, [][]gcodePt{outer, inner})
+			e.fillOrTrace(fillMode, [][]gcodePt{outer, inner}, cutFeed, powerS)
 		}
 	case PrimitivePath:
 		loops := parseGCodePath(p.PathData, e.cfg.CurveSteps)
 		if fillMode == FillModeOffset && strings.EqualFold(p.FillRule, "evenodd") {
-			e.fillOrTrace(FillModeHatch, loops)
+			e.fillOrTrace(FillModeHatch, loops, cutFeed, powerS)
 		} else {
-			e.fillOrTrace(fillMode, loops)
+			e.fillOrTrace(fillMode, loops, cutFeed, powerS)
 		}
 	case PrimitiveText:
 		pathData, ok := svgTextPath(p)
 		if !ok {
 			return
 		}
-		e.fillOrTrace(fillMode, parseGCodePath(pathData, e.cfg.CurveSteps))
+		e.fillOrTrace(fillMode, parseGCodePath(pathData, e.cfg.CurveSteps), cutFeed, powerS)
 	}
 }
 
@@ -310,25 +280,25 @@ func almostEq(a, b float64) bool {
 	return math.Abs(a-b) <= 1e-6
 }
 
-func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt) {
+func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, cutFeed float64, powerS int) {
 	if fillMode == FillModeHatch {
 		for _, seg := range hatchSegments(loops, e.cfg.FillStepMM) {
-			e.tracePolyline(seg)
+			e.tracePolyline(seg, cutFeed, powerS)
 		}
 	}
 	if fillMode == FillModeOffset {
 		for _, poly := range loops {
 			for _, loop := range offsetInwardLoops(poly, e.cfg.FillStepMM) {
-				e.tracePolyline(loop)
+				e.tracePolyline(loop, cutFeed, powerS)
 			}
 		}
 	}
 	for _, poly := range loops {
-		e.tracePolyline(poly)
+		e.tracePolyline(poly, cutFeed, powerS)
 	}
 }
 
-func (e *gcodeEmitter) tracePolyline(poly []gcodePt) {
+func (e *gcodeEmitter) tracePolyline(poly []gcodePt, cutFeed float64, powerS int) {
 	if e.err != nil {
 		return
 	}
@@ -337,7 +307,7 @@ func (e *gcodeEmitter) tracePolyline(poly []gcodePt) {
 	}
 	e.laserOffSafe()
 	e.rapidTo(poly[0].x, poly[0].y)
-	e.laserOnStart()
+	e.laserOnStart(cutFeed, powerS)
 	for i := 1; i < len(poly); i++ {
 		e.cutTo(poly[i].x, poly[i].y)
 	}
@@ -366,12 +336,18 @@ func (e *gcodeEmitter) cutTo(x, y float64) {
 	e.x, e.y = x, y
 }
 
-func (e *gcodeEmitter) laserOnStart() {
-	if e.laserOn {
+func (e *gcodeEmitter) laserOnStart(feed float64, powerS int) {
+	if e.laserOn && almostEq(e.activeFeed, feed) && e.activePowerS == powerS {
 		return
 	}
-	fmt.Fprintf(&e.b, "%s S%d\n", e.cfg.LaserOnCmd, e.cfg.LaserMaxS)
+	if e.laserOn {
+		e.laserOffSafe()
+	}
+	fmt.Fprintf(&e.b, "G1 F%.1f\n", feed)
+	fmt.Fprintf(&e.b, "%s S%d\n", e.cfg.LaserOnCmd, powerS)
 	e.laserOn = true
+	e.activeFeed = feed
+	e.activePowerS = powerS
 }
 
 func (e *gcodeEmitter) laserOffSafe() {
@@ -402,14 +378,15 @@ func (e *gcodeEmitter) validXY(x, y float64) bool {
 }
 
 func (e *gcodeEmitter) mapXY(x, y float64) (float64, float64) {
-	// x,y are scene-local top-left coordinates translated into plate-local coordinates.
+	// Scene space uses graphic-design coordinates: top-left origin, +Y downward.
+	// Machine space is Cartesian: bottom-left origin, +Y upward.
 	ax := e.cfg.PlateOriginXMM + x
-	ay := e.cfg.PlateOriginYMM + y
+	ay := e.cfg.PlateOriginYMM + (e.layoutOffsetY + e.sceneH - (y - e.layoutOffsetY))
 	if e.cfg.LaserFlipX {
 		ax = e.cfg.PlateOriginXMM + e.cfg.PlateMM - x
 	}
 	if e.cfg.LaserFlipY {
-		ay = e.cfg.PlateOriginYMM + e.cfg.PlateMM - y
+		ay = e.cfg.PlateOriginYMM + y
 	}
 	return ax, ay
 }
@@ -521,6 +498,20 @@ func effectiveFillMode(p ScenePrimitive) FillMode {
 		return FillModeSpiral
 	}
 	return FillModeHatch
+}
+
+func effectiveCutFeed(cfg SceneGCodeRenderer, p ScenePrimitive) float64 {
+	if p.FeedMMMin > 0 {
+		return p.FeedMMMin
+	}
+	return cfg.CutFeedMMMin
+}
+
+func effectivePowerS(cfg SceneGCodeRenderer, p ScenePrimitive) int {
+	if p.PowerS > 0 {
+		return p.PowerS
+	}
+	return cfg.LaserMaxS
 }
 
 func offsetInwardLoops(loop []gcodePt, step float64) [][]gcodePt {

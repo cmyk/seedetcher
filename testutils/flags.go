@@ -3,38 +3,45 @@ package testutils
 import "flag"
 
 type Flags struct {
-	Mnemonic        string
-	Descriptor      string
-	Output          string
-	PaperSize       string
-	Verbose         bool
-	ListFixtures    bool
-	WalletType      string // deprecated alias for Fixture
-	Fixture         string
-	WalletKind      string
-	NOfM            string
-	WordProfile     string
-	SinglesigLayout string
-	BitmapDir       string
-	DPI             int
-	Mirror          bool
-	Invert          bool
-	DescQRMM        float64
-	PCLOut          string
-	SceneJSONOut    string
-	SVGOut          string
-	GCodeOut        string
-	GCodeSide       string
-	BedMM           float64
-	PlateMM         float64
-	PlateOriginXMM  float64
-	PlateOriginYMM  float64
-	LaserMaxS       int
-	LaserFeed       float64
-	RapidFeed       float64
-	WalletName      string
-	EtchStatsPage   bool
-	Compact2of3     bool
+	Mnemonic             string
+	Descriptor           string
+	Output               string
+	PaperSize            string
+	Verbose              bool
+	ListFixtures         bool
+	WalletType           string // deprecated alias for Fixture
+	Fixture              string
+	WalletKind           string
+	NOfM                 string
+	WordProfile          string
+	SinglesigLayout      string
+	BitmapDir            string
+	DPI                  int
+	Mirror               bool
+	Invert               bool
+	DescQRMM             float64
+	PCLOut               string
+	SceneJSONOut         string
+	SVGOut               string
+	GCodeOut             string
+	GCodeSide            string
+	LaserCalibration     string
+	CalibrationAreaMM    float64
+	CalibrationOffset    string
+	CalibrationOffsetXMM float64
+	CalibrationOffsetYMM float64
+	CalibrationPowers    string
+	CalibrationFeeds     string
+	BedMM                float64
+	PlateMM              float64
+	PlateOriginXMM       float64
+	PlateOriginYMM       float64
+	LaserMaxS            int
+	LaserFeed            float64
+	RapidFeed            float64
+	WalletName           string
+	EtchStatsPage        bool
+	Compact2of3          bool
 }
 
 func DefineFlags() *Flags {
@@ -61,6 +68,13 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.SVGOut, "svg-out", "", "Optional output directory for per-plate scene SVGs (seed-side foundation)")
 	flag.StringVar(&f.GCodeOut, "gcode-out", "", "Optional output directory for per-plate scene G-code (file-only laser prototype)")
 	flag.StringVar(&f.GCodeSide, "side", "both", "G-code scene side selection (seed, desc, or both)")
+	flag.StringVar(&f.LaserCalibration, "laser-calibration", "", "Generate laser calibration scene instead of wallet scene (supported: power-grid)")
+	flag.Float64Var(&f.CalibrationAreaMM, "calibration-area-mm", 50.0, "Calibration scene size in mm, centered within the physical plate")
+	flag.StringVar(&f.CalibrationOffset, "calibration-offset", "", "Convenience alias for calibration scene offset inside plate as x,y")
+	flag.Float64Var(&f.CalibrationOffsetXMM, "calibration-offset-x", 0.0, "Calibration scene offset X inside the physical plate")
+	flag.Float64Var(&f.CalibrationOffsetYMM, "calibration-offset-y", 0.0, "Calibration scene offset Y inside the physical plate")
+	flag.StringVar(&f.CalibrationPowers, "calibration-powers", "40,60,80,100", "Comma-separated power values for laser calibration jobs")
+	flag.StringVar(&f.CalibrationFeeds, "calibration-feeds", "400,600,800,1000", "Comma-separated feed values for laser calibration jobs")
 	flag.Float64Var(&f.BedMM, "bed-mm", 150.0, "Laser machine workspace size in mm (K1 default 150)")
 	flag.Float64Var(&f.PlateMM, "plate-mm", 100.0, "Physical plate size in mm used for centered scene placement")
 	flag.Float64Var(&f.PlateOriginXMM, "plate-origin-x", 0.0, "Plate origin X in machine coordinates (bottom-left)")

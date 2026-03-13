@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"seedetcher.com/printer"
@@ -17,6 +18,10 @@ func main() {
 	flag.Parse()
 	if f.ListFixtures {
 		fmt.Println(testutils.FixtureListText())
+		return
+	}
+	if strings.TrimSpace(f.LaserCalibration) != "" {
+		runLaserCalibrationCLI(f)
 		return
 	}
 
@@ -272,6 +277,123 @@ func main() {
 			fmt.Printf("Generated PCL at %s (pages=%d mirror=%v invert=%v dpi=%d)\n", pclPath, len(pages), f.Mirror, f.Invert, f.DPI)
 		}
 	}
+}
+
+func runLaserCalibrationCLI(f *testutils.Flags) {
+	kind, err := printer.ParseLaserCalibrationKind(f.LaserCalibration)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	powers, err := printer.ParseCalibrationPowers(f.CalibrationPowers)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	feeds, err := printer.ParseCalibrationFeeds(f.CalibrationFeeds)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	offsetX := f.CalibrationOffsetXMM
+	offsetY := f.CalibrationOffsetYMM
+	if strings.TrimSpace(f.CalibrationOffset) != "" {
+		parts := strings.Split(strings.TrimSpace(f.CalibrationOffset), ",")
+		if len(parts) != 2 {
+			fmt.Printf("Error: invalid -calibration-offset: %s (expected x,y)\n", f.CalibrationOffset)
+			os.Exit(1)
+		}
+		offsetX, err = strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+		if err != nil {
+			fmt.Printf("Error: invalid -calibration-offset x: %v\n", err)
+			os.Exit(1)
+		}
+		offsetY, err = strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+		if err != nil {
+			fmt.Printf("Error: invalid -calibration-offset y: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	usr, err := user.Current()
+	if err != nil {
+		fmt.Printf("Error getting current user: %v\n", err)
+		os.Exit(1)
+	}
+	outputDir := strings.Replace(f.Output, "~", usr.HomeDir, 1)
+	sceneJSONPath := ""
+	if f.SceneJSONOut != "" {
+		sceneJSONPath = strings.Replace(f.SceneJSONOut, "~", usr.HomeDir, 1)
+	}
+	svgOutDir := ""
+	if f.SVGOut != "" {
+		svgOutDir = strings.Replace(f.SVGOut, "~", usr.HomeDir, 1)
+	}
+	gcodeOutDir := ""
+	if f.GCodeOut != "" {
+		gcodeOutDir = strings.Replace(f.GCodeOut, "~", usr.HomeDir, 1)
+	}
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		fmt.Printf("Error creating output directory: %v\n", err)
+		os.Exit(1)
+	}
+	if sceneJSONPath != "" {
+		if err := os.MkdirAll(filepath.Dir(sceneJSONPath), 0755); err != nil {
+			fmt.Printf("Error creating scene JSON output directory: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	if svgOutDir != "" {
+		if err := os.MkdirAll(svgOutDir, 0755); err != nil {
+			fmt.Printf("Error creating SVG output directory: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	if gcodeOutDir != "" {
+		if err := os.MkdirAll(gcodeOutDir, 0755); err != nil {
+			fmt.Printf("Error creating G-code output directory: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	doc, err := (printer.LaserCalibrationBuilder{
+		Kind:          kind,
+		PlateMM:       f.PlateMM,
+		CalibrationMM: f.CalibrationAreaMM,
+		OffsetXMM:     offsetX,
+		OffsetYMM:     offsetY,
+		Powers:        powers,
+		Feeds:         feeds,
+	}).Build()
+	if err != nil {
+		fmt.Printf("Error building laser calibration scene: %v\n", err)
+		os.Exit(1)
+	}
+	if sceneJSONPath != "" {
+		if err := (printer.SceneJSONRenderer{}).Render(doc, sceneJSONPath); err != nil {
+			fmt.Printf("Error writing scene JSON: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	if svgOutDir != "" {
+		if err := (printer.SceneSVGRenderer{}).Render(doc, svgOutDir); err != nil {
+			fmt.Printf("Error writing scene SVG: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	if gcodeOutDir != "" {
+		if err := (printer.SceneGCodeRenderer{
+			LaserMaxS:      f.LaserMaxS,
+			CutFeedMMMin:   f.LaserFeed,
+			RapidFeedMMMin: f.RapidFeed,
+			BedMM:          f.BedMM,
+			PlateMM:        f.PlateMM,
+			PlateOriginXMM: f.PlateOriginXMM,
+			PlateOriginYMM: f.PlateOriginYMM,
+		}).Render(doc, gcodeOutDir); err != nil {
+			fmt.Printf("Error writing scene G-code: %v\n", err)
+			os.Exit(1)
+		}
+	}
+	fmt.Println("Laser calibration generation completed")
 }
 
 func parseSinglesigLayoutFlag(v string) (printer.SinglesigLayoutMode, error) {
