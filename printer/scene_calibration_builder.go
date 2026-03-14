@@ -225,7 +225,7 @@ func (b LaserCalibrationBuilder) buildTestTileScene() (PlateScene, error) {
 	marginMM := maxFloat(1.0, sizeMM*0.04)
 	mask := SceneLayer{Tag: "mask", Visible: true}
 	wordStyle := newTestTileWordStyle()
-	qrStyle := newCompact2of3SeedQRStyle()
+	qrStyle := newTestTileRegularSeedQRStyle()
 
 	// Tile outline for placement/debug.
 	mask.Primitives = append(mask.Primitives, ScenePrimitive{
@@ -247,10 +247,10 @@ func (b LaserCalibrationBuilder) buildTestTileScene() (PlateScene, error) {
 
 	step := qrStyle.moduleStepMM()
 	finderX := marginMM
-	finderY := sizeMM - marginMM - 5*step
+	finderY := sizeMM - marginMM - 7*step
 	mask.Primitives = append(mask.Primitives, qrStyle.smallFinderPrimitives(finderX, finderY, b.TilePowerS, b.TileFeedMMMin)...)
 
-	patchX := finderX + 5*step + step
+	patchX := finderX + 7*step + step
 	patchY := finderY
 	mask.Primitives = append(mask.Primitives, qrStyle.dotPatchPrimitives(patchX, patchY, []string{
 		"10110",
@@ -279,6 +279,21 @@ type testTileWordStyle struct {
 	leadingMM    float64
 	numWordGapMM float64
 	face         font.Face
+}
+
+type testTileRegularSeedQRStyle struct {
+	sizeMM       float64
+	quietModules int
+	codeSize     int
+}
+
+func newTestTileRegularSeedQRStyle() testTileRegularSeedQRStyle {
+	return testTileRegularSeedQRStyle{
+		sizeMM:       seedQRSizeMM,
+		quietModules: 0,
+		// Regular multisig 2/3 seed-plate seed QR is 24-word payload -> 29 modules at ECC M.
+		codeSize: 29,
+	}
 }
 
 func newTestTileWordStyle() testTileWordStyle {
@@ -322,6 +337,56 @@ func (s testTileWordStyle) linePrimitives(xMM, baselineYMM float64, num, word st
 	wordText.PowerS = power
 	wordText.FeedMMMin = feed
 	return []ScenePrimitive{numText, wordText}
+}
+
+func (s testTileRegularSeedQRStyle) moduleStepMM() float64 {
+	return s.sizeMM / float64(s.codeSize+2*s.quietModules)
+}
+
+func (s testTileRegularSeedQRStyle) moduleRadiusMM() float64 {
+	return s.moduleStepMM() * plateQRDotScale / 2
+}
+
+func (s testTileRegularSeedQRStyle) smallFinderPrimitives(xMM, yMM float64, power int, feed float64) []ScenePrimitive {
+	step := s.moduleStepMM()
+	size := 7 * step
+	return []ScenePrimitive{
+		sceneRingPrimitive(xMM, yMM, size, size, step, step*plateQRPatternCornerRadiusRatio),
+		{
+			Kind:      PrimitiveRound,
+			XMM:       xMM + 2*step,
+			YMM:       yMM + 2*step,
+			WidthMM:   3 * step,
+			HeightMM:  3 * step,
+			RadiusMM:  step * plateQRPatternCornerRadiusRatio,
+			FillColor: sceneBlack,
+			PowerS:    power,
+			FeedMMMin: feed,
+		},
+	}
+}
+
+func (s testTileRegularSeedQRStyle) dotPatchPrimitives(xMM, yMM float64, pattern []string, power int, feed float64) []ScenePrimitive {
+	step := s.moduleStepMM()
+	r := s.moduleRadiusMM()
+	var out []ScenePrimitive
+	for row, line := range pattern {
+		for col, ch := range line {
+			if ch != '1' {
+				continue
+			}
+			out = append(out, ScenePrimitive{
+				Kind:      PrimitiveCircle,
+				CXMM:      xMM + float64(col)*step + step/2,
+				CYMM:      yMM + float64(row)*step + step/2,
+				RadiusMM:  r,
+				FillColor: sceneBlack,
+				PowerS:    power,
+				FeedMMMin: feed,
+			})
+		}
+	}
+	return out
 }
 
 func ParseLaserCalibrationKind(v string) (LaserCalibrationKind, error) {
