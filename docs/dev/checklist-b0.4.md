@@ -77,6 +77,7 @@
   - [x] `G21`, `G90`, `M4`/`M5`, sane feed defaults
   - [x] configurable power scaling `S`
 - [ ] Implement fill/trace strategy for closed vector regions.
+- [ ] Add offline G-code runtime estimate (accel-aware, good enough for controller/UI ETA).
 - [ ] Add deterministic output tests for small canonical plate fixtures.
 
 ### 4) USB serial transport to K1 (host mode)
