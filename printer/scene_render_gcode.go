@@ -11,22 +11,27 @@ import (
 )
 
 type SceneGCodeRenderer struct {
-	LaserOnCmd       string
-	LaserOffCmd      string
-	LaserMaxS        int
-	CutFeedMMMin     float64
-	RapidFeedMMMin   float64
-	CurveSteps       int
-	FillStepMM       float64
-	SpiralStepMM     float64
-	BedMM            float64
-	PlateMM          float64
-	PlateOriginXMM   float64
-	PlateOriginYMM   float64
-	MachineOffsetXMM float64
-	MachineOffsetYMM float64
-	LaserFlipX       bool
-	LaserFlipY       bool
+	LaserOnCmd        string
+	LaserOffCmd       string
+	LaserMaxS         int
+	CutFeedMMMin      float64
+	RapidFeedMMMin    float64
+	CurveSteps        int
+	FillStepMM        float64
+	FillInsetMM       float64
+	OutlineInsetMM    float64
+	SpiralStepMM      float64
+	FeatureShrinkMM   float64
+	OutlinePowerScale float64
+	OutlineFeedScale  float64
+	BedMM             float64
+	PlateMM           float64
+	PlateOriginXMM    float64
+	PlateOriginYMM    float64
+	MachineOffsetXMM  float64
+	MachineOffsetYMM  float64
+	LaserFlipX        bool
+	LaserFlipY        bool
 }
 
 func (r SceneGCodeRenderer) Render(doc *PlateDocument, outDir string) error {
@@ -73,8 +78,23 @@ func (r SceneGCodeRenderer) withDefaults() SceneGCodeRenderer {
 	if r.FillStepMM <= 0 {
 		r.FillStepMM = 0.12
 	}
+	if r.FillInsetMM < 0 {
+		r.FillInsetMM = 0
+	}
+	if r.OutlineInsetMM < 0 {
+		r.OutlineInsetMM = 0
+	}
 	if r.SpiralStepMM <= 0 {
 		r.SpiralStepMM = r.FillStepMM
+	}
+	if r.FeatureShrinkMM < 0 {
+		r.FeatureShrinkMM = 0
+	}
+	if r.OutlinePowerScale <= 0 {
+		r.OutlinePowerScale = 1
+	}
+	if r.OutlineFeedScale <= 0 {
+		r.OutlineFeedScale = 1
 	}
 	if r.PlateMM <= 0 {
 		r.PlateMM = 100
@@ -204,6 +224,14 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 	fillMode := effectiveFillMode(p)
 	cutFeed := effectiveCutFeed(e.cfg, p)
 	powerS := effectivePowerS(e.cfg, p)
+	outlineFeed := cutFeed * e.cfg.OutlineFeedScale
+	outlinePowerS := int(math.Round(float64(powerS) * e.cfg.OutlinePowerScale))
+	if outlineFeed <= 0 {
+		outlineFeed = cutFeed
+	}
+	if outlinePowerS <= 0 {
+		outlinePowerS = powerS
+	}
 	laserOnCmd := effectiveLaserOnCmd(e.cfg, p)
 	switch p.Kind {
 	case PrimitiveGroup:
@@ -218,15 +246,15 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 			{x: p.XMM, y: p.YMM + p.HeightMM},
 			{x: p.XMM, y: p.YMM},
 		}
-		e.fillOrTrace(fillMode, [][]gcodePt{loop}, cutFeed, powerS, laserOnCmd)
+		e.fillOrTrace(fillMode, [][]gcodePt{loop}, nil, e.cfg.FillInsetMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd)
 	case PrimitiveRound:
-		e.fillOrTrace(fillMode, [][]gcodePt{roundRectPolyline(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.RadiusMM, 6)}, cutFeed, powerS, laserOnCmd)
+		e.fillOrTrace(fillMode, [][]gcodePt{roundRectPolyline(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.RadiusMM, 6)}, nil, e.cfg.FillInsetMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd)
 	case PrimitiveCircle:
 		if fillMode == FillModeSpiral {
 			e.tracePolyline(circleSpiralPolyline(p.CXMM, p.CYMM, p.RadiusMM, e.cfg.SpiralStepMM), cutFeed, powerS, laserOnCmd)
-			e.tracePolyline(circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40), cutFeed, powerS, laserOnCmd)
+			e.tracePolyline(circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40), outlineFeed, outlinePowerS, laserOnCmd)
 		} else {
-			e.fillOrTrace(fillMode, [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)}, cutFeed, powerS, laserOnCmd)
+			e.fillOrTrace(fillMode, [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)}, nil, e.cfg.FillInsetMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd)
 		}
 	case PrimitiveRing:
 		outer, inner := ringOutlines(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM)
@@ -234,24 +262,51 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 			for _, loop := range ringOffsetLoops(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM, e.cfg.FillStepMM) {
 				e.tracePolyline(loop, cutFeed, powerS, laserOnCmd)
 			}
-			e.tracePolyline(outer, cutFeed, powerS, laserOnCmd)
-			e.tracePolyline(inner, cutFeed, powerS, laserOnCmd)
+			e.tracePolyline(outer, outlineFeed, outlinePowerS, laserOnCmd)
+			e.tracePolyline(inner, outlineFeed, outlinePowerS, laserOnCmd)
 		} else {
-			e.fillOrTrace(fillMode, [][]gcodePt{outer, inner}, cutFeed, powerS, laserOnCmd)
+			e.fillOrTrace(fillMode, [][]gcodePt{outer, inner}, nil, e.cfg.FillInsetMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd)
 		}
 	case PrimitivePath:
 		loops := parseGCodePath(p.PathData, e.cfg.CurveSteps)
+		if e.cfg.FeatureShrinkMM > 0 {
+			loops = shrinkFeatureLoops(loops, e.cfg.FeatureShrinkMM)
+		}
+		outlineLoops := loops
+		if fillMode != FillModeNone && e.cfg.OutlineInsetMM > 0 {
+			if in := shrinkFeatureLoops(loops, e.cfg.OutlineInsetMM); len(in) > 0 {
+				outlineLoops = in
+			}
+		}
+		fillInsetMM := e.cfg.FillInsetMM
+		if fillMode != FillModeNone && e.cfg.OutlineInsetMM > fillInsetMM {
+			fillInsetMM = e.cfg.OutlineInsetMM
+		}
 		if fillMode == FillModeOffset && strings.EqualFold(p.FillRule, "evenodd") {
-			e.fillOrTrace(FillModeHatch, loops, cutFeed, powerS, laserOnCmd)
+			e.fillOrTrace(FillModeHatch, loops, outlineLoops, fillInsetMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd)
 		} else {
-			e.fillOrTrace(fillMode, loops, cutFeed, powerS, laserOnCmd)
+			e.fillOrTrace(fillMode, loops, outlineLoops, fillInsetMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd)
 		}
 	case PrimitiveText:
 		pathData, ok := svgTextPath(p)
 		if !ok {
 			return
 		}
-		e.fillOrTrace(fillMode, parseGCodePath(pathData, e.cfg.CurveSteps), cutFeed, powerS, laserOnCmd)
+		loops := parseGCodePath(pathData, e.cfg.CurveSteps)
+		if e.cfg.FeatureShrinkMM > 0 {
+			loops = shrinkFeatureLoops(loops, e.cfg.FeatureShrinkMM)
+		}
+		outlineLoops := loops
+		if fillMode != FillModeNone && e.cfg.OutlineInsetMM > 0 {
+			if in := shrinkFeatureLoops(loops, e.cfg.OutlineInsetMM); len(in) > 0 {
+				outlineLoops = in
+			}
+		}
+		fillInsetMM := e.cfg.FillInsetMM
+		if fillMode != FillModeNone && e.cfg.OutlineInsetMM > fillInsetMM {
+			fillInsetMM = e.cfg.OutlineInsetMM
+		}
+		e.fillOrTrace(fillMode, loops, outlineLoops, fillInsetMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd)
 	}
 }
 
@@ -312,21 +367,30 @@ func almostEq(a, b float64) bool {
 	return math.Abs(a-b) <= 1e-6
 }
 
-func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, cutFeed float64, powerS int, laserOnCmd string) {
+func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, outlineLoops [][]gcodePt, fillInsetMM float64, cutFeed float64, powerS int, outlineFeed float64, outlinePowerS int, laserOnCmd string) {
+	fillLoops := loops
+	if len(outlineLoops) == 0 {
+		outlineLoops = loops
+	}
+	if fillInsetMM > 0 && fillMode != FillModeNone {
+		if shrunk := shrinkFeatureLoops(loops, fillInsetMM); len(shrunk) > 0 {
+			fillLoops = shrunk
+		}
+	}
 	if fillMode == FillModeHatch {
-		for _, seg := range hatchSegments(loops, e.cfg.FillStepMM) {
+		for _, seg := range hatchSegments(fillLoops, e.cfg.FillStepMM) {
 			e.tracePolyline(seg, cutFeed, powerS, laserOnCmd)
 		}
 	}
 	if fillMode == FillModeOffset {
-		for _, poly := range loops {
+		for _, poly := range fillLoops {
 			for _, loop := range offsetInwardLoops(poly, e.cfg.FillStepMM) {
 				e.tracePolyline(loop, cutFeed, powerS, laserOnCmd)
 			}
 		}
 	}
-	for _, poly := range loops {
-		e.tracePolyline(poly, cutFeed, powerS, laserOnCmd)
+	for _, poly := range outlineLoops {
+		e.tracePolyline(poly, outlineFeed, outlinePowerS, laserOnCmd)
 	}
 }
 
@@ -613,6 +677,7 @@ func insetLoop(loop []gcodePt, d float64) []gcodePt {
 	}
 	ccw := polygonArea(loop) > 0
 	out := make([]gcodePt, 0, n+1)
+	miterLimit := math.Abs(d) * 4.0
 	for i := 0; i < n; i++ {
 		a := loop[(i-1+n)%n]
 		b := loop[i]
@@ -625,7 +690,15 @@ func insetLoop(loop []gcodePt, d float64) []gcodePt {
 		}
 		x, y, ok := lineIntersection(p1, p2, q1, q2)
 		if !ok {
-			return nil
+			x = (p2.x + q1.x) * 0.5
+			y = (p2.y + q1.y) * 0.5
+		}
+		if miterLimit > 0 {
+			if math.Hypot(x-b.x, y-b.y) > miterLimit {
+				// Clamp acute-corner spikes ("wings") to a bevel midpoint.
+				x = (p2.x + q1.x) * 0.5
+				y = (p2.y + q1.y) * 0.5
+			}
 		}
 		out = append(out, gcodePt{x: x, y: y})
 	}
@@ -926,6 +999,100 @@ func parseGCodePath(d string, curveSteps int) [][]gcodePt {
 		polys = append(polys, cur)
 	}
 	return polys
+}
+
+func shrinkFeatureLoops(loops [][]gcodePt, d float64) [][]gcodePt {
+	if d <= 0 {
+		return loops
+	}
+	closed := normalizeClosedLoops(loops)
+	if len(closed) == 0 {
+		return closed
+	}
+	out := make([][]gcodePt, 0, len(closed))
+	for i, loop := range closed {
+		a := polygonArea(loop)
+		if math.Abs(a) <= 1e-9 {
+			continue
+		}
+		sample, ok := loopInteriorSample(loop)
+		if !ok {
+			out = append(out, loop)
+			continue
+		}
+		depth := 0
+		for j, other := range closed {
+			if i == j {
+				continue
+			}
+			if pointInLoop(sample, other) {
+				depth++
+			}
+		}
+		offset := d
+		if depth%2 == 1 {
+			// Odd containment depth means this is a hole; expand it to thin surrounding strokes.
+			offset = -d
+		}
+		adj := insetLoop(loop, offset)
+		if len(adj) < 4 || math.Abs(polygonArea(adj)) <= 1e-9 {
+			out = append(out, loop)
+			continue
+		}
+		out = append(out, adj)
+	}
+	return out
+}
+
+func loopInteriorSample(loop []gcodePt) (gcodePt, bool) {
+	n := len(loop)
+	if n < 4 {
+		return gcodePt{}, false
+	}
+	ccw := polygonArea(loop) > 0
+	const eps = 1e-4
+	for i := 0; i+1 < n; i++ {
+		a := loop[i]
+		b := loop[i+1]
+		dx := b.x - a.x
+		dy := b.y - a.y
+		l := math.Hypot(dx, dy)
+		if l <= 1e-12 {
+			continue
+		}
+		mx := (a.x + b.x) * 0.5
+		my := (a.y + b.y) * 0.5
+		nx := -dy / l
+		ny := dx / l
+		if !ccw {
+			nx = -nx
+			ny = -ny
+		}
+		return gcodePt{x: mx + nx*eps, y: my + ny*eps}, true
+	}
+	return gcodePt{}, false
+}
+
+func pointInLoop(p gcodePt, loop []gcodePt) bool {
+	n := len(loop)
+	if n < 4 {
+		return false
+	}
+	inside := false
+	last := n - 2
+	for i := 0; i < n-1; i++ {
+		a := loop[last]
+		b := loop[i]
+		last = i
+		if (a.y > p.y) == (b.y > p.y) {
+			continue
+		}
+		x := (b.x-a.x)*(p.y-a.y)/(b.y-a.y) + a.x
+		if p.x < x {
+			inside = !inside
+		}
+	}
+	return inside
 }
 
 func isAlphaToken(s string) bool {

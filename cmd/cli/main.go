@@ -175,17 +175,22 @@ func main() {
 				os.Exit(1)
 			}
 			if err := (printer.SceneGCodeRenderer{
-				LaserOnCmd:       strings.ToUpper(strings.TrimSpace(f.LaserMode)),
-				LaserMaxS:        f.LaserMaxS,
-				CutFeedMMMin:     f.LaserFeed,
-				FillStepMM:       f.LaserFillStepMM,
-				RapidFeedMMMin:   f.RapidFeed,
-				BedMM:            f.BedMM,
-				PlateMM:          f.PlateMM,
-				PlateOriginXMM:   f.PlateOriginXMM,
-				PlateOriginYMM:   f.PlateOriginYMM,
-				MachineOffsetXMM: f.MachineOffsetXMM,
-				MachineOffsetYMM: f.MachineOffsetYMM,
+				LaserOnCmd:        strings.ToUpper(strings.TrimSpace(f.LaserMode)),
+				LaserMaxS:         f.LaserMaxS,
+				CutFeedMMMin:      f.LaserFeed,
+				FillStepMM:        f.LaserFillStepMM,
+				FillInsetMM:       f.LaserFillInsetMM,
+				OutlineInsetMM:    f.LaserOutlineInsetMM,
+				FeatureShrinkMM:   f.LaserFeatureShrinkMM,
+				OutlinePowerScale: f.LaserOutlinePowerScale,
+				OutlineFeedScale:  f.LaserOutlineFeedScale,
+				RapidFeedMMMin:    f.RapidFeed,
+				BedMM:             f.BedMM,
+				PlateMM:           f.PlateMM,
+				PlateOriginXMM:    f.PlateOriginXMM,
+				PlateOriginYMM:    f.PlateOriginYMM,
+				MachineOffsetXMM:  f.MachineOffsetXMM,
+				MachineOffsetYMM:  f.MachineOffsetYMM,
 			}).Render(sideScenes, gcodeOutDir); err != nil {
 				fmt.Printf("Error writing scene G-code: %v\n", err)
 				os.Exit(1)
@@ -400,17 +405,22 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 	}
 	if gcodeOutDir != "" {
 		if err := (printer.SceneGCodeRenderer{
-			LaserOnCmd:       strings.ToUpper(strings.TrimSpace(f.LaserMode)),
-			LaserMaxS:        f.LaserMaxS,
-			CutFeedMMMin:     f.LaserFeed,
-			FillStepMM:       f.LaserFillStepMM,
-			RapidFeedMMMin:   f.RapidFeed,
-			BedMM:            f.BedMM,
-			PlateMM:          f.PlateMM,
-			PlateOriginXMM:   f.PlateOriginXMM,
-			PlateOriginYMM:   f.PlateOriginYMM,
-			MachineOffsetXMM: f.MachineOffsetXMM,
-			MachineOffsetYMM: f.MachineOffsetYMM,
+			LaserOnCmd:        strings.ToUpper(strings.TrimSpace(f.LaserMode)),
+			LaserMaxS:         f.LaserMaxS,
+			CutFeedMMMin:      f.LaserFeed,
+			FillStepMM:        f.LaserFillStepMM,
+			FillInsetMM:       f.LaserFillInsetMM,
+			OutlineInsetMM:    f.LaserOutlineInsetMM,
+			FeatureShrinkMM:   f.LaserFeatureShrinkMM,
+			OutlinePowerScale: f.LaserOutlinePowerScale,
+			OutlineFeedScale:  f.LaserOutlineFeedScale,
+			RapidFeedMMMin:    f.RapidFeed,
+			BedMM:             f.BedMM,
+			PlateMM:           f.PlateMM,
+			PlateOriginXMM:    f.PlateOriginXMM,
+			PlateOriginYMM:    f.PlateOriginYMM,
+			MachineOffsetXMM:  f.MachineOffsetXMM,
+			MachineOffsetYMM:  f.MachineOffsetYMM,
 		}).Render(doc, gcodeOutDir); err != nil {
 			fmt.Printf("Error writing scene G-code: %v\n", err)
 			os.Exit(1)

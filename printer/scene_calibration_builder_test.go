@@ -306,3 +306,82 @@ func TestLaserCalibrationTestTileRendersGCodeWithinBounds(t *testing.T) {
 		t.Fatalf("expected gcode output: %v", err)
 	}
 }
+
+func TestLaserCalibrationBuilderBuildsLineWidthTile(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationLineWidth,
+		PlateMM:       100,
+		CalibrationMM: 25,
+		OffsetXMM:     25,
+		OffsetYMM:     50,
+		TilePowerS:    850,
+		TileFeedMMMin: 2000,
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(doc.Scenes) != 1 {
+		t.Fatalf("expected 1 scene, got %d", len(doc.Scenes))
+	}
+	scene := doc.Scenes[0]
+	if scene.Name != "laser_calibration_line_width_tile" {
+		t.Fatalf("unexpected scene name %q", scene.Name)
+	}
+	if scene.WidthMM != 25 || scene.HeightMM != 25 {
+		t.Fatalf("unexpected scene size %.1fx%.1f", scene.WidthMM, scene.HeightMM)
+	}
+	if scene.OffsetInPlateXMM != 25 || scene.OffsetInPlateYMM != 50 {
+		t.Fatalf("unexpected offsets %.1f,%.1f", scene.OffsetInPlateXMM, scene.OffsetInPlateYMM)
+	}
+	lineCount := 0
+	labelCount := 0
+	centeredLabelCount := 0
+	for _, p := range scene.Layers[0].Primitives {
+		switch {
+		case p.Kind == PrimitivePath && p.FillMode == FillModeNone && p.PowerS > 0 && p.FeedMMMin > 0:
+			lineCount++
+		case p.Kind == PrimitiveText:
+			labelCount++
+			if p.Anchor == TextAnchorCenter {
+				centeredLabelCount++
+			}
+		}
+	}
+	if lineCount != 9 {
+		t.Fatalf("expected 9 calibration lines, got %d", lineCount)
+	}
+	if labelCount != 9 {
+		t.Fatalf("expected 9 labels, got %d", labelCount)
+	}
+	if centeredLabelCount != 9 {
+		t.Fatalf("expected 9 center-anchored labels, got %d", centeredLabelCount)
+	}
+}
+
+func TestLaserCalibrationLineWidthTileRendersGCodeWithinBounds(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationLineWidth,
+		PlateMM:       100,
+		CalibrationMM: 25,
+		TilePowerS:    850,
+		TileFeedMMMin: 2000,
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserOnCmd:     "M4",
+		LaserMaxS:      850,
+		CutFeedMMMin:   2000,
+		FillStepMM:     0.03,
+		RapidFeedMMMin: 8000,
+		BedMM:          150,
+		PlateMM:        100,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "laser_calibration_line_width_tile.gcode")); err != nil {
+		t.Fatalf("expected gcode output: %v", err)
+	}
+}

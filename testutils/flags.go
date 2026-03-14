@@ -3,50 +3,55 @@ package testutils
 import "flag"
 
 type Flags struct {
-	Mnemonic             string
-	Descriptor           string
-	Output               string
-	PaperSize            string
-	Verbose              bool
-	ListFixtures         bool
-	WalletType           string // deprecated alias for Fixture
-	Fixture              string
-	WalletKind           string
-	NOfM                 string
-	WordProfile          string
-	SinglesigLayout      string
-	BitmapDir            string
-	DPI                  int
-	Mirror               bool
-	Invert               bool
-	DescQRMM             float64
-	PCLOut               string
-	SceneJSONOut         string
-	SVGOut               string
-	GCodeOut             string
-	GCodeSide            string
-	LaserCalibration     string
-	CalibrationAreaMM    float64
-	CalibrationOffset    string
-	CalibrationOffsetXMM float64
-	CalibrationOffsetYMM float64
-	CalibrationPowers    string
-	CalibrationFeeds     string
-	CalibrationModes     string
-	BedMM                float64
-	PlateMM              float64
-	PlateOriginXMM       float64
-	PlateOriginYMM       float64
-	MachineOffsetXMM     float64
-	MachineOffsetYMM     float64
-	LaserMode            string
-	LaserMaxS            int
-	LaserFeed            float64
-	LaserFillStepMM      float64
-	RapidFeed            float64
-	WalletName           string
-	EtchStatsPage        bool
-	Compact2of3          bool
+	Mnemonic               string
+	Descriptor             string
+	Output                 string
+	PaperSize              string
+	Verbose                bool
+	ListFixtures           bool
+	WalletType             string // deprecated alias for Fixture
+	Fixture                string
+	WalletKind             string
+	NOfM                   string
+	WordProfile            string
+	SinglesigLayout        string
+	BitmapDir              string
+	DPI                    int
+	Mirror                 bool
+	Invert                 bool
+	DescQRMM               float64
+	PCLOut                 string
+	SceneJSONOut           string
+	SVGOut                 string
+	GCodeOut               string
+	GCodeSide              string
+	LaserCalibration       string
+	CalibrationAreaMM      float64
+	CalibrationOffset      string
+	CalibrationOffsetXMM   float64
+	CalibrationOffsetYMM   float64
+	CalibrationPowers      string
+	CalibrationFeeds       string
+	CalibrationModes       string
+	BedMM                  float64
+	PlateMM                float64
+	PlateOriginXMM         float64
+	PlateOriginYMM         float64
+	MachineOffsetXMM       float64
+	MachineOffsetYMM       float64
+	LaserMode              string
+	LaserMaxS              int
+	LaserFeed              float64
+	LaserFillStepMM        float64
+	LaserFillInsetMM       float64
+	LaserOutlineInsetMM    float64
+	LaserFeatureShrinkMM   float64
+	LaserOutlinePowerScale float64
+	LaserOutlineFeedScale  float64
+	RapidFeed              float64
+	WalletName             string
+	EtchStatsPage          bool
+	Compact2of3            bool
 }
 
 func DefineFlags() *Flags {
@@ -73,7 +78,7 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.SVGOut, "svg-out", "", "Optional output directory for per-plate scene SVGs (seed-side foundation)")
 	flag.StringVar(&f.GCodeOut, "gcode-out", "", "Optional output directory for per-plate scene G-code (file-only laser prototype)")
 	flag.StringVar(&f.GCodeSide, "side", "both", "G-code scene side selection (seed, desc, or both)")
-	flag.StringVar(&f.LaserCalibration, "laser-calibration", "", "Generate laser calibration scene instead of wallet scene (supported: power-grid)")
+	flag.StringVar(&f.LaserCalibration, "laser-calibration", "", "Generate laser calibration scene instead of wallet scene (supported: power-grid, test-tile, line-width-tile)")
 	flag.Float64Var(&f.CalibrationAreaMM, "calibration-area-mm", 50.0, "Calibration scene size in mm, centered within the physical plate")
 	flag.StringVar(&f.CalibrationOffset, "calibration-offset", "", "Convenience alias for calibration scene offset inside plate as x,y")
 	flag.Float64Var(&f.CalibrationOffsetXMM, "calibration-offset-x", 0.0, "Calibration scene offset X inside the physical plate")
@@ -93,6 +98,11 @@ func DefineFlags() *Flags {
 	flag.IntVar(&f.LaserMaxS, "laser-max-s", 80, "Laser power S value used in generated G-code (for example 0..1000, default 80)")
 	flag.Float64Var(&f.LaserFeed, "laser-feed", 900.0, "Cut feed in mm/min for generated G-code (default 900)")
 	flag.Float64Var(&f.LaserFillStepMM, "laser-fill-step-mm", 0.0, "Optional hatch/fill line spacing in mm for generated G-code (default renderer behavior when 0)")
+	flag.Float64Var(&f.LaserFillInsetMM, "laser-fill-inset-mm", 0.0, "Optional inward inset in mm applied to fill only, leaving outline at original geometry (default 0)")
+	flag.Float64Var(&f.LaserOutlineInsetMM, "laser-outline-inset-mm", 0.02, "Inward inset in mm applied to text/path outline pass to avoid fat edges from centerline tracing (default 0.02)")
+	flag.Float64Var(&f.LaserFeatureShrinkMM, "laser-feature-shrink-mm", 0.0, "Optional geometry shrink in mm for text/path features to counter fat edges (default 0)")
+	flag.Float64Var(&f.LaserOutlinePowerScale, "laser-outline-power-scale", 1.0, "Scale factor for outline-pass laser power (default 1.0)")
+	flag.Float64Var(&f.LaserOutlineFeedScale, "laser-outline-feed-scale", 1.0, "Scale factor for outline-pass feed rate (default 1.0)")
 	flag.Float64Var(&f.RapidFeed, "rapid-feed", 3000.0, "Rapid move feed in mm/min for generated G-code (default 3000)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")

@@ -13,6 +13,7 @@ type LaserCalibrationKind string
 const (
 	LaserCalibrationPowerGrid LaserCalibrationKind = "power-grid"
 	LaserCalibrationTestTile  LaserCalibrationKind = "test-tile"
+	LaserCalibrationLineWidth LaserCalibrationKind = "line-width-tile"
 )
 
 type LaserCalibrationBuilder struct {
@@ -57,6 +58,15 @@ func (b LaserCalibrationBuilder) Build() (*PlateDocument, error) {
 		}, nil
 	case LaserCalibrationTestTile:
 		scene, err := b.buildTestTileScene()
+		if err != nil {
+			return nil, err
+		}
+		return &PlateDocument{
+			Version: sceneVersion,
+			Scenes:  []PlateScene{scene},
+		}, nil
+	case LaserCalibrationLineWidth:
+		scene, err := b.buildLineWidthTileScene()
 		if err != nil {
 			return nil, err
 		}
@@ -275,6 +285,110 @@ func (b LaserCalibrationBuilder) buildTestTileScene() (PlateScene, error) {
 	}, nil
 }
 
+func (b LaserCalibrationBuilder) buildLineWidthTileScene() (PlateScene, error) {
+	if b.CalibrationMM <= 0 {
+		b.CalibrationMM = 25
+	}
+	if b.TilePowerS <= 0 {
+		b.TilePowerS = 1000
+	}
+	if b.TileFeedMMMin <= 0 {
+		b.TileFeedMMMin = 900
+	}
+	sizeMM := b.CalibrationMM
+	marginMM := maxFloat(1.0, sizeMM*0.04)
+	annotationPower := maxInt(1, b.TilePowerS/2)
+	annotationFeed := maxFloat(900, b.TileFeedMMMin)
+	mask := SceneLayer{Tag: "mask", Visible: true}
+
+	mask.Primitives = append(mask.Primitives, ScenePrimitive{
+		Kind:        PrimitiveRect,
+		XMM:         0,
+		YMM:         0,
+		WidthMM:     sizeMM,
+		HeightMM:    sizeMM,
+		StrokeColor: sceneBlack,
+		StrokeMM:    0.12,
+		PowerS:      annotationPower,
+		FeedMMMin:   annotationFeed,
+	})
+
+	feeds := append([]float64(nil), b.Feeds...)
+	if len(feeds) == 0 {
+		base := b.TileFeedMMMin
+		feeds = []float64{
+			base * 0.6,
+			base * 0.7,
+			base * 0.8,
+			base * 0.9,
+			base,
+			base * 1.1,
+			base * 1.2,
+			base * 1.3,
+			base * 1.4,
+		}
+	}
+	if len(feeds) > 9 {
+		feeds = feeds[:9]
+	}
+	if len(feeds) == 0 {
+		return PlateScene{}, fmt.Errorf("line-width tile requires at least one feed")
+	}
+	powers := make([]int, len(feeds))
+	for i := range powers {
+		powers[i] = b.TilePowerS
+		if len(b.Powers) == 1 {
+			powers[i] = b.Powers[0]
+		} else if i < len(b.Powers) && b.Powers[i] > 0 {
+			powers[i] = b.Powers[i]
+		}
+		if powers[i] <= 0 {
+			powers[i] = b.TilePowerS
+		}
+	}
+
+	lineStartX := maxFloat(6.5, sizeMM*0.26)
+	labelX := (marginMM + lineStartX) / 2
+	lineEndX := sizeMM - marginMM
+	topY := maxFloat(3.2, sizeMM*0.13)
+	bottomY := sizeMM - maxFloat(2.8, sizeMM*0.11)
+	stepY := 0.0
+	if len(feeds) > 1 {
+		stepY = (bottomY - topY) / float64(len(feeds)-1)
+	}
+	labelPt := maxFloat(4.6, sizeMM*0.18)
+
+	for i := range feeds {
+		y := topY + float64(i)*stepY
+		line := ScenePrimitive{
+			Kind:        PrimitivePath,
+			PathData:    fmt.Sprintf("M%.4f %.4fL%.4f %.4f", lineStartX, y, lineEndX, y),
+			FillMode:    FillModeNone,
+			StrokeColor: sceneBlack,
+			StrokeMM:    0.1,
+			PowerS:      powers[i],
+			FeedMMMin:   feeds[i],
+		}
+		mask.Primitives = append(mask.Primitives, line)
+
+		label := newSceneText(labelX, y, fmt.Sprintf("%.0f", feeds[i]), labelPt, 0.01, TextDirHorizontal, TextAnchorCenter)
+		label.FillMode = FillModeNone
+		label.PowerS = annotationPower
+		label.FeedMMMin = annotationFeed
+		mask.Primitives = append(mask.Primitives, label)
+	}
+
+	return PlateScene{
+		Name:             "laser_calibration_line_width_tile",
+		WidthMM:          sizeMM,
+		HeightMM:         sizeMM,
+		AnchorInPlate:    "origin",
+		OffsetInPlateXMM: b.OffsetXMM,
+		OffsetInPlateYMM: b.OffsetYMM,
+		Layers:           []SceneLayer{mask},
+	}, nil
+}
+
 type testTileWordStyle struct {
 	dpi          float64
 	sizePt       float64
@@ -416,6 +530,8 @@ func ParseLaserCalibrationKind(v string) (LaserCalibrationKind, error) {
 		return LaserCalibrationPowerGrid, nil
 	case string(LaserCalibrationTestTile):
 		return LaserCalibrationTestTile, nil
+	case string(LaserCalibrationLineWidth), "line-width":
+		return LaserCalibrationLineWidth, nil
 	default:
 		return "", fmt.Errorf("unknown laser calibration kind: %s", v)
 	}

@@ -1,6 +1,7 @@
 package printer
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -329,6 +330,238 @@ func TestSceneGCodeRenderer_Render_UsesPerPrimitiveLaserMode(t *testing.T) {
 	s := string(data)
 	if !strings.Contains(s, "M3 S1000") || !strings.Contains(s, "M4 S1000") {
 		t.Fatalf("expected both M3 and M4 in output, got:\n%s", s)
+	}
+}
+
+func TestSceneGCodeRenderer_Render_UsesOutlineScales(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:     "outline_scale_test",
+				WidthMM:  20,
+				HeightMM: 20,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 1, YMM: 1, WidthMM: 6, HeightMM: 4, FillColor: sceneBlack, FillMode: FillModeHatch},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserMaxS:         1000,
+		CutFeedMMMin:      1000,
+		FillStepMM:        1.0,
+		OutlinePowerScale: 0.9,
+		OutlineFeedScale:  1.2,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render outline scale test: %v", err)
+	}
+	path := filepath.Join(outDir, "outline_scale_test.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "G1 F1000.0\nM4 S1000") {
+		t.Fatalf("missing base fill feed/power in output:\n%s", s)
+	}
+	if !strings.Contains(s, "G1 F1200.0\nM4 S900") {
+		t.Fatalf("missing scaled outline feed/power in output:\n%s", s)
+	}
+}
+
+func TestSceneGCodeRenderer_Render_UsesFillInsetForFillOnly(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:     "fill_inset_test",
+				WidthMM:  20,
+				HeightMM: 20,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 2, YMM: 2, WidthMM: 6, HeightMM: 4, FillColor: sceneBlack, FillMode: FillModeHatch},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserMaxS:         1000,
+		CutFeedMMMin:      1000,
+		FillStepMM:        1.0,
+		FillInsetMM:       0.5,
+		OutlineFeedScale:  1.0,
+		OutlinePowerScale: 1.0,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render fill inset test: %v", err)
+	}
+	path := filepath.Join(outDir, "fill_inset_test.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "X42.500 Y") {
+		t.Fatalf("missing inset fill coordinates in output:\n%s", s)
+	}
+	if !strings.Contains(s, "X42.000 Y58.000") {
+		t.Fatalf("missing original-geometry outline coordinates in output:\n%s", s)
+	}
+}
+
+func TestSceneGCodeRenderer_Render_UsesOutlineInsetForPath(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:     "outline_inset_test",
+				WidthMM:  20,
+				HeightMM: 20,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{
+								Kind:      PrimitivePath,
+								PathData:  "M2 2 L8 2 L8 6 L2 6 Z",
+								FillColor: sceneBlack,
+								FillMode:  FillModeHatch,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserMaxS:      1000,
+		CutFeedMMMin:   1000,
+		FillStepMM:     1.0,
+		FillInsetMM:    0.0,
+		OutlineInsetMM: 0.5,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render outline inset test: %v", err)
+	}
+	path := filepath.Join(outDir, "outline_inset_test.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "X42.500 Y57.500") {
+		t.Fatalf("missing inset outline coordinates in output:\n%s", s)
+	}
+	if strings.Contains(s, "X42.000 Y58.000\nG1 X48.000 Y58.000") {
+		t.Fatalf("unexpected non-inset outline in output:\n%s", s)
+	}
+}
+
+func TestShrinkFeatureLoops_ShrinksOuterAndExpandsHole(t *testing.T) {
+	outer := []gcodePt{
+		{x: 0, y: 0},
+		{x: 10, y: 0},
+		{x: 10, y: 10},
+		{x: 0, y: 10},
+		{x: 0, y: 0},
+	}
+	hole := []gcodePt{
+		{x: 3, y: 3},
+		{x: 3, y: 7},
+		{x: 7, y: 7},
+		{x: 7, y: 3},
+		{x: 3, y: 3},
+	}
+	orig := [][]gcodePt{outer, hole}
+	out := shrinkFeatureLoops(orig, 0.5)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 loops, got %d", len(out))
+	}
+	origOuterArea := math.Abs(polygonArea(orig[0]))
+	origHoleArea := math.Abs(polygonArea(orig[1]))
+	outOuterArea := math.Abs(polygonArea(out[0]))
+	outHoleArea := math.Abs(polygonArea(out[1]))
+	if !(outOuterArea < origOuterArea) {
+		t.Fatalf("outer area not reduced: orig=%f out=%f", origOuterArea, outOuterArea)
+	}
+	if !(outHoleArea > origHoleArea) {
+		t.Fatalf("hole area not expanded: orig=%f out=%f", origHoleArea, outHoleArea)
+	}
+}
+
+func TestShrinkFeatureLoops_DisjointOppositeWindingBothShrink(t *testing.T) {
+	loopA := []gcodePt{
+		{x: 0, y: 0},
+		{x: 10, y: 0},
+		{x: 10, y: 10},
+		{x: 0, y: 10},
+		{x: 0, y: 0},
+	}
+	loopB := []gcodePt{
+		{x: 20, y: 0},
+		{x: 20, y: 10},
+		{x: 30, y: 10},
+		{x: 30, y: 0},
+		{x: 20, y: 0},
+	}
+	orig := [][]gcodePt{loopA, loopB}
+	out := shrinkFeatureLoops(orig, 0.5)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 loops, got %d", len(out))
+	}
+	for i := range orig {
+		origArea := math.Abs(polygonArea(orig[i]))
+		outArea := math.Abs(polygonArea(out[i]))
+		if !(outArea < origArea) {
+			t.Fatalf("loop %d was not shrunk: orig=%f out=%f", i, origArea, outArea)
+		}
+	}
+}
+
+func TestInsetLoop_AcuteCornerMiterIsLimited(t *testing.T) {
+	loop := []gcodePt{
+		{x: 0, y: 0},
+		{x: 4.9, y: 0},
+		{x: 5.0, y: 10.0},
+		{x: 5.1, y: 0},
+		{x: 10, y: 0},
+		{x: 10, y: 12},
+		{x: 0, y: 12},
+		{x: 0, y: 0},
+	}
+	d := 0.2
+	out := insetLoop(loop, d)
+	if len(out) < 4 {
+		t.Fatalf("expected inset loop, got %d points", len(out))
+	}
+	const eps = 1e-9
+	limit := 4.0*d + eps
+	for i := 0; i < len(out)-1; i++ {
+		p := out[i]
+		minDist := math.Inf(1)
+		for j := 0; j < len(loop)-1; j++ {
+			q := loop[j]
+			if dist := math.Hypot(p.x-q.x, p.y-q.y); dist < minDist {
+				minDist = dist
+			}
+		}
+		if minDist > limit {
+			t.Fatalf("inset point escaped miter limit: point=(%.6f,%.6f) minDist=%.6f limit=%.6f", p.x, p.y, minDist, limit)
+		}
 	}
 }
 
