@@ -242,15 +242,19 @@ func (b LaserCalibrationBuilder) buildTestTileScene() (PlateScene, error) {
 
 	baselineY := marginMM + wordStyle.baselineOffsetMM()
 	mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(marginMM, baselineY, "20", "VAGUE", b.TilePowerS, b.TileFeedMMMin)...)
-	mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(marginMM, baselineY+wordStyle.leading(), "18", "CHOICE", b.TilePowerS, b.TileFeedMMMin)...)
+	mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(marginMM, baselineY+wordStyle.leading(), "18", "CHOIC", b.TilePowerS, b.TileFeedMMMin)...)
 	mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(marginMM, baselineY+2*wordStyle.leading(), "13", "CURVE", b.TilePowerS, b.TileFeedMMMin)...)
 
 	step := qrStyle.moduleStepMM()
 	finderX := marginMM
 	finderY := sizeMM - marginMM - 7*step
-	mask.Primitives = append(mask.Primitives, qrStyle.smallFinderPrimitives(finderX, finderY, b.TilePowerS, b.TileFeedMMMin)...)
+	mask.Primitives = append(mask.Primitives, qrStyle.finder7Primitives(finderX, finderY, b.TilePowerS, b.TileFeedMMMin)...)
 
-	patchX := finderX + 7*step + step
+	smallFinderX := finderX + 7*step + step
+	smallFinderY := finderY
+	mask.Primitives = append(mask.Primitives, qrStyle.finder5WithDotPrimitives(smallFinderX, smallFinderY, b.TilePowerS, b.TileFeedMMMin)...)
+
+	patchX := smallFinderX + 5*step + step
 	patchY := finderY
 	mask.Primitives = append(mask.Primitives, qrStyle.dotPatchPrimitives(patchX, patchY, []string{
 		"10110",
@@ -347,7 +351,7 @@ func (s testTileRegularSeedQRStyle) moduleRadiusMM() float64 {
 	return s.moduleStepMM() * plateQRDotScale / 2
 }
 
-func (s testTileRegularSeedQRStyle) smallFinderPrimitives(xMM, yMM float64, power int, feed float64) []ScenePrimitive {
+func (s testTileRegularSeedQRStyle) finder7Primitives(xMM, yMM float64, power int, feed float64) []ScenePrimitive {
 	step := s.moduleStepMM()
 	size := 7 * step
 	return []ScenePrimitive{
@@ -359,6 +363,23 @@ func (s testTileRegularSeedQRStyle) smallFinderPrimitives(xMM, yMM float64, powe
 			WidthMM:   3 * step,
 			HeightMM:  3 * step,
 			RadiusMM:  step * plateQRPatternCornerRadiusRatio,
+			FillColor: sceneBlack,
+			PowerS:    power,
+			FeedMMMin: feed,
+		},
+	}
+}
+
+func (s testTileRegularSeedQRStyle) finder5WithDotPrimitives(xMM, yMM float64, power int, feed float64) []ScenePrimitive {
+	step := s.moduleStepMM()
+	size := 5 * step
+	return []ScenePrimitive{
+		sceneRingPrimitive(xMM, yMM, size, size, step, step*plateQRPatternCornerRadiusRatio),
+		{
+			Kind:      PrimitiveCircle,
+			CXMM:      xMM + size/2,
+			CYMM:      yMM + size/2,
+			RadiusMM:  s.moduleRadiusMM(),
 			FillColor: sceneBlack,
 			PowerS:    power,
 			FeedMMMin: feed,

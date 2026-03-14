@@ -193,7 +193,10 @@ func TestLaserCalibrationBuilderBuildsTestTile(t *testing.T) {
 	found13 := false
 	foundFinder := false
 	foundDots := 0
-	finderWidth := 0.0
+	foundFinder7 := false
+	foundFinder5 := false
+	finder7Width := 0.0
+	finder5Width := 0.0
 	dotRadius := 0.0
 	for _, p := range scene.Layers[0].Primitives {
 		switch {
@@ -220,7 +223,7 @@ func TestLaserCalibrationBuilderBuildsTestTile(t *testing.T) {
 			if p.PowerS != 850 || p.FeedMMMin != 2000 {
 				t.Fatalf("unexpected tile word settings %d/%.0f", p.PowerS, p.FeedMMMin)
 			}
-		case p.Kind == PrimitiveText && p.Text == "CHOICE":
+		case p.Kind == PrimitiveText && p.Text == "CHOIC":
 			foundChoice = true
 			if p.FontSizePt != 14 || p.TrackingEM != 0.12 {
 				t.Fatalf("unexpected word text style size=%.1f tracking=%.2f", p.FontSizePt, p.TrackingEM)
@@ -239,7 +242,12 @@ func TestLaserCalibrationBuilderBuildsTestTile(t *testing.T) {
 		case p.Kind == PrimitiveRing:
 			if p.WidthMM > 3 {
 				foundFinder = true
-				finderWidth = p.WidthMM
+				if finder7Width == 0 || p.WidthMM > finder7Width {
+					finder7Width = p.WidthMM
+				}
+				if finder5Width == 0 || p.WidthMM < finder5Width {
+					finder5Width = p.WidthMM
+				}
 			}
 		case p.Kind == PrimitiveCircle:
 			foundDots++
@@ -252,13 +260,22 @@ func TestLaserCalibrationBuilderBuildsTestTile(t *testing.T) {
 		t.Fatalf("expected tile content 20=%v 18=%v 13=%v vague=%v choice=%v curve=%v finder=%v dots=%d", found20, found18, found13, foundVague, foundChoice, foundCurve, foundFinder, foundDots)
 	}
 	wantStep := seedQRSizeMM / 29.0
-	wantFinderW := 7 * wantStep
-	if got := finderWidth; got < wantFinderW-1e-6 || got > wantFinderW+1e-6 {
-		t.Fatalf("unexpected finder width %.6f want %.6f (regular 2/3 seed QR)", got, wantFinderW)
+	wantFinder7W := 7 * wantStep
+	if got := finder7Width; got < wantFinder7W-1e-6 || got > wantFinder7W+1e-6 {
+		t.Fatalf("unexpected 7x7 finder width %.6f want %.6f (regular 2/3 seed QR)", got, wantFinder7W)
+	}
+	wantFinder5W := 5 * wantStep
+	if got := finder5Width; got < wantFinder5W-1e-6 || got > wantFinder5W+1e-6 {
+		t.Fatalf("unexpected 5x5 finder width %.6f want %.6f (regular 2/3 seed QR)", got, wantFinder5W)
 	}
 	wantDotR := wantStep * plateQRDotScale / 2
 	if got := dotRadius; got < wantDotR-1e-6 || got > wantDotR+1e-6 {
 		t.Fatalf("unexpected module dot radius %.6f want %.6f (regular 2/3 seed QR)", got, wantDotR)
+	}
+	foundFinder7 = finder7Width > 0
+	foundFinder5 = finder5Width > 0
+	if !foundFinder7 || !foundFinder5 {
+		t.Fatalf("expected both 7x7 and 5x5 finders in tile, got finder7=%v finder5=%v", foundFinder7, foundFinder5)
 	}
 }
 
