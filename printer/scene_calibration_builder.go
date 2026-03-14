@@ -4,12 +4,15 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"golang.org/x/image/font"
 )
 
 type LaserCalibrationKind string
 
 const (
 	LaserCalibrationPowerGrid LaserCalibrationKind = "power-grid"
+	LaserCalibrationTestTile  LaserCalibrationKind = "test-tile"
 )
 
 type LaserCalibrationBuilder struct {
@@ -20,6 +23,9 @@ type LaserCalibrationBuilder struct {
 	OffsetYMM     float64
 	Powers        []int
 	Feeds         []float64
+	RowLaserModes []string
+	TilePowerS    int
+	TileFeedMMMin float64
 	Title         string
 }
 
@@ -49,6 +55,15 @@ func (b LaserCalibrationBuilder) Build() (*PlateDocument, error) {
 			Version: sceneVersion,
 			Scenes:  []PlateScene{scene},
 		}, nil
+	case LaserCalibrationTestTile:
+		scene, err := b.buildTestTileScene()
+		if err != nil {
+			return nil, err
+		}
+		return &PlateDocument{
+			Version: sceneVersion,
+			Scenes:  []PlateScene{scene},
+		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported laser calibration kind: %s", b.Kind)
 	}
@@ -58,15 +73,19 @@ func (b LaserCalibrationBuilder) buildPowerGridScene() (PlateScene, error) {
 	if len(b.Powers) == 0 || len(b.Feeds) == 0 {
 		return PlateScene{}, fmt.Errorf("power-grid calibration requires at least one power and one feed")
 	}
+	annotationPower := maxInt(1, maxIntSlice(b.Powers)/2)
+	annotationFeed := maxFloat(900, maxFloatSlice(b.Feeds))
 	labelFontMM := maxFloat(6.0, b.CalibrationMM*0.12)
 	sampleTextMM := 11.0
-	marginMM := maxFloat(0.8, b.CalibrationMM*0.02)
+	sideMarginMM := maxFloat(0.8, b.CalibrationMM*0.02)
+	topMarginMM := maxFloat(0.8, b.CalibrationMM*0.016)
+	bottomMarginMM := maxFloat(3.0, b.CalibrationMM*0.06)
 	labelColWMM := maxFloat(4.5, b.CalibrationMM*0.09)
 	labelRowHMM := maxFloat(6.0, b.CalibrationMM*0.12)
 	cellGapMM := maxFloat(0.6, b.CalibrationMM*0.015)
 
-	gridW := b.CalibrationMM - 2*marginMM - labelColWMM
-	gridH := b.CalibrationMM - 2*marginMM - labelRowHMM
+	gridW := b.CalibrationMM - 2*sideMarginMM - labelColWMM
+	gridH := b.CalibrationMM - topMarginMM - bottomMarginMM - labelRowHMM
 	if gridW <= 0 || gridH <= 0 {
 		return PlateScene{}, fmt.Errorf("plate too small for calibration layout")
 	}
@@ -77,28 +96,38 @@ func (b LaserCalibrationBuilder) buildPowerGridScene() (PlateScene, error) {
 	}
 	mask := SceneLayer{Tag: "mask", Visible: true}
 
-	gridX := marginMM + labelColWMM
-	gridY := marginMM + labelRowHMM
+	gridX := sideMarginMM + labelColWMM
+	gridY := topMarginMM + labelRowHMM
 	for c, feed := range b.Feeds {
 		x := gridX + float64(c)*(cellW+cellGapMM)
+		label := newSceneText(x+cellW/2, topMarginMM+labelRowHMM*0.65, fmt.Sprintf("%.0f", feed), labelFontMM, 0.01, TextDirHorizontal, TextAnchorCenter)
+		label.FillMode = FillModeNone
+		label.PowerS = annotationPower
+		label.FeedMMMin = annotationFeed
 		mask.Primitives = append(mask.Primitives,
-			newSceneText(x+cellW/2, marginMM+labelRowHMM*0.65, fmt.Sprintf("%.0f", feed), labelFontMM, 0.01, TextDirHorizontal, TextAnchorCenter),
+			label,
 		)
 	}
-	topLabelBaselineY := marginMM + labelRowHMM*0.65
+	topLabelBaselineY := topMarginMM + labelRowHMM*0.65
 	topLabelGap := gridY - topLabelBaselineY
 	for r, power := range b.Powers {
+		rowLaserOnCmd := ""
+		if len(b.RowLaserModes) > 0 {
+			rowLaserOnCmd = b.RowLaserModes[r]
+		}
 		y := gridY + float64(r)*(cellH+cellGapMM)
 		rowLabel := fmt.Sprintf("%d", power)
 		rowRotW, rowRotH := rotatedInkSizeMMTracked(loadFace(labelFontMM, 600.0), 600.0, rowLabel, 0)
 		rowX := gridX - topLabelGap - rowRotW
 		rowY := y + (cellH-rowRotH)/2
-		if rowY < marginMM {
-			rowY = marginMM
+		if rowY < topMarginMM {
+			rowY = topMarginMM
 		}
-		mask.Primitives = append(mask.Primitives,
-			newSceneText(rowX, rowY, rowLabel, labelFontMM, 0.01, TextDirVerticalUp, TextAnchorTopLeft),
-		)
+		rowText := newSceneText(rowX, rowY, rowLabel, labelFontMM, 0.01, TextDirVerticalUp, TextAnchorTopLeft)
+		rowText.FillMode = FillModeNone
+		rowText.PowerS = annotationPower
+		rowText.FeedMMMin = annotationFeed
+		mask.Primitives = append(mask.Primitives, rowText)
 		for c, feed := range b.Feeds {
 			x := gridX + float64(c)*(cellW+cellGapMM)
 			box := ScenePrimitive{
@@ -109,6 +138,8 @@ func (b LaserCalibrationBuilder) buildPowerGridScene() (PlateScene, error) {
 				HeightMM:    cellH,
 				StrokeColor: sceneBlack,
 				StrokeMM:    0.15,
+				PowerS:      annotationPower,
+				FeedMMMin:   annotationFeed,
 			}
 			mask.Primitives = append(mask.Primitives, box)
 			contentInset := maxFloat(0.6, minFloat(cellW, cellH)*0.08)
@@ -133,30 +164,36 @@ func (b LaserCalibrationBuilder) buildPowerGridScene() (PlateScene, error) {
 			circleCY := contentY + contentH*0.28
 			textX := x + contentInset - 0.2
 			textY := y + cellH - contentInset
+			sampleText := newSceneText(textX, textY, "SEED", sampleTextMM, 0.04, TextDirHorizontal, TextAnchorBaselineLeft)
+			sampleText.PowerS = power
+			sampleText.FeedMMMin = feed
+			sampleText.LaserOnCmd = rowLaserOnCmd
 			mask.Primitives = append(mask.Primitives,
 				ScenePrimitive{
-					Kind:      PrimitiveRound,
-					XMM:       rectX,
-					YMM:       rectY,
-					WidthMM:   rectW,
-					HeightMM:  rectH,
-					RadiusMM:  minFloat(rectW, rectH) * 0.14,
-					FillColor: sceneBlack,
-					FillMode:  FillModeHatch,
-					PowerS:    power,
-					FeedMMMin: feed,
+					Kind:       PrimitiveRound,
+					XMM:        rectX,
+					YMM:        rectY,
+					WidthMM:    rectW,
+					HeightMM:   rectH,
+					RadiusMM:   minFloat(rectW, rectH) * 0.14,
+					FillColor:  sceneBlack,
+					FillMode:   FillModeHatch,
+					PowerS:     power,
+					FeedMMMin:  feed,
+					LaserOnCmd: rowLaserOnCmd,
 				},
 				ScenePrimitive{
-					Kind:      PrimitiveCircle,
-					CXMM:      circleCX,
-					CYMM:      circleCY,
-					RadiusMM:  circleR,
-					FillColor: sceneBlack,
-					FillMode:  FillModeSpiral,
-					PowerS:    power,
-					FeedMMMin: feed,
+					Kind:       PrimitiveCircle,
+					CXMM:       circleCX,
+					CYMM:       circleCY,
+					RadiusMM:   circleR,
+					FillColor:  sceneBlack,
+					FillMode:   FillModeSpiral,
+					PowerS:     power,
+					FeedMMMin:  feed,
+					LaserOnCmd: rowLaserOnCmd,
 				},
-				newSceneText(textX, textY, "SEED", sampleTextMM, 0.04, TextDirHorizontal, TextAnchorBaselineLeft),
+				sampleText,
 			)
 		}
 	}
@@ -172,10 +209,127 @@ func (b LaserCalibrationBuilder) buildPowerGridScene() (PlateScene, error) {
 	}, nil
 }
 
+func (b LaserCalibrationBuilder) buildTestTileScene() (PlateScene, error) {
+	if b.CalibrationMM <= 0 {
+		b.CalibrationMM = 25
+	}
+	if b.TilePowerS <= 0 {
+		b.TilePowerS = 1000
+	}
+	if b.TileFeedMMMin <= 0 {
+		b.TileFeedMMMin = 900
+	}
+	annotationPower := maxInt(1, b.TilePowerS/2)
+	annotationFeed := maxFloat(900, b.TileFeedMMMin)
+	sizeMM := b.CalibrationMM
+	marginMM := maxFloat(1.0, sizeMM*0.04)
+	mask := SceneLayer{Tag: "mask", Visible: true}
+	wordStyle := newTestTileWordStyle()
+	qrStyle := newCompact2of3SeedQRStyle()
+
+	// Tile outline for placement/debug.
+	mask.Primitives = append(mask.Primitives, ScenePrimitive{
+		Kind:        PrimitiveRect,
+		XMM:         0,
+		YMM:         0,
+		WidthMM:     sizeMM,
+		HeightMM:    sizeMM,
+		StrokeColor: sceneBlack,
+		StrokeMM:    0.12,
+		PowerS:      annotationPower,
+		FeedMMMin:   annotationFeed,
+	})
+
+	baselineY := marginMM + wordStyle.baselineOffsetMM()
+	mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(marginMM, baselineY, "20", "VAGUE", b.TilePowerS, b.TileFeedMMMin)...)
+	mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(marginMM, baselineY+wordStyle.leading(), "18", "CHOICE", b.TilePowerS, b.TileFeedMMMin)...)
+	mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(marginMM, baselineY+2*wordStyle.leading(), "13", "CURVE", b.TilePowerS, b.TileFeedMMMin)...)
+
+	step := qrStyle.moduleStepMM()
+	finderX := marginMM
+	finderY := sizeMM - marginMM - 5*step
+	mask.Primitives = append(mask.Primitives, qrStyle.smallFinderPrimitives(finderX, finderY, b.TilePowerS, b.TileFeedMMMin)...)
+
+	patchX := finderX + 5*step + step
+	patchY := finderY
+	mask.Primitives = append(mask.Primitives, qrStyle.dotPatchPrimitives(patchX, patchY, []string{
+		"10110",
+		"01101",
+		"11011",
+		"00110",
+		"10101",
+	}, b.TilePowerS, b.TileFeedMMMin)...)
+
+	return PlateScene{
+		Name:             "laser_calibration_test_tile",
+		WidthMM:          sizeMM,
+		HeightMM:         sizeMM,
+		AnchorInPlate:    "origin",
+		OffsetInPlateXMM: b.OffsetXMM,
+		OffsetInPlateYMM: b.OffsetYMM,
+		Layers:           []SceneLayer{mask},
+	}, nil
+}
+
+type testTileWordStyle struct {
+	dpi          float64
+	sizePt       float64
+	wordTrackEM  float64
+	numTrackEM   float64
+	leadingMM    float64
+	numWordGapMM float64
+	face         font.Face
+}
+
+func newTestTileWordStyle() testTileWordStyle {
+	const (
+		dpi          = 600.0
+		sizePt       = 14.0
+		wordTrackEM  = 0.12
+		numTrackEM   = 0.05
+		leadingMM    = 15.2 * 25.4 / 72.0
+		numWordGapMM = 0.5
+	)
+	return testTileWordStyle{
+		dpi:          dpi,
+		sizePt:       sizePt,
+		wordTrackEM:  wordTrackEM,
+		numTrackEM:   numTrackEM,
+		leadingMM:    leadingMM,
+		numWordGapMM: numWordGapMM,
+		face:         loadFace(sizePt, dpi),
+	}
+}
+
+func (s testTileWordStyle) baselineOffsetMM() float64 {
+	return capBaselineOffsetMM(s.face, s.dpi)
+}
+
+func (s testTileWordStyle) leading() float64 {
+	return s.leadingMM
+}
+
+func (s testTileWordStyle) linePrimitives(xMM, baselineYMM float64, num, word string, power int, feed float64) []ScenePrimitive {
+	wordTrackPx := s.wordTrackEM * s.sizePt * s.dpi / 72.0
+	numTrackPx := s.numTrackEM * s.sizePt * s.dpi / 72.0
+	numColW := trackedTextWidthMM(s.face, s.dpi, "24", numTrackPx)
+	spaceW := trackedTextWidthMM(s.face, s.dpi, " ", wordTrackPx) + s.numWordGapMM
+	numW := trackedTextWidthMM(s.face, s.dpi, num, numTrackPx)
+	numText := newSceneText(xMM+numColW-numW, baselineYMM, num, s.sizePt, s.numTrackEM, TextDirHorizontal, TextAnchorBaselineLeft)
+	numText.PowerS = power
+	numText.FeedMMMin = feed
+	wordText := newSceneText(xMM+numColW+spaceW, baselineYMM, word, s.sizePt, s.wordTrackEM, TextDirHorizontal, TextAnchorBaselineLeft)
+	wordText.PowerS = power
+	wordText.FeedMMMin = feed
+	return []ScenePrimitive{numText, wordText}
+}
+
 func ParseLaserCalibrationKind(v string) (LaserCalibrationKind, error) {
 	switch strings.TrimSpace(strings.ToLower(v)) {
 	case "", string(LaserCalibrationPowerGrid):
 		return LaserCalibrationPowerGrid, nil
+	case string(LaserCalibrationTestTile):
+		return LaserCalibrationTestTile, nil
 	default:
 		return "", fmt.Errorf("unknown laser calibration kind: %s", v)
 	}
@@ -221,6 +375,36 @@ func ParseCalibrationFeeds(v string) ([]float64, error) {
 	return out, nil
 }
 
+func ParseCalibrationLaserModes(v string, rows int) ([]string, error) {
+	if strings.TrimSpace(v) == "" {
+		return nil, nil
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		mode := strings.ToUpper(strings.TrimSpace(p))
+		switch mode {
+		case "M3", "M4":
+			out = append(out, mode)
+		case "":
+			continue
+		default:
+			return nil, fmt.Errorf("invalid calibration laser mode %q: expected m3 or m4", p)
+		}
+	}
+	if len(out) == 1 && rows > 1 {
+		mode := out[0]
+		out = make([]string, rows)
+		for i := range out {
+			out[i] = mode
+		}
+	}
+	if rows > 0 && len(out) != rows {
+		return nil, fmt.Errorf("invalid calibration laser modes: got %d mode(s), want 1 or %d", len(out), rows)
+	}
+	return out, nil
+}
+
 func minFloat(a, b float64) float64 {
 	if a < b {
 		return a
@@ -233,4 +417,53 @@ func maxFloat(a, b float64) float64 {
 		return a
 	}
 	return b
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func maxIntSlice(vs []int) int {
+	if len(vs) == 0 {
+		return 0
+	}
+	m := vs[0]
+	for _, v := range vs[1:] {
+		if v > m {
+			m = v
+		}
+	}
+	return m
+}
+
+func maxFloatSlice(vs []float64) float64 {
+	if len(vs) == 0 {
+		return 0
+	}
+	m := vs[0]
+	for _, v := range vs[1:] {
+		if v > m {
+			m = v
+		}
+	}
+	return m
+}
+
+func minPositiveFloat(vs []float64, fallback float64) float64 {
+	m := 0.0
+	for _, v := range vs {
+		if v <= 0 {
+			continue
+		}
+		if m == 0 || v < m {
+			m = v
+		}
+	}
+	if m == 0 {
+		return fallback
+	}
+	return m
 }

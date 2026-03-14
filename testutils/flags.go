@@ -32,14 +32,17 @@ type Flags struct {
 	CalibrationOffsetYMM float64
 	CalibrationPowers    string
 	CalibrationFeeds     string
+	CalibrationModes     string
 	BedMM                float64
 	PlateMM              float64
 	PlateOriginXMM       float64
 	PlateOriginYMM       float64
 	MachineOffsetXMM     float64
 	MachineOffsetYMM     float64
+	LaserMode            string
 	LaserMaxS            int
 	LaserFeed            float64
+	LaserFillStepMM      float64
 	RapidFeed            float64
 	WalletName           string
 	EtchStatsPage        bool
@@ -77,6 +80,7 @@ func DefineFlags() *Flags {
 	flag.Float64Var(&f.CalibrationOffsetYMM, "calibration-offset-y", 0.0, "Calibration scene offset Y inside the physical plate")
 	flag.StringVar(&f.CalibrationPowers, "calibration-powers", "40,60,80,100", "Comma-separated power values for laser calibration jobs")
 	flag.StringVar(&f.CalibrationFeeds, "calibration-feeds", "400,600,800,1000", "Comma-separated feed values for laser calibration jobs")
+	flag.StringVar(&f.CalibrationModes, "calibration-modes", "", "Optional comma-separated laser modes per calibration row (m3 or m4); use 1 value to apply to all rows")
 	flag.Float64Var(&f.BedMM, "bed-mm", 150.0, "Laser machine workspace size in mm (K1 default 150)")
 	flag.Float64Var(&f.PlateMM, "plate-mm", 100.0, "Physical plate size in mm used for centered scene placement")
 	flag.Float64Var(&f.PlateOriginXMM, "plate-origin-x", 0.0, "DEPRECATED alias for -work-origin-x")
@@ -85,8 +89,10 @@ func DefineFlags() *Flags {
 	flag.Float64Var(&f.PlateOriginYMM, "work-origin-y", 0.0, "Plate origin Y on the calibrated work surface (bottom-left)")
 	flag.Float64Var(&f.MachineOffsetXMM, "machine-offset-x", 0.0, "Advanced: fixed machine X correction added after work-surface coordinates; leave at 0 when using a calibrated bed cover")
 	flag.Float64Var(&f.MachineOffsetYMM, "machine-offset-y", 0.0, "Advanced: fixed machine Y correction added after work-surface coordinates; leave at 0 when using a calibrated bed cover")
+	flag.StringVar(&f.LaserMode, "laser-mode", "m4", "Laser mode for generated G-code (m3 constant power or m4 dynamic power)")
 	flag.IntVar(&f.LaserMaxS, "laser-max-s", 80, "Laser power S value used in generated G-code (for example 0..1000, default 80)")
 	flag.Float64Var(&f.LaserFeed, "laser-feed", 900.0, "Cut feed in mm/min for generated G-code (default 900)")
+	flag.Float64Var(&f.LaserFillStepMM, "laser-fill-step-mm", 0.0, "Optional hatch/fill line spacing in mm for generated G-code (default renderer behavior when 0)")
 	flag.Float64Var(&f.RapidFeed, "rapid-feed", 3000.0, "Rapid move feed in mm/min for generated G-code (default 3000)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")

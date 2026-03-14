@@ -296,6 +296,42 @@ func TestSceneGCodeRenderer_Render_WithMachineOffset(t *testing.T) {
 	}
 }
 
+func TestSceneGCodeRenderer_Render_UsesPerPrimitiveLaserMode(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:     "laser_mode_test",
+				WidthMM:  20,
+				HeightMM: 20,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 1, YMM: 1, WidthMM: 4, HeightMM: 4, FillColor: sceneBlack, LaserOnCmd: "M3"},
+							{Kind: PrimitiveRect, XMM: 7, YMM: 1, WidthMM: 4, HeightMM: 4, FillColor: sceneBlack, LaserOnCmd: "M4"},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render per-primitive laser mode: %v", err)
+	}
+	path := filepath.Join(outDir, "laser_mode_test.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "M3 S1000") || !strings.Contains(s, "M4 S1000") {
+		t.Fatalf("expected both M3 and M4 in output, got:\n%s", s)
+	}
+}
+
 func TestSceneGCodeRenderer_Render_OffsetOutOfBoundsFails(t *testing.T) {
 	doc := &PlateDocument{
 		Version: sceneVersion,

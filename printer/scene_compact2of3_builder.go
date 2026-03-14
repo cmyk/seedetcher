@@ -27,12 +27,9 @@ func buildCompact2of3SeedScene(mnemonic bip39.Mnemonic, desc *urtypes.OutputDesc
 
 	dpi := 600.0
 	metaFace := loadFace(10, dpi)
-	wordFace := loadFace(11, dpi)
+	wordStyle := newCompact2of3WordStyle()
 	metaTrackPx := 0.08 * 10.0 * dpi / 72.0
-	wordTrackPx := 0.04 * 11.0 * dpi / 72.0
-	wordLeadingMM := 9.8 * 25.4 / 72.0
 	metaTrackEm := 0.08
-	wordTrackEm := 0.04
 
 	const (
 		topMarginMM         = 3.0
@@ -72,13 +69,11 @@ func buildCompact2of3SeedScene(mnemonic bip39.Mnemonic, desc *urtypes.OutputDesc
 	seedQRX := descQRX - seedQRSizeMM + 2.5
 	seedQRY := plateSizeMM - seedQRSizeMM
 
-	wordStartBaselineY := wordsStartTopCapYMM + capBaselineOffsetMM(wordFace, dpi)
-	numColW := trackedTextWidthMM(wordFace, dpi, "24", wordTrackPx)
-	spaceW := trackedTextWidthMM(wordFace, dpi, " ", wordTrackPx) + 0.1
+	wordStartBaselineY := wordsStartTopCapYMM + wordStyle.baselineOffsetMM()
 	y1 := wordStartBaselineY
 	y2 := wordStartBaselineY
 	y3 := wordStartBaselineY
-	leading := wordLeadingMM
+	leading := wordStyle.leading()
 	col1Count := len(mnemonic) / 2
 	col2Count := len(mnemonic) - col1Count
 	col3Count := 0
@@ -93,25 +88,15 @@ func buildCompact2of3SeedScene(mnemonic bip39.Mnemonic, desc *urtypes.OutputDesc
 		}
 		num := fmt.Sprintf("%d", i+1)
 		word := strings.ToUpper(bip39.LabelFor(mnemonic[i]))
-		numW := trackedTextWidthMM(wordFace, dpi, num, wordTrackPx)
 		switch {
 		case i < col1Count:
-			mask.Primitives = append(mask.Primitives,
-				newSceneText(col1WordsXMM+numColW-numW, y1, num, 11, wordTrackEm, TextDirHorizontal, TextAnchorBaselineLeft),
-				newSceneText(col1WordsXMM+numColW+spaceW, y1, word, 11, wordTrackEm, TextDirHorizontal, TextAnchorBaselineLeft),
-			)
+			mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(col1WordsXMM, y1, num, word, 0, 0)...)
 			y1 += leading
 		case i < col1Count+col2Count:
-			mask.Primitives = append(mask.Primitives,
-				newSceneText(col2WordsXMM+numColW-numW, y2, num, 11, wordTrackEm, TextDirHorizontal, TextAnchorBaselineLeft),
-				newSceneText(col2WordsXMM+numColW+spaceW, y2, word, 11, wordTrackEm, TextDirHorizontal, TextAnchorBaselineLeft),
-			)
+			mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(col2WordsXMM, y2, num, word, 0, 0)...)
 			y2 += leading
 		case col3Count > 0:
-			mask.Primitives = append(mask.Primitives,
-				newSceneText(col3WordsXMM+numColW-numW, y3, num, 11, wordTrackEm, TextDirHorizontal, TextAnchorBaselineLeft),
-				newSceneText(col3WordsXMM+numColW+spaceW, y3, word, 11, wordTrackEm, TextDirHorizontal, TextAnchorBaselineLeft),
-			)
+			mask.Primitives = append(mask.Primitives, wordStyle.linePrimitives(col3WordsXMM, y3, num, word, 0, 0)...)
 			y3 += leading
 		}
 	}

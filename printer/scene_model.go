@@ -58,6 +58,7 @@ type ScenePrimitive struct {
 	StrokeMM    float64  `json:"stroke_mm,omitempty"`
 	PowerS      int      `json:"power_s,omitempty"`
 	FeedMMMin   float64  `json:"feed_mm_min,omitempty"`
+	LaserOnCmd  string   `json:"laser_on_cmd,omitempty"`
 
 	// Text
 	Text       string        `json:"text,omitempty"`

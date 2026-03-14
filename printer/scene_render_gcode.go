@@ -91,19 +91,20 @@ type gcodePt struct {
 }
 
 type gcodeEmitter struct {
-	b             strings.Builder
-	cfg           SceneGCodeRenderer
-	x             float64
-	y             float64
-	laserOn       bool
-	activeFeed    float64
-	activePowerS  int
-	bedMax        float64
-	sceneW        float64
-	sceneH        float64
-	layoutOffsetX float64
-	layoutOffsetY float64
-	err           error
+	b                strings.Builder
+	cfg              SceneGCodeRenderer
+	x                float64
+	y                float64
+	laserOn          bool
+	activeFeed       float64
+	activePowerS     int
+	activeLaserOnCmd string
+	bedMax           float64
+	sceneW           float64
+	sceneH           float64
+	layoutOffsetX    float64
+	layoutOffsetY    float64
+	err              error
 }
 
 func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) {
@@ -203,6 +204,7 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 	fillMode := effectiveFillMode(p)
 	cutFeed := effectiveCutFeed(e.cfg, p)
 	powerS := effectivePowerS(e.cfg, p)
+	laserOnCmd := effectiveLaserOnCmd(e.cfg, p)
 	switch p.Kind {
 	case PrimitiveGroup:
 		for _, c := range p.Children {
@@ -216,40 +218,40 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 			{x: p.XMM, y: p.YMM + p.HeightMM},
 			{x: p.XMM, y: p.YMM},
 		}
-		e.fillOrTrace(fillMode, [][]gcodePt{loop}, cutFeed, powerS)
+		e.fillOrTrace(fillMode, [][]gcodePt{loop}, cutFeed, powerS, laserOnCmd)
 	case PrimitiveRound:
-		e.fillOrTrace(fillMode, [][]gcodePt{roundRectPolyline(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.RadiusMM, 6)}, cutFeed, powerS)
+		e.fillOrTrace(fillMode, [][]gcodePt{roundRectPolyline(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.RadiusMM, 6)}, cutFeed, powerS, laserOnCmd)
 	case PrimitiveCircle:
 		if fillMode == FillModeSpiral {
-			e.tracePolyline(circleSpiralPolyline(p.CXMM, p.CYMM, p.RadiusMM, e.cfg.SpiralStepMM), cutFeed, powerS)
-			e.tracePolyline(circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40), cutFeed, powerS)
+			e.tracePolyline(circleSpiralPolyline(p.CXMM, p.CYMM, p.RadiusMM, e.cfg.SpiralStepMM), cutFeed, powerS, laserOnCmd)
+			e.tracePolyline(circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40), cutFeed, powerS, laserOnCmd)
 		} else {
-			e.fillOrTrace(fillMode, [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)}, cutFeed, powerS)
+			e.fillOrTrace(fillMode, [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)}, cutFeed, powerS, laserOnCmd)
 		}
 	case PrimitiveRing:
 		outer, inner := ringOutlines(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM)
 		if fillMode == FillModeOffset {
 			for _, loop := range ringOffsetLoops(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM, e.cfg.FillStepMM) {
-				e.tracePolyline(loop, cutFeed, powerS)
+				e.tracePolyline(loop, cutFeed, powerS, laserOnCmd)
 			}
-			e.tracePolyline(outer, cutFeed, powerS)
-			e.tracePolyline(inner, cutFeed, powerS)
+			e.tracePolyline(outer, cutFeed, powerS, laserOnCmd)
+			e.tracePolyline(inner, cutFeed, powerS, laserOnCmd)
 		} else {
-			e.fillOrTrace(fillMode, [][]gcodePt{outer, inner}, cutFeed, powerS)
+			e.fillOrTrace(fillMode, [][]gcodePt{outer, inner}, cutFeed, powerS, laserOnCmd)
 		}
 	case PrimitivePath:
 		loops := parseGCodePath(p.PathData, e.cfg.CurveSteps)
 		if fillMode == FillModeOffset && strings.EqualFold(p.FillRule, "evenodd") {
-			e.fillOrTrace(FillModeHatch, loops, cutFeed, powerS)
+			e.fillOrTrace(FillModeHatch, loops, cutFeed, powerS, laserOnCmd)
 		} else {
-			e.fillOrTrace(fillMode, loops, cutFeed, powerS)
+			e.fillOrTrace(fillMode, loops, cutFeed, powerS, laserOnCmd)
 		}
 	case PrimitiveText:
 		pathData, ok := svgTextPath(p)
 		if !ok {
 			return
 		}
-		e.fillOrTrace(fillMode, parseGCodePath(pathData, e.cfg.CurveSteps), cutFeed, powerS)
+		e.fillOrTrace(fillMode, parseGCodePath(pathData, e.cfg.CurveSteps), cutFeed, powerS, laserOnCmd)
 	}
 }
 
@@ -310,25 +312,25 @@ func almostEq(a, b float64) bool {
 	return math.Abs(a-b) <= 1e-6
 }
 
-func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, cutFeed float64, powerS int) {
+func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, cutFeed float64, powerS int, laserOnCmd string) {
 	if fillMode == FillModeHatch {
 		for _, seg := range hatchSegments(loops, e.cfg.FillStepMM) {
-			e.tracePolyline(seg, cutFeed, powerS)
+			e.tracePolyline(seg, cutFeed, powerS, laserOnCmd)
 		}
 	}
 	if fillMode == FillModeOffset {
 		for _, poly := range loops {
 			for _, loop := range offsetInwardLoops(poly, e.cfg.FillStepMM) {
-				e.tracePolyline(loop, cutFeed, powerS)
+				e.tracePolyline(loop, cutFeed, powerS, laserOnCmd)
 			}
 		}
 	}
 	for _, poly := range loops {
-		e.tracePolyline(poly, cutFeed, powerS)
+		e.tracePolyline(poly, cutFeed, powerS, laserOnCmd)
 	}
 }
 
-func (e *gcodeEmitter) tracePolyline(poly []gcodePt, cutFeed float64, powerS int) {
+func (e *gcodeEmitter) tracePolyline(poly []gcodePt, cutFeed float64, powerS int, laserOnCmd string) {
 	if e.err != nil {
 		return
 	}
@@ -337,7 +339,7 @@ func (e *gcodeEmitter) tracePolyline(poly []gcodePt, cutFeed float64, powerS int
 	}
 	e.laserOffSafe()
 	e.rapidTo(poly[0].x, poly[0].y)
-	e.laserOnStart(cutFeed, powerS)
+	e.laserOnStart(cutFeed, powerS, laserOnCmd)
 	for i := 1; i < len(poly); i++ {
 		e.cutTo(poly[i].x, poly[i].y)
 	}
@@ -366,18 +368,22 @@ func (e *gcodeEmitter) cutTo(x, y float64) {
 	e.x, e.y = x, y
 }
 
-func (e *gcodeEmitter) laserOnStart(feed float64, powerS int) {
-	if e.laserOn && almostEq(e.activeFeed, feed) && e.activePowerS == powerS {
+func (e *gcodeEmitter) laserOnStart(feed float64, powerS int, laserOnCmd string) {
+	if strings.TrimSpace(laserOnCmd) == "" {
+		laserOnCmd = e.cfg.LaserOnCmd
+	}
+	if e.laserOn && almostEq(e.activeFeed, feed) && e.activePowerS == powerS && e.activeLaserOnCmd == laserOnCmd {
 		return
 	}
 	if e.laserOn {
 		e.laserOffSafe()
 	}
 	fmt.Fprintf(&e.b, "G1 F%.1f\n", feed)
-	fmt.Fprintf(&e.b, "%s S%d\n", e.cfg.LaserOnCmd, powerS)
+	fmt.Fprintf(&e.b, "%s S%d\n", laserOnCmd, powerS)
 	e.laserOn = true
 	e.activeFeed = feed
 	e.activePowerS = powerS
+	e.activeLaserOnCmd = laserOnCmd
 }
 
 func (e *gcodeEmitter) laserOffSafe() {
@@ -390,6 +396,7 @@ func (e *gcodeEmitter) laserOffSafe() {
 	e.b.WriteString(e.cfg.LaserOffCmd)
 	e.b.WriteByte('\n')
 	e.laserOn = false
+	e.activeLaserOnCmd = ""
 }
 
 func (e *gcodeEmitter) validXY(x, y float64) bool {
@@ -542,6 +549,13 @@ func effectivePowerS(cfg SceneGCodeRenderer, p ScenePrimitive) int {
 		return p.PowerS
 	}
 	return cfg.LaserMaxS
+}
+
+func effectiveLaserOnCmd(cfg SceneGCodeRenderer, p ScenePrimitive) string {
+	if strings.TrimSpace(p.LaserOnCmd) != "" {
+		return p.LaserOnCmd
+	}
+	return cfg.LaserOnCmd
 }
 
 func offsetInwardLoops(loop []gcodePt, step float64) [][]gcodePt {

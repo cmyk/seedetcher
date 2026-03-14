@@ -175,8 +175,10 @@ func main() {
 				os.Exit(1)
 			}
 			if err := (printer.SceneGCodeRenderer{
+				LaserOnCmd:       strings.ToUpper(strings.TrimSpace(f.LaserMode)),
 				LaserMaxS:        f.LaserMaxS,
 				CutFeedMMMin:     f.LaserFeed,
+				FillStepMM:       f.LaserFillStepMM,
 				RapidFeedMMMin:   f.RapidFeed,
 				BedMM:            f.BedMM,
 				PlateMM:          f.PlateMM,
@@ -287,15 +289,27 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
-	powers, err := printer.ParseCalibrationPowers(f.CalibrationPowers)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
-	}
-	feeds, err := printer.ParseCalibrationFeeds(f.CalibrationFeeds)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		os.Exit(1)
+	var (
+		powers        []int
+		feeds         []float64
+		rowLaserModes []string
+	)
+	if kind == printer.LaserCalibrationPowerGrid {
+		powers, err = printer.ParseCalibrationPowers(f.CalibrationPowers)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		feeds, err = printer.ParseCalibrationFeeds(f.CalibrationFeeds)
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		rowLaserModes, err = printer.ParseCalibrationLaserModes(f.CalibrationModes, len(powers))
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	offsetX := f.CalibrationOffsetXMM
 	offsetY := f.CalibrationOffsetYMM
@@ -364,6 +378,9 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 		OffsetYMM:     offsetY,
 		Powers:        powers,
 		Feeds:         feeds,
+		RowLaserModes: rowLaserModes,
+		TilePowerS:    f.LaserMaxS,
+		TileFeedMMMin: f.LaserFeed,
 	}).Build()
 	if err != nil {
 		fmt.Printf("Error building laser calibration scene: %v\n", err)
@@ -383,8 +400,10 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 	}
 	if gcodeOutDir != "" {
 		if err := (printer.SceneGCodeRenderer{
+			LaserOnCmd:       strings.ToUpper(strings.TrimSpace(f.LaserMode)),
 			LaserMaxS:        f.LaserMaxS,
 			CutFeedMMMin:     f.LaserFeed,
+			FillStepMM:       f.LaserFillStepMM,
 			RapidFeedMMMin:   f.RapidFeed,
 			BedMM:            f.BedMM,
 			PlateMM:          f.PlateMM,
