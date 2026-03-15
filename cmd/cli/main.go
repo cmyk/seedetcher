@@ -184,6 +184,7 @@ func main() {
 				FeatureShrinkMM:   f.LaserFeatureShrinkMM,
 				OutlinePowerScale: f.LaserOutlinePowerScale,
 				OutlineFeedScale:  f.LaserOutlineFeedScale,
+				DualOutlinePass:   f.LaserDualOutline,
 				RapidFeedMMMin:    f.RapidFeed,
 				BedMM:             f.BedMM,
 				PlateMM:           f.PlateMM,
@@ -295,9 +296,13 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 		os.Exit(1)
 	}
 	var (
-		powers        []int
-		feeds         []float64
-		rowLaserModes []string
+		powers          []int
+		feeds           []float64
+		rowLaserModes   []string
+		fillStepFeeds   []float64
+		fillStepSteps   []float64
+		powerFeedPowers []int
+		powerFeedFeeds  []float64
 	)
 	if kind == printer.LaserCalibrationPowerGrid {
 		powers, err = printer.ParseCalibrationPowers(f.CalibrationPowers)
@@ -314,6 +319,38 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
+		}
+	}
+	if kind == printer.LaserCalibrationFillStep {
+		if strings.TrimSpace(f.FillStepTestFeeds) != "" {
+			fillStepFeeds, err = printer.ParseCalibrationFloatSeries(f.FillStepTestFeeds, 5)
+			if err != nil {
+				fmt.Printf("Error: invalid -fill-step-test-feeds: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		if strings.TrimSpace(f.FillStepTestSteps) != "" {
+			fillStepSteps, err = printer.ParseCalibrationFloatSeries(f.FillStepTestSteps, 5)
+			if err != nil {
+				fmt.Printf("Error: invalid -fill-step-test-steps: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	}
+	if kind == printer.LaserCalibrationPowerFeed {
+		if strings.TrimSpace(f.PowerFeedTestPowers) != "" {
+			powerFeedPowers, err = printer.ParseCalibrationIntSeries(f.PowerFeedTestPowers, 5)
+			if err != nil {
+				fmt.Printf("Error: invalid -power-feed-test-powers: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		if strings.TrimSpace(f.PowerFeedTestFeeds) != "" {
+			powerFeedFeeds, err = printer.ParseCalibrationFloatSeries(f.PowerFeedTestFeeds, 5)
+			if err != nil {
+				fmt.Printf("Error: invalid -power-feed-test-feeds: %v\n", err)
+				os.Exit(1)
+			}
 		}
 	}
 	offsetX := f.CalibrationOffsetXMM
@@ -376,16 +413,24 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 		}
 	}
 	doc, err := (printer.LaserCalibrationBuilder{
-		Kind:          kind,
-		PlateMM:       f.PlateMM,
-		CalibrationMM: f.CalibrationAreaMM,
-		OffsetXMM:     offsetX,
-		OffsetYMM:     offsetY,
-		Powers:        powers,
-		Feeds:         feeds,
-		RowLaserModes: rowLaserModes,
-		TilePowerS:    f.LaserMaxS,
-		TileFeedMMMin: f.LaserFeed,
+		Kind:                  kind,
+		PlateMM:               f.PlateMM,
+		CalibrationMM:         f.CalibrationAreaMM,
+		OffsetXMM:             offsetX,
+		OffsetYMM:             offsetY,
+		Powers:                powers,
+		Feeds:                 feeds,
+		RowLaserModes:         rowLaserModes,
+		TilePowerS:            f.LaserMaxS,
+		TileFeedMMMin:         f.LaserFeed,
+		TileLaserMode:         strings.ToUpper(strings.TrimSpace(f.LaserMode)),
+		TileFillStepMM:        f.LaserFillStepMM,
+		TileOutlinePowerScale: f.LaserOutlinePowerScale,
+		TileOutlineFeedScale:  f.LaserOutlineFeedScale,
+		FillStepFeeds:         fillStepFeeds,
+		FillStepSteps:         fillStepSteps,
+		PowerFeedPowers:       powerFeedPowers,
+		PowerFeedFeeds:        powerFeedFeeds,
 	}).Build()
 	if err != nil {
 		fmt.Printf("Error building laser calibration scene: %v\n", err)
@@ -414,6 +459,7 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 			FeatureShrinkMM:   f.LaserFeatureShrinkMM,
 			OutlinePowerScale: f.LaserOutlinePowerScale,
 			OutlineFeedScale:  f.LaserOutlineFeedScale,
+			DualOutlinePass:   f.LaserDualOutline,
 			RapidFeedMMMin:    f.RapidFeed,
 			BedMM:             f.BedMM,
 			PlateMM:           f.PlateMM,

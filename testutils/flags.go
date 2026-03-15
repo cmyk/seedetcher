@@ -33,6 +33,10 @@ type Flags struct {
 	CalibrationPowers      string
 	CalibrationFeeds       string
 	CalibrationModes       string
+	FillStepTestFeeds      string
+	FillStepTestSteps      string
+	PowerFeedTestPowers    string
+	PowerFeedTestFeeds     string
 	BedMM                  float64
 	PlateMM                float64
 	PlateOriginXMM         float64
@@ -48,6 +52,7 @@ type Flags struct {
 	LaserFeatureShrinkMM   float64
 	LaserOutlinePowerScale float64
 	LaserOutlineFeedScale  float64
+	LaserDualOutline       bool
 	RapidFeed              float64
 	WalletName             string
 	EtchStatsPage          bool
@@ -78,7 +83,7 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.SVGOut, "svg-out", "", "Optional output directory for per-plate scene SVGs (seed-side foundation)")
 	flag.StringVar(&f.GCodeOut, "gcode-out", "", "Optional output directory for per-plate scene G-code (file-only laser prototype)")
 	flag.StringVar(&f.GCodeSide, "side", "both", "G-code scene side selection (seed, desc, or both)")
-	flag.StringVar(&f.LaserCalibration, "laser-calibration", "", "Generate laser calibration scene instead of wallet scene (supported: power-grid, test-tile, line-width-tile)")
+	flag.StringVar(&f.LaserCalibration, "laser-calibration", "", "Generate laser calibration scene instead of wallet scene (supported: power-grid, test-tile, line-width-tile, fill-step-test, power-feed-test)")
 	flag.Float64Var(&f.CalibrationAreaMM, "calibration-area-mm", 50.0, "Calibration scene size in mm, centered within the physical plate")
 	flag.StringVar(&f.CalibrationOffset, "calibration-offset", "", "Convenience alias for calibration scene offset inside plate as x,y")
 	flag.Float64Var(&f.CalibrationOffsetXMM, "calibration-offset-x", 0.0, "Calibration scene offset X inside the physical plate")
@@ -86,6 +91,10 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.CalibrationPowers, "calibration-powers", "40,60,80,100", "Comma-separated power values for laser calibration jobs")
 	flag.StringVar(&f.CalibrationFeeds, "calibration-feeds", "400,600,800,1000", "Comma-separated feed values for laser calibration jobs")
 	flag.StringVar(&f.CalibrationModes, "calibration-modes", "", "Optional comma-separated laser modes per calibration row (m3 or m4); use 1 value to apply to all rows")
+	flag.StringVar(&f.FillStepTestFeeds, "fill-step-test-feeds", "", "Optional feed series for fill-step-test; accepts list (e.g. 1400,1700,2000,2300,2600) or range start:end[:count] (e.g. 1400:2600 or 1400:2600:5)")
+	flag.StringVar(&f.FillStepTestSteps, "fill-step-test-steps", "", "Optional fill-step series for fill-step-test; accepts list (e.g. 0.03,0.035,0.04,0.05,0.06) or range start:end[:count] (e.g. 0.03:0.06 or 0.03:0.06:5)")
+	flag.StringVar(&f.PowerFeedTestPowers, "power-feed-test-powers", "", "Optional power series for power-feed-test; accepts list (e.g. 680,720,760,800,850) or range start:end[:count] (e.g. 650:850 or 650:850:5)")
+	flag.StringVar(&f.PowerFeedTestFeeds, "power-feed-test-feeds", "", "Optional feed series for power-feed-test; accepts list (e.g. 1400,1700,2000,2300,2600) or range start:end[:count] (e.g. 1400:2600 or 1400:2600:5)")
 	flag.Float64Var(&f.BedMM, "bed-mm", 150.0, "Laser machine workspace size in mm (K1 default 150)")
 	flag.Float64Var(&f.PlateMM, "plate-mm", 100.0, "Physical plate size in mm used for centered scene placement")
 	flag.Float64Var(&f.PlateOriginXMM, "plate-origin-x", 0.0, "DEPRECATED alias for -work-origin-x")
@@ -103,6 +112,7 @@ func DefineFlags() *Flags {
 	flag.Float64Var(&f.LaserFeatureShrinkMM, "laser-feature-shrink-mm", 0.0, "Optional geometry shrink in mm for text/path features to counter fat edges (default 0)")
 	flag.Float64Var(&f.LaserOutlinePowerScale, "laser-outline-power-scale", 1.0, "Scale factor for outline-pass laser power (default 1.0)")
 	flag.Float64Var(&f.LaserOutlineFeedScale, "laser-outline-feed-scale", 1.0, "Scale factor for outline-pass feed rate (default 1.0)")
+	flag.BoolVar(&f.LaserDualOutline, "laser-dual-outline", false, "Run a second outer outline pass for filled text/path when outline inset is active")
 	flag.Float64Var(&f.RapidFeed, "rapid-feed", 3000.0, "Rapid move feed in mm/min for generated G-code (default 3000)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")

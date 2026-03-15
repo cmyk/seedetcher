@@ -72,6 +72,13 @@
     - [x] `-laser-max-s`
     - [x] `-laser-feed`
     - [x] `-rapid-feed`
+  - [ ] profile-driven laser setup:
+    - [ ] `-laser-profile <name>` (machine model/calibration profile)
+    - [ ] `-material-profile <name>` (coating/material process profile)
+    - [ ] `-list-laser-profiles`
+    - [ ] `-list-material-profiles`
+    - [ ] load profiles from user-editable Pi files (for example `/boot/seedetcher/laser-profiles.toml` and `/boot/seedetcher/material-profiles.toml`)
+    - [ ] composed precedence: explicit CLI flags > material profile > laser profile > built-in defaults
   - [x] no-send mode by default (generate files first, stream later)
 - [ ] Emit GRBL-safe preamble/footer:
   - [x] `G21`, `G90`, `M4`/`M5`, sane feed defaults

@@ -161,13 +161,16 @@ func TestLaserCalibrationBuilderPowerGridAssignsRowLaserModes(t *testing.T) {
 
 func TestLaserCalibrationBuilderBuildsTestTile(t *testing.T) {
 	doc, err := (LaserCalibrationBuilder{
-		Kind:          LaserCalibrationTestTile,
-		PlateMM:       100,
-		CalibrationMM: 25,
-		OffsetXMM:     50,
-		OffsetYMM:     25,
-		TilePowerS:    850,
-		TileFeedMMMin: 2000,
+		Kind:                  LaserCalibrationTestTile,
+		PlateMM:               100,
+		CalibrationMM:         25,
+		OffsetXMM:             50,
+		OffsetYMM:             25,
+		TilePowerS:            850,
+		TileFeedMMMin:         2000,
+		TileFillStepMM:        0.04,
+		TileOutlinePowerScale: 1.0,
+		TileOutlineFeedScale:  0.7,
 	}).Build()
 	if err != nil {
 		t.Fatalf("Build: %v", err)
@@ -198,6 +201,9 @@ func TestLaserCalibrationBuilderBuildsTestTile(t *testing.T) {
 	finder7Width := 0.0
 	finder5Width := 0.0
 	dotRadius := 0.0
+	foundInfo := false
+	var infoX, infoY, infoPt, infoTracking float64
+	infoAnchor := TextAnchor("")
 	for _, p := range scene.Layers[0].Primitives {
 		switch {
 		case p.Kind == PrimitiveText && p.Text == "20":
@@ -239,6 +245,16 @@ func TestLaserCalibrationBuilderBuildsTestTile(t *testing.T) {
 			if p.PowerS != 850 || p.FeedMMMin != 2000 {
 				t.Fatalf("unexpected tile word settings %d/%.0f", p.PowerS, p.FeedMMMin)
 			}
+		case p.Kind == PrimitiveText && p.Text == "2000/850/0.04/1/0.7":
+			foundInfo = true
+			if p.FillMode != FillModeNone {
+				t.Fatalf("info text should be stroke-only, got fill mode %q", p.FillMode)
+			}
+			infoX = p.XMM
+			infoY = p.YMM
+			infoPt = p.FontSizePt
+			infoTracking = p.TrackingEM
+			infoAnchor = p.Anchor
 		case p.Kind == PrimitiveRing:
 			if p.WidthMM > 3 {
 				foundFinder = true
@@ -259,18 +275,39 @@ func TestLaserCalibrationBuilderBuildsTestTile(t *testing.T) {
 	if !found20 || !found18 || !found13 || !foundVague || !foundChoice || !foundCurve || !foundFinder || foundDots < 7 {
 		t.Fatalf("expected tile content 20=%v 18=%v 13=%v vague=%v choice=%v curve=%v finder=%v dots=%d", found20, found18, found13, foundVague, foundChoice, foundCurve, foundFinder, foundDots)
 	}
+	if !foundInfo {
+		t.Fatalf("expected parameter info text in tile")
+	}
 	wantStep := seedQRSizeMM / 29.0
 	wantFinder7W := 7 * wantStep
+	wantFinder5W := 5 * wantStep
 	if got := finder7Width; got < wantFinder7W-1e-6 || got > wantFinder7W+1e-6 {
 		t.Fatalf("unexpected 7x7 finder width %.6f want %.6f (regular 2/3 seed QR)", got, wantFinder7W)
 	}
-	wantFinder5W := 5 * wantStep
 	if got := finder5Width; got < wantFinder5W-1e-6 || got > wantFinder5W+1e-6 {
 		t.Fatalf("unexpected 5x5 finder width %.6f want %.6f (regular 2/3 seed QR)", got, wantFinder5W)
 	}
 	wantDotR := wantStep * plateQRDotScale / 2
 	if got := dotRadius; got < wantDotR-1e-6 || got > wantDotR+1e-6 {
 		t.Fatalf("unexpected module dot radius %.6f want %.6f (regular 2/3 seed QR)", got, wantDotR)
+	}
+	smallFinderX := 1.0 + 8.0*wantStep
+	smallFinderY := 25.0 - 1.0 - 7.0*wantStep
+	if infoX < smallFinderX-1e-6 || infoX > smallFinderX+1e-6 {
+		t.Fatalf("unexpected info X %.6f want %.6f (below small finder left edge)", infoX, smallFinderX)
+	}
+	if !(infoY > smallFinderY+5.0*wantStep) {
+		t.Fatalf("unexpected info Y %.6f: expected below small finder bottom %.6f", infoY, smallFinderY+5.0*wantStep)
+	}
+	const wantInfoPt = 1.5 * 72.0 / 25.4
+	if infoPt < wantInfoPt-1e-6 || infoPt > wantInfoPt+1e-6 {
+		t.Fatalf("unexpected info font size %.6f want %.6fpt", infoPt, wantInfoPt)
+	}
+	if infoTracking < 0.05-1e-9 || infoTracking > 0.05+1e-9 {
+		t.Fatalf("unexpected info tracking %.6f want 0.05", infoTracking)
+	}
+	if infoAnchor != TextAnchorTopLeft {
+		t.Fatalf("unexpected info anchor %q want %q", infoAnchor, TextAnchorTopLeft)
 	}
 	foundFinder7 = finder7Width > 0
 	foundFinder5 = finder5Width > 0
@@ -383,5 +420,273 @@ func TestLaserCalibrationLineWidthTileRendersGCodeWithinBounds(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(outDir, "laser_calibration_line_width_tile.gcode")); err != nil {
 		t.Fatalf("expected gcode output: %v", err)
+	}
+}
+
+func TestLaserCalibrationBuilderBuildsFillStepTile(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationFillStep,
+		PlateMM:       100,
+		CalibrationMM: 25,
+		OffsetXMM:     25,
+		OffsetYMM:     50,
+		TilePowerS:    850,
+		Feeds:         []float64{1400, 1700, 2000, 2300, 2600},
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(doc.Scenes) != 1 {
+		t.Fatalf("expected 1 scene, got %d", len(doc.Scenes))
+	}
+	scene := doc.Scenes[0]
+	if scene.Name != "laser_calibration_fill_step_test" {
+		t.Fatalf("unexpected scene name %q", scene.Name)
+	}
+	if scene.WidthMM != 25 || scene.HeightMM != 25 {
+		t.Fatalf("unexpected scene size %.1fx%.1f", scene.WidthMM, scene.HeightMM)
+	}
+	if scene.OffsetInPlateXMM != 25 || scene.OffsetInPlateYMM != 50 {
+		t.Fatalf("unexpected offsets %.1f,%.1f", scene.OffsetInPlateXMM, scene.OffsetInPlateYMM)
+	}
+	titleFound := false
+	colLabels := map[string]bool{}
+	rowLabels := map[string]bool{}
+	fillCells := 0
+	steps := map[float64]bool{}
+	rowFeeds := map[float64]bool{}
+	minCellY := 1e9
+	maxTopLabelBaselineY := 0.0
+	for _, p := range scene.Layers[0].Primitives {
+		if p.Kind == PrimitiveText && p.Text == "Fill-Step Test S850 (M4)" {
+			titleFound = true
+		}
+		if p.Kind == PrimitiveText {
+			if p.Text == "0.03" || p.Text == "0.035" || p.Text == "0.04" || p.Text == "0.05" || p.Text == "0.06" {
+				colLabels[p.Text] = true
+				if p.YMM > maxTopLabelBaselineY {
+					maxTopLabelBaselineY = p.YMM
+				}
+			}
+			if p.Text == "F1400" || p.Text == "F1700" || p.Text == "F2000" || p.Text == "F2300" || p.Text == "F2600" {
+				rowLabels[p.Text] = true
+			}
+		}
+		if p.Kind == PrimitiveRect && p.FillMode == FillModeHatch && p.FillColor == sceneBlack {
+			fillCells++
+			steps[p.FillStepMM] = true
+			rowFeeds[p.FeedMMMin] = true
+			if p.PowerS != 850 {
+				t.Fatalf("unexpected power in cell: %d", p.PowerS)
+			}
+			if !p.NoOutline {
+				t.Fatalf("fill-step cells must be fill-only (NoOutline=true)")
+			}
+			if p.WidthMM != p.HeightMM {
+				t.Fatalf("fill-step cells should be square, got %.4fx%.4f", p.WidthMM, p.HeightMM)
+			}
+			if p.YMM < minCellY {
+				minCellY = p.YMM
+			}
+		}
+	}
+	if !titleFound {
+		t.Fatalf("missing title text")
+	}
+	if len(colLabels) != 5 {
+		t.Fatalf("expected 5 column labels, got %d", len(colLabels))
+	}
+	if len(rowLabels) != 5 {
+		t.Fatalf("expected 5 row labels, got %d", len(rowLabels))
+	}
+	if fillCells != 25 {
+		t.Fatalf("expected 25 fill cells, got %d", fillCells)
+	}
+	if len(steps) != 5 {
+		t.Fatalf("expected 5 distinct fill steps, got %d", len(steps))
+	}
+	if len(rowFeeds) != 5 {
+		t.Fatalf("expected 5 distinct row feeds, got %d", len(rowFeeds))
+	}
+	if minCellY <= maxTopLabelBaselineY+0.45 {
+		t.Fatalf("top labels too close to first row: baselineY=%.3f cellY=%.3f", maxTopLabelBaselineY, minCellY)
+	}
+}
+
+func TestLaserCalibrationFillStepTileRendersGCodeWithinBounds(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationFillStep,
+		PlateMM:       100,
+		CalibrationMM: 25,
+		TilePowerS:    850,
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserOnCmd:     "M4",
+		LaserMaxS:      850,
+		CutFeedMMMin:   2000,
+		FillStepMM:     0.03,
+		RapidFeedMMMin: 8000,
+		BedMM:          150,
+		PlateMM:        100,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "laser_calibration_fill_step_test.gcode")); err != nil {
+		t.Fatalf("expected gcode output: %v", err)
+	}
+}
+
+func TestParseCalibrationFloatSeries_RangeDefaultsToCount(t *testing.T) {
+	got, err := ParseCalibrationFloatSeries("1400:2600", 5)
+	if err != nil {
+		t.Fatalf("parse range: %v", err)
+	}
+	if len(got) != 5 {
+		t.Fatalf("expected 5 values, got %d", len(got))
+	}
+	if got[0] != 1400 || got[len(got)-1] != 2600 {
+		t.Fatalf("unexpected endpoints: %v", got)
+	}
+}
+
+func TestParseCalibrationFloatSeries_RangeWithExplicitCount(t *testing.T) {
+	got, err := ParseCalibrationFloatSeries("0.03:0.06:5", 0)
+	if err != nil {
+		t.Fatalf("parse range with count: %v", err)
+	}
+	if len(got) != 5 {
+		t.Fatalf("expected 5 values, got %d", len(got))
+	}
+	if got[0] != 0.03 || got[2] != 0.045 || got[4] != 0.06 {
+		t.Fatalf("unexpected values: %v", got)
+	}
+}
+
+func TestLaserCalibrationBuilderBuildsFillStepTileTitleUsesLaserMode(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationFillStep,
+		PlateMM:       100,
+		CalibrationMM: 25,
+		TilePowerS:    850,
+		TileLaserMode: "m3",
+		FillStepFeeds: []float64{1400, 1700, 2000, 2300, 2600},
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	scene := doc.Scenes[0]
+	found := false
+	for _, p := range scene.Layers[0].Primitives {
+		if p.Kind == PrimitiveText && p.Text == "Fill-Step Test S850 (M3)" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected fill-step title to include selected laser mode")
+	}
+}
+
+func TestLaserCalibrationBuilderBuildsPowerFeedTile(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:            LaserCalibrationPowerFeed,
+		PlateMM:         100,
+		CalibrationMM:   25,
+		OffsetXMM:       10,
+		OffsetYMM:       20,
+		TilePowerS:      850,
+		TileLaserMode:   "m3",
+		TileFillStepMM:  0.04,
+		PowerFeedPowers: []int{680, 720, 760, 800, 850},
+		PowerFeedFeeds:  []float64{1400, 1700, 2000, 2300, 2600},
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(doc.Scenes) != 1 {
+		t.Fatalf("expected 1 scene, got %d", len(doc.Scenes))
+	}
+	scene := doc.Scenes[0]
+	if scene.Name != "laser_calibration_power_feed_test" {
+		t.Fatalf("unexpected scene name %q", scene.Name)
+	}
+	if scene.OffsetInPlateXMM != 10 || scene.OffsetInPlateYMM != 20 {
+		t.Fatalf("unexpected offsets %.1f,%.1f", scene.OffsetInPlateXMM, scene.OffsetInPlateYMM)
+	}
+	titleFound := false
+	fillCells := 0
+	powerSet := map[int]bool{}
+	feedSet := map[float64]bool{}
+	for _, p := range scene.Layers[0].Primitives {
+		if p.Kind == PrimitiveText && p.Text == "Power-Feed Test (M3)" {
+			titleFound = true
+		}
+		if p.Kind == PrimitiveRect && p.FillMode == FillModeHatch && p.FillColor == sceneBlack {
+			fillCells++
+			powerSet[p.PowerS] = true
+			feedSet[p.FeedMMMin] = true
+			if !p.NoOutline {
+				t.Fatalf("power-feed cells must be fill-only (NoOutline=true)")
+			}
+			if p.FillStepMM != 0.04 {
+				t.Fatalf("expected per-cell fill step 0.04, got %.3f", p.FillStepMM)
+			}
+		}
+	}
+	if !titleFound {
+		t.Fatalf("missing power-feed title")
+	}
+	if fillCells != 25 {
+		t.Fatalf("expected 25 fill cells, got %d", fillCells)
+	}
+	if len(powerSet) != 5 {
+		t.Fatalf("expected 5 distinct powers, got %d", len(powerSet))
+	}
+	if len(feedSet) != 5 {
+		t.Fatalf("expected 5 distinct feeds, got %d", len(feedSet))
+	}
+}
+
+func TestLaserCalibrationPowerFeedTileRendersGCodeWithinBounds(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationPowerFeed,
+		PlateMM:       100,
+		CalibrationMM: 25,
+		TilePowerS:    850,
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserOnCmd:     "M4",
+		LaserMaxS:      850,
+		CutFeedMMMin:   2000,
+		FillStepMM:     0.04,
+		RapidFeedMMMin: 8000,
+		BedMM:          150,
+		PlateMM:        100,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "laser_calibration_power_feed_test.gcode")); err != nil {
+		t.Fatalf("expected gcode output: %v", err)
+	}
+}
+
+func TestParseCalibrationIntSeries_RangeWithExplicitCount(t *testing.T) {
+	got, err := ParseCalibrationIntSeries("650:850:5", 0)
+	if err != nil {
+		t.Fatalf("parse int range with count: %v", err)
+	}
+	if len(got) != 5 {
+		t.Fatalf("expected 5 values, got %d", len(got))
+	}
+	if got[0] != 650 || got[2] != 750 || got[4] != 850 {
+		t.Fatalf("unexpected values: %v", got)
 	}
 }

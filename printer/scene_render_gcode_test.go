@@ -471,6 +471,198 @@ func TestSceneGCodeRenderer_Render_UsesOutlineInsetForPath(t *testing.T) {
 	}
 }
 
+func TestSceneGCodeRenderer_Render_UsesDualOutlinePassForPath(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:     "dual_outline_test",
+				WidthMM:  20,
+				HeightMM: 20,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{
+								Kind:      PrimitivePath,
+								PathData:  "M2 2 L8 2 L8 6 L2 6 Z",
+								FillColor: sceneBlack,
+								FillMode:  FillModeHatch,
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserMaxS:       1000,
+		CutFeedMMMin:    1000,
+		FillStepMM:      1.0,
+		FillInsetMM:     0.0,
+		OutlineInsetMM:  0.5,
+		DualOutlinePass: true,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render dual outline test: %v", err)
+	}
+	path := filepath.Join(outDir, "dual_outline_test.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "X42.500 Y57.500") {
+		t.Fatalf("missing inset outline coordinates in output:\n%s", s)
+	}
+	if !strings.Contains(s, "G0 X42.000 Y58.000") || !strings.Contains(s, "G1 X48.000 Y58.000") {
+		t.Fatalf("missing second outer outline coordinates in output:\n%s", s)
+	}
+}
+
+func TestSceneGCodeRenderer_Render_UsesDualOutlinePassForRect(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:     "dual_outline_rect_test",
+				WidthMM:  20,
+				HeightMM: 20,
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 2, YMM: 2, WidthMM: 6, HeightMM: 4, FillColor: sceneBlack, FillMode: FillModeHatch},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserMaxS:       1000,
+		CutFeedMMMin:    1000,
+		FillStepMM:      1.0,
+		FillInsetMM:     0.0,
+		OutlineInsetMM:  0.5,
+		DualOutlinePass: true,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render dual outline rect test: %v", err)
+	}
+	path := filepath.Join(outDir, "dual_outline_rect_test.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	if !strings.Contains(s, "G0 X42.500 Y57.500") || !strings.Contains(s, "G1 X47.500 Y57.500") {
+		t.Fatalf("missing inset outline for rect in output:\n%s", s)
+	}
+	if !strings.Contains(s, "G0 X42.000 Y58.000") || !strings.Contains(s, "G1 X48.000 Y58.000") {
+		t.Fatalf("missing second outer outline for rect in output:\n%s", s)
+	}
+}
+
+func TestSceneGCodeRenderer_Render_FeatureShrinkSkipsCalibrationStrokeText(t *testing.T) {
+	scene := PlateScene{
+		Name:     "laser_calibration_text_label",
+		WidthMM:  25,
+		HeightMM: 25,
+		Layers: []SceneLayer{
+			{
+				Tag:     "mask",
+				Visible: true,
+				Primitives: []ScenePrimitive{
+					func() ScenePrimitive {
+						p := newSceneText(2, 8, "TEST", 14, 0.01, TextDirHorizontal, TextAnchorBaselineLeft)
+						p.FillMode = FillModeNone
+						return p
+					}(),
+				},
+			},
+		},
+	}
+	cfgBase := (SceneGCodeRenderer{
+		PlateMM:        25,
+		BedMM:          150,
+		LaserMaxS:      1000,
+		CutFeedMMMin:   1000,
+		RapidFeedMMMin: 3000,
+	}).withDefaults()
+
+	noShrink := cfgBase
+	noShrink.FeatureShrinkMM = 0
+	g0, err := renderSceneGCode(scene, noShrink)
+	if err != nil {
+		t.Fatalf("render no-shrink calibration text: %v", err)
+	}
+
+	withShrink := cfgBase
+	withShrink.FeatureShrinkMM = 0.2
+	g1, err := renderSceneGCode(scene, withShrink)
+	if err != nil {
+		t.Fatalf("render shrink calibration text: %v", err)
+	}
+
+	if g0 != g1 {
+		t.Fatalf("expected calibration stroke text to ignore feature shrink")
+	}
+}
+
+func TestShouldApplyFeatureShrink_RespectsCalibrationStrokeTextExemption(t *testing.T) {
+	e := &gcodeEmitter{
+		cfg: SceneGCodeRenderer{
+			FeatureShrinkMM: 0.2,
+		},
+	}
+	text := newSceneText(2, 8, "TEST", 14, 0.01, TextDirHorizontal, TextAnchorBaselineLeft)
+	text.FillMode = FillModeNone
+	if !e.shouldApplyFeatureShrink(text, FillModeNone) {
+		t.Fatalf("expected non-calibration stroke text to allow feature shrink")
+	}
+	e.isCalibration = true
+	if e.shouldApplyFeatureShrink(text, FillModeNone) {
+		t.Fatalf("expected calibration stroke text to skip feature shrink")
+	}
+	if !e.shouldApplyFeatureShrink(text, FillModeHatch) {
+		t.Fatalf("expected calibration filled text to allow feature shrink")
+	}
+	if e.shouldApplyFeatureShrink(ScenePrimitive{Kind: PrimitiveRect}, FillModeHatch) {
+		t.Fatalf("expected non-text/non-path primitive to skip feature shrink")
+	}
+}
+
+func TestPlanHorizontalTextHatchBatches_GroupsSameRow(t *testing.T) {
+	e := &gcodeEmitter{cfg: (SceneGCodeRenderer{}).withDefaults()}
+	y := 10.0
+	prims := []ScenePrimitive{
+		newSceneText(5, y, "1", 14, 0.05, TextDirHorizontal, TextAnchorBaselineLeft),
+		newSceneText(12, y, "CHOIC", 14, 0.12, TextDirHorizontal, TextAnchorBaselineLeft),
+		newSceneText(55, y, "17", 14, 0.05, TextDirHorizontal, TextAnchorBaselineLeft),
+		newSceneText(63, y, "CURVE", 14, 0.12, TextDirHorizontal, TextAnchorBaselineLeft),
+		newSceneText(5, y+3.88, "2", 14, 0.05, TextDirHorizontal, TextAnchorBaselineLeft),
+	}
+	batches, batched := e.planHorizontalTextHatchBatches(prims)
+	row, ok := batches[0]
+	if !ok {
+		t.Fatalf("expected leader batch at index 0")
+	}
+	if len(row) != 4 {
+		t.Fatalf("expected 4 primitives in first-row batch, got %d (%v)", len(row), row)
+	}
+	for _, idx := range []int{0, 1, 2, 3} {
+		if !batched[idx] {
+			t.Fatalf("expected primitive %d to be batched", idx)
+		}
+	}
+	if batched[4] {
+		t.Fatalf("unexpected batching for different-row primitive")
+	}
+}
+
 func TestShrinkFeatureLoops_ShrinksOuterAndExpandsHole(t *testing.T) {
 	outer := []gcodePt{
 		{x: 0, y: 0},

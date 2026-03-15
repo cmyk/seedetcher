@@ -111,6 +111,39 @@ def send_and_wait_ok(fd: int, cmd: str, timeout_s: float) -> None:
             raise RuntimeError(f"controller rejected line '{cmd}': {line}")
 
 
+def best_effort_safe_stop(fd: int, line_timeout_s: float) -> None:
+    print("!! Safety stop: attempting M5/hold/reset")
+    stop_timeout = max(1.0, min(3.0, line_timeout_s))
+    try:
+        send_and_wait_ok(fd, "M5", stop_timeout)
+        print("!! Safety stop: M5 acknowledged")
+        return
+    except Exception as e:
+        print(f"!! Safety stop: M5 not acknowledged ({e})")
+
+    # Feed hold (real-time command) can help halt queued motion if firmware supports it.
+    try:
+        os.write(fd, b"!")
+        time.sleep(0.1)
+    except Exception as e:
+        print(f"!! Safety stop: feed-hold write failed ({e})")
+
+    # Soft reset (Ctrl-X) reinitializes GRBL and usually forces laser off.
+    try:
+        os.write(fd, b"\x18")
+        time.sleep(0.5)
+        termios.tcflush(fd, termios.TCIFLUSH)
+        wait_for_ready(fd, 2.0)
+    except Exception as e:
+        print(f"!! Safety stop: soft-reset failed ({e})")
+
+    try:
+        send_and_wait_ok(fd, "M5", stop_timeout)
+        print("!! Safety stop: M5 acknowledged after reset")
+    except Exception as e:
+        print(f"!! Safety stop: final M5 still not acknowledged ({e})")
+
+
 def to_dry_run_line(cmd: str) -> str:
     c = cmd.strip()
     if not c:
@@ -423,7 +456,19 @@ def main() -> int:
         total = len(lines)
         print(f"Sending {total} lines...")
         for i, cmd in enumerate(lines, start=1):
-            send_and_wait_ok(fd, cmd, args.line_timeout)
+            try:
+                send_and_wait_ok(fd, cmd, args.line_timeout)
+            except Exception as e:
+                is_preview_final_m5 = args.preview_bounds and i == total and cmd.strip().upper() == "M5"
+                if is_preview_final_m5:
+                    print(f"WARN: timed out waiting for final preview M5 ack: {e}", file=sys.stderr)
+                    best_effort_safe_stop(fd, args.line_timeout)
+                    print("Preview completed with non-fatal final M5 timeout.")
+                    return 0
+                # Burn mode must fail hard and attempt best-effort stop sequence.
+                if not args.dry_run:
+                    best_effort_safe_stop(fd, args.line_timeout)
+                raise
             if i == 1 or i % 100 == 0 or i == total:
                 print(f"[{i}/{total}] {cmd}")
         print("Done.")
