@@ -165,7 +165,7 @@ def main() -> int:
     ap.add_argument("--startup-wait", type=float, default=2.0, help="seconds to wait after wake/reset")
     ap.add_argument("--unlock", action="store_true", help="send $X before setup")
     ap.add_argument("--home", action="store_true", help="send $H before starting loop")
-    ap.add_argument("--power", type=int, default=50, help="beam power S value (default 50)")
+    ap.add_argument("--power", type=int, default=5, help="beam power S value (default 5)")
     ap.add_argument("--mode", choices=("m3", "m4"), default="m3", help="laser mode command (default m3)")
     ap.add_argument("--move-feed", type=float, default=600.0, help="move feed mm/min (default 600)")
     ap.add_argument("--nudge-feed", type=float, default=120.0, help="nudge feed mm/min (default 120)")
