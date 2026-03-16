@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+const (
+	laserPassOrderGrouped = "grouped"
+	laserPassOrderLocal   = "local"
+)
+
 type SceneGCodeRenderer struct {
 	LaserOnCmd        string
 	LaserOffCmd       string
@@ -25,6 +30,7 @@ type SceneGCodeRenderer struct {
 	OutlinePowerScale float64
 	OutlineFeedScale  float64
 	DualOutlinePass   bool
+	LaserPassOrder    string
 	BedMM             float64
 	PlateMM           float64
 	PlateOriginXMM    float64
@@ -97,6 +103,7 @@ func (r SceneGCodeRenderer) withDefaults() SceneGCodeRenderer {
 	if r.OutlineFeedScale <= 0 {
 		r.OutlineFeedScale = 1
 	}
+	r.LaserPassOrder = normalizeLaserPassOrder(r.LaserPassOrder)
 	if r.PlateMM <= 0 {
 		r.PlateMM = 100
 	}
@@ -104,6 +111,17 @@ func (r SceneGCodeRenderer) withDefaults() SceneGCodeRenderer {
 		r.BedMM = r.PlateMM
 	}
 	return r
+}
+
+func normalizeLaserPassOrder(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", laserPassOrderGrouped:
+		return laserPassOrderGrouped
+	case laserPassOrderLocal:
+		return laserPassOrderLocal
+	default:
+		return laserPassOrderGrouped
+	}
 }
 
 type gcodePt struct {
@@ -140,14 +158,15 @@ type primitiveLaserParams struct {
 }
 
 func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) {
+	isCalibration := strings.HasPrefix(scene.Name, "laser_calibration_")
 	e := &gcodeEmitter{
 		cfg:           cfg,
 		bedMax:        cfg.BedMM,
 		sceneW:        scene.WidthMM,
 		sceneH:        scene.HeightMM,
-		isCalibration: strings.HasPrefix(scene.Name, "laser_calibration_"),
+		isCalibration: isCalibration,
 	}
-	if scene.WidthMM > cfg.PlateMM || scene.HeightMM > cfg.PlateMM {
+	if !isCalibration && (scene.WidthMM > cfg.PlateMM || scene.HeightMM > cfg.PlateMM) {
 		return "", fmt.Errorf("scene '%s' exceeds plate bounds: %.3fx%.3fmm > plate %.3fmm", scene.Name, scene.WidthMM, scene.HeightMM, cfg.PlateMM)
 	}
 	plateMinX := cfg.PlateOriginXMM + cfg.MachineOffsetXMM
@@ -170,7 +189,13 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 	}
 	e.layoutOffsetX += scene.OffsetInPlateXMM
 	e.layoutOffsetY += scene.OffsetInPlateYMM
-	if e.layoutOffsetX < 0 || e.layoutOffsetY < 0 || e.layoutOffsetX+scene.WidthMM > cfg.PlateMM || e.layoutOffsetY+scene.HeightMM > cfg.PlateMM {
+	if e.layoutOffsetX < 0 || e.layoutOffsetY < 0 {
+		return "", fmt.Errorf(
+			"scene '%s' offset in plate out of bounds: scene=%.3fx%.3f offset=(%.3f,%.3f) plate=%.3f",
+			scene.Name, scene.WidthMM, scene.HeightMM, e.layoutOffsetX, e.layoutOffsetY, cfg.PlateMM,
+		)
+	}
+	if !isCalibration && (e.layoutOffsetX+scene.WidthMM > cfg.PlateMM || e.layoutOffsetY+scene.HeightMM > cfg.PlateMM) {
 		return "", fmt.Errorf(
 			"scene '%s' offset in plate out of bounds: scene=%.3fx%.3f offset=(%.3f,%.3f) plate=%.3f",
 			scene.Name, scene.WidthMM, scene.HeightMM, e.layoutOffsetX, e.layoutOffsetY, cfg.PlateMM,
@@ -188,7 +213,9 @@ func renderSceneGCode(scene PlateScene, cfg SceneGCodeRenderer) (string, error) 
 	e.b.WriteString("G90\n")
 	fmt.Fprintf(&e.b, "G0 F%.1f\n", cfg.RapidFeedMMMin)
 	fmt.Fprintf(&e.b, "G1 F%.1f\n", cfg.CutFeedMMMin)
-	if strings.HasPrefix(scene.Name, "laser_calibration_") {
+	if strings.HasPrefix(scene.Name, "laser_calibration_") &&
+		scene.Name != "laser_calibration_repeatability_test" &&
+		scene.Name != "laser_calibration_sector_repeatability_test" {
 		e.emitPreviewFrame()
 		if e.err != nil {
 			return "", e.err
@@ -231,23 +258,42 @@ func (e *gcodeEmitter) emitPreviewFrame() {
 }
 
 func (e *gcodeEmitter) renderLayer(layer SceneLayer) {
-	batches, batched := e.planHorizontalTextHatchBatches(layer.Primitives)
-	for i, p := range layer.Primitives {
-		if idxs, ok := batches[i]; ok {
-			e.renderHorizontalTextHatchBatch(layer.Primitives, idxs)
+	for _, group := range e.layerPassPlan(layer.Primitives) {
+		if len(group) > 1 {
+			e.renderHorizontalTextHatchBatch(layer.Primitives, group)
 			if e.err != nil {
 				return
 			}
 			continue
 		}
-		if batched[i] {
-			continue
-		}
-		e.renderPrimitive(p)
+		e.renderPrimitive(layer.Primitives[group[0]])
 		if e.err != nil {
 			return
 		}
 	}
+}
+
+func (e *gcodeEmitter) layerPassPlan(primitives []ScenePrimitive) [][]int {
+	if normalizeLaserPassOrder(e.cfg.LaserPassOrder) != laserPassOrderGrouped {
+		plan := make([][]int, 0, len(primitives))
+		for i := range primitives {
+			plan = append(plan, []int{i})
+		}
+		return plan
+	}
+	batches, batched := e.planHorizontalTextHatchBatches(primitives)
+	plan := make([][]int, 0, len(primitives))
+	for i := range primitives {
+		if idxs, ok := batches[i]; ok {
+			plan = append(plan, idxs)
+			continue
+		}
+		if batched[i] {
+			continue
+		}
+		plan = append(plan, []int{i})
+	}
+	return plan
 }
 
 func (e *gcodeEmitter) planHorizontalTextHatchBatches(primitives []ScenePrimitive) (map[int][]int, []bool) {

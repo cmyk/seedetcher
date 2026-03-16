@@ -17,6 +17,8 @@ const (
 	LaserCalibrationLineWidth LaserCalibrationKind = "line-width-tile"
 	LaserCalibrationFillStep  LaserCalibrationKind = "fill-step-test"
 	LaserCalibrationPowerFeed LaserCalibrationKind = "power-feed-test"
+	LaserCalibrationRepeat    LaserCalibrationKind = "repeatability-test"
+	LaserCalibrationSectorRep LaserCalibrationKind = "sector-repeatability-test"
 )
 
 type LaserCalibrationBuilder struct {
@@ -46,16 +48,33 @@ func (b LaserCalibrationBuilder) Build() (*PlateDocument, error) {
 		b.PlateMM = 100
 	}
 	if b.CalibrationMM <= 0 {
-		b.CalibrationMM = 50
+		switch b.Kind {
+		case LaserCalibrationRepeat, LaserCalibrationSectorRep:
+			b.CalibrationMM = 150
+		default:
+			b.CalibrationMM = 50
+		}
 	}
-	if b.CalibrationMM > b.PlateMM {
-		return nil, fmt.Errorf("calibration area %.3fmm exceeds plate %.3fmm", b.CalibrationMM, b.PlateMM)
-	}
-	if b.OffsetXMM < 0 || b.OffsetYMM < 0 || b.OffsetXMM+b.CalibrationMM > b.PlateMM || b.OffsetYMM+b.CalibrationMM > b.PlateMM {
-		return nil, fmt.Errorf(
-			"calibration area %.3fmm with offset (%.3f,%.3f) exceeds plate %.3fmm",
-			b.CalibrationMM, b.OffsetXMM, b.OffsetYMM, b.PlateMM,
-		)
+	if b.Kind == LaserCalibrationSectorRep {
+		if b.CalibrationMM <= b.PlateMM {
+			return nil, fmt.Errorf(
+				"sector-repeatability test needs calibration area > plate (got %.3fmm <= %.3fmm)",
+				b.CalibrationMM, b.PlateMM,
+			)
+		}
+		if b.OffsetXMM < 0 || b.OffsetYMM < 0 {
+			return nil, fmt.Errorf("calibration offset must be non-negative (got %.3f,%.3f)", b.OffsetXMM, b.OffsetYMM)
+		}
+	} else {
+		if b.CalibrationMM > b.PlateMM {
+			return nil, fmt.Errorf("calibration area %.3fmm exceeds plate %.3fmm", b.CalibrationMM, b.PlateMM)
+		}
+		if b.OffsetXMM < 0 || b.OffsetYMM < 0 || b.OffsetXMM+b.CalibrationMM > b.PlateMM || b.OffsetYMM+b.CalibrationMM > b.PlateMM {
+			return nil, fmt.Errorf(
+				"calibration area %.3fmm with offset (%.3f,%.3f) exceeds plate %.3fmm",
+				b.CalibrationMM, b.OffsetXMM, b.OffsetYMM, b.PlateMM,
+			)
+		}
 	}
 	switch b.Kind {
 	case LaserCalibrationPowerGrid:
@@ -96,6 +115,24 @@ func (b LaserCalibrationBuilder) Build() (*PlateDocument, error) {
 		}, nil
 	case LaserCalibrationPowerFeed:
 		scene, err := b.buildPowerFeedTileScene()
+		if err != nil {
+			return nil, err
+		}
+		return &PlateDocument{
+			Version: sceneVersion,
+			Scenes:  []PlateScene{scene},
+		}, nil
+	case LaserCalibrationRepeat:
+		scene, err := b.buildRepeatabilityScene()
+		if err != nil {
+			return nil, err
+		}
+		return &PlateDocument{
+			Version: sceneVersion,
+			Scenes:  []PlateScene{scene},
+		}, nil
+	case LaserCalibrationSectorRep:
+		scene, err := b.buildSectorRepeatabilityScene()
 		if err != nil {
 			return nil, err
 		}
@@ -647,7 +684,7 @@ func (b LaserCalibrationBuilder) buildPowerFeedTileScene() (PlateScene, error) {
 		if mode != "M3" && mode != "M4" {
 			mode = "M4"
 		}
-		title = fmt.Sprintf("Power-Feed Test (%s)", mode)
+		title = fmt.Sprintf("Power-Feed Test (%s, %s)", mode, formatCompactFloat(fillStep))
 	}
 
 	titlePt := maxFloat(3.9, sizeMM*0.15)
@@ -724,6 +761,352 @@ func (b LaserCalibrationBuilder) buildPowerFeedTileScene() (PlateScene, error) {
 		Name:             "laser_calibration_power_feed_test",
 		WidthMM:          sizeMM,
 		HeightMM:         sizeMM,
+		AnchorInPlate:    "origin",
+		OffsetInPlateXMM: b.OffsetXMM,
+		OffsetInPlateYMM: b.OffsetYMM,
+		Layers:           []SceneLayer{mask},
+	}, nil
+}
+
+func (b LaserCalibrationBuilder) buildRepeatabilityScene() (PlateScene, error) {
+	if b.CalibrationMM <= 0 {
+		b.CalibrationMM = 150
+	}
+	if b.TilePowerS <= 0 {
+		b.TilePowerS = 850
+	}
+	if b.TileFeedMMMin <= 0 {
+		b.TileFeedMMMin = 2000
+	}
+	sizeMM := b.CalibrationMM
+	if sizeMM < 60 {
+		return PlateScene{}, fmt.Errorf("repeatability test needs at least 60mm area (got %.3f)", sizeMM)
+	}
+	marginMM := maxFloat(8.0, sizeMM*0.08)
+	annotationPower := maxInt(1, b.TilePowerS/2)
+	annotationFeed := maxFloat(900, b.TileFeedMMMin)
+	mask := SceneLayer{Tag: "mask", Visible: true}
+
+	mask.Primitives = append(mask.Primitives, ScenePrimitive{
+		Kind:        PrimitiveRect,
+		XMM:         0,
+		YMM:         0,
+		WidthMM:     sizeMM,
+		HeightMM:    sizeMM,
+		StrokeColor: sceneBlack,
+		StrokeMM:    0.12,
+		PowerS:      annotationPower,
+		FeedMMMin:   annotationFeed,
+	})
+
+	mode := strings.ToUpper(strings.TrimSpace(b.TileLaserMode))
+	if mode != "M3" && mode != "M4" {
+		mode = "M4"
+	}
+	const laps = 12
+	title := strings.TrimSpace(b.Title)
+	if title == "" {
+		title = fmt.Sprintf("Repeatability Test L%d (%s)", laps, mode)
+	}
+	titlePt := maxFloat(4.2, sizeMM*0.036)
+	titleY := marginMM*0.75 + titlePt*25.4/72.0
+	titleText := newSceneText(marginMM, titleY, title, titlePt, 0.01, TextDirHorizontal, TextAnchorBaselineLeft)
+	titleText.FillMode = FillModeNone
+	titleText.PowerS = annotationPower
+	titleText.FeedMMMin = annotationFeed
+	mask.Primitives = append(mask.Primitives, titleText)
+
+	// Reserve a top band for title so upper target labels never collide with it.
+	headerBandMM := maxFloat(10.0, sizeMM*0.07)
+	yTop := marginMM + headerBandMM
+	yBottom := sizeMM - marginMM
+	if yTop >= yBottom-10 {
+		yTop = marginMM + maxFloat(6.0, sizeMM*0.05)
+	}
+
+	type target struct {
+		name string
+		x    float64
+		y    float64
+	}
+	targets := []target{
+		{name: "LL", x: marginMM, y: yBottom},
+		{name: "LR", x: sizeMM - marginMM, y: yBottom},
+		{name: "UR", x: sizeMM - marginMM, y: yTop},
+		{name: "UL", x: marginMM, y: yTop},
+		{name: "C", x: sizeMM * 0.5, y: sizeMM * 0.5},
+	}
+	labelPt := maxFloat(3.6, sizeMM*0.028)
+	labelFace := loadFace(labelPt, 600.0)
+	labelOffset := maxFloat(1.6, sizeMM*0.012)
+	labelH := labelPt * 25.4 / 72.0
+	for _, t := range targets {
+		labelW := trackedTextWidthMM(labelFace, 600.0, t.name, 0)
+		lx := t.x + labelOffset
+		if t.x > sizeMM*0.5 {
+			lx = t.x - labelOffset - labelW
+		}
+		ly := t.y - labelOffset
+		if t.y <= yTop+1e-6 || t.name == "C" {
+			ly = t.y + labelOffset + labelH
+		}
+		if t.name == "C" {
+			lx = t.x + labelOffset
+		}
+		label := newSceneText(lx, ly, t.name, labelPt, 0.01, TextDirHorizontal, TextAnchorBaselineLeft)
+		label.FillMode = FillModeNone
+		label.PowerS = annotationPower
+		label.FeedMMMin = annotationFeed
+		mask.Primitives = append(mask.Primitives, label)
+	}
+
+	// Long-hop visit order to stress return-to-position repeatability.
+	forward := []int{0, 2, 1, 3, 4} // LL -> UR -> LR -> UL -> C
+	reverse := []int{4, 3, 1, 2, 0} // C -> UL -> LR -> UR -> LL
+	half := maxFloat(0.4, minFloat(1.2, sizeMM*0.006))
+	for lap := 0; lap < laps; lap++ {
+		order := forward
+		if lap%2 == 1 {
+			order = reverse
+		}
+		for _, idx := range order {
+			t := targets[idx]
+			square := ScenePrimitive{
+				Kind:        PrimitivePath,
+				PathData:    fmt.Sprintf("M%.4f %.4fL%.4f %.4fL%.4f %.4fL%.4f %.4fZ", t.x-half, t.y-half, t.x+half, t.y-half, t.x+half, t.y+half, t.x-half, t.y+half),
+				FillMode:    FillModeNone,
+				StrokeColor: sceneBlack,
+				StrokeMM:    0.10,
+				PowerS:      b.TilePowerS,
+				FeedMMMin:   b.TileFeedMMMin,
+				LaserOnCmd:  mode,
+			}
+			mask.Primitives = append(mask.Primitives, square)
+		}
+	}
+
+	return PlateScene{
+		Name:             "laser_calibration_repeatability_test",
+		WidthMM:          sizeMM,
+		HeightMM:         sizeMM,
+		AnchorInPlate:    "origin",
+		OffsetInPlateXMM: b.OffsetXMM,
+		OffsetInPlateYMM: b.OffsetYMM,
+		Layers:           []SceneLayer{mask},
+	}, nil
+}
+
+func (b LaserCalibrationBuilder) buildSectorRepeatabilityScene() (PlateScene, error) {
+	if b.TilePowerS <= 0 {
+		b.TilePowerS = 850
+	}
+	if b.TileFeedMMMin <= 0 {
+		b.TileFeedMMMin = 2000
+	}
+	workspaceMM := b.CalibrationMM
+	plateMM := b.PlateMM
+	shiftMM := workspaceMM - plateMM
+	if shiftMM <= 0 {
+		return PlateScene{}, fmt.Errorf("sector-repeatability test needs calibration area > plate")
+	}
+	annotationPower := maxInt(1, int(math.Round(float64(b.TilePowerS)*0.8)))
+	annotationFeed := minFloat(b.TileFeedMMMin, 1200)
+	if annotationFeed <= 0 {
+		annotationFeed = 1200
+	}
+	mode := strings.ToUpper(strings.TrimSpace(b.TileLaserMode))
+	if mode != "M3" && mode != "M4" {
+		mode = "M4"
+	}
+	mask := SceneLayer{Tag: "mask", Visible: true}
+	appendPatternedEdge := func(sb *strings.Builder, ax, ay, bx, by float64, pattern []float64) {
+		dx := bx - ax
+		dy := by - ay
+		length := math.Hypot(dx, dy)
+		if length <= 0 {
+			return
+		}
+		if len(pattern) == 0 {
+			pattern = []float64{length, 0}
+		}
+		ux := dx / length
+		uy := dy / length
+		pos := 0.0
+		draw := true
+		pidx := 0
+		for pos < length-1e-9 {
+			seg := pattern[pidx%len(pattern)]
+			if seg <= 0 {
+				pidx++
+				draw = !draw
+				continue
+			}
+			next := pos + seg
+			if next > length {
+				next = length
+			}
+			if draw {
+				sx := ax + ux*pos
+				sy := ay + uy*pos
+				ex := ax + ux*next
+				ey := ay + uy*next
+				sb.WriteString(fmt.Sprintf("M%.4f %.4fL%.4f %.4f", sx, sy, ex, ey))
+			}
+			pos = next
+			pidx++
+			draw = !draw
+		}
+	}
+	rectFramePath := func(x0, y0, x1, y1 float64, style string) string {
+		var sb strings.Builder
+		edges := [][4]float64{
+			{x0, y0, x1, y0},
+			{x1, y0, x1, y1},
+			{x1, y1, x0, y1},
+			{x0, y1, x0, y0},
+		}
+		switch style {
+		case "dotted":
+			for _, e := range edges {
+				appendPatternedEdge(&sb, e[0], e[1], e[2], e[3], []float64{1.0, 2.0})
+			}
+		case "dashed":
+			for _, e := range edges {
+				appendPatternedEdge(&sb, e[0], e[1], e[2], e[3], []float64{7.0, 3.0})
+			}
+		case "dot-dash":
+			for _, e := range edges {
+				appendPatternedEdge(&sb, e[0], e[1], e[2], e[3], []float64{1.0, 2.0, 7.0, 2.0})
+			}
+		default:
+			// Solid frame edges, segmented to avoid very long single G1 lines.
+			for _, e := range edges {
+				appendPatternedEdge(&sb, e[0], e[1], e[2], e[3], []float64{20.0, 0})
+			}
+		}
+		return sb.String()
+	}
+
+	type markTarget struct {
+		x float64
+		y float64
+	}
+	type sector struct {
+		name    string
+		x       float64
+		y       float64
+		targets []markTarget
+	}
+	targetInset := maxFloat(6.0, minFloat(10.0, plateMM*0.08))
+	makeTargets := func(x, y float64) []markTarget {
+		return []markTarget{
+			{x: x + targetInset, y: y + targetInset},
+			{x: x + plateMM - targetInset, y: y + targetInset},
+			{x: x + plateMM - targetInset, y: y + plateMM - targetInset},
+			{x: x + targetInset, y: y + plateMM - targetInset},
+			{x: x + plateMM*0.5, y: y + plateMM*0.5},
+		}
+	}
+	sectors := []sector{
+		{name: "BL", x: 0, y: shiftMM},
+		{name: "BR", x: shiftMM, y: shiftMM},
+		{name: "TL", x: 0, y: 0},
+		{name: "TR", x: shiftMM, y: 0},
+		{name: "C", x: shiftMM / 2, y: shiftMM / 2},
+	}
+	for i := range sectors {
+		sectors[i].targets = makeTargets(sectors[i].x, sectors[i].y)
+	}
+
+	labelPt := maxFloat(3.2, workspaceMM*0.022)
+	labelPad := maxFloat(1.5, plateMM*0.015)
+	labelH := labelPt * 25.4 / 72.0
+	labelFace := loadFace(labelPt, 600.0)
+	edgeInset := maxFloat(0.6, minFloat(1.2, workspaceMM*0.006))
+	for _, s := range sectors {
+		x0 := maxFloat(s.x, edgeInset)
+		y0 := maxFloat(s.y, edgeInset)
+		x1 := minFloat(s.x+plateMM, workspaceMM-edgeInset)
+		y1 := minFloat(s.y+plateMM, workspaceMM-edgeInset)
+		frameStyle := "solid"
+		switch s.name {
+		case "TL":
+			frameStyle = "dotted"
+		case "TR":
+			frameStyle = "dashed"
+		case "BL":
+			frameStyle = "dot-dash"
+		}
+		mask.Primitives = append(mask.Primitives, ScenePrimitive{
+			Kind:        PrimitivePath,
+			PathData:    rectFramePath(x0, y0, x1, y1, frameStyle),
+			FillMode:    FillModeNone,
+			StrokeColor: sceneBlack,
+			StrokeMM:    0.12,
+			PowerS:      annotationPower,
+			FeedMMMin:   annotationFeed,
+			LaserOnCmd:  mode,
+		})
+		labelX := s.x + labelPad
+		labelY := s.y + labelPad + labelH
+		labelAnchor := TextAnchorBaselineLeft
+		labelW := trackedTextWidthMM(labelFace, 600.0, s.name, 0)
+		switch s.name {
+		case "BL":
+			labelX = s.x + labelPad
+			labelY = s.y + plateMM - labelPad
+		case "BR":
+			labelX = s.x + plateMM - labelPad - labelW
+			labelY = s.y + plateMM - labelPad
+		case "TL":
+			labelX = s.x + labelPad
+			labelY = s.y + labelPad + labelH
+		case "TR":
+			labelX = s.x + plateMM - labelPad - labelW
+			labelY = s.y + labelPad + labelH
+		case "C":
+			labelX = s.x + plateMM/2
+			labelY = s.y + plateMM/2
+			labelAnchor = TextAnchorCenter
+		}
+		label := newSceneText(labelX, labelY, s.name, labelPt, 0.01, TextDirHorizontal, labelAnchor)
+		label.FillMode = FillModeNone
+		label.PowerS = annotationPower
+		label.FeedMMMin = annotationFeed
+		mask.Primitives = append(mask.Primitives, label)
+	}
+
+	const laps = 2
+	targetForward := []int{0, 2, 4, 1, 3}
+	targetReverse := []int{3, 1, 4, 2, 0}
+	sectorOrder := []int{0, 1, 2, 3, 4}
+	half := maxFloat(0.9, minFloat(1.8, plateMM*0.012))
+	for _, sectorIdx := range sectorOrder {
+		for lap := 0; lap < laps; lap++ {
+			order := targetForward
+			if lap%2 == 1 {
+				order = targetReverse
+			}
+			for _, targetIdx := range order {
+				t := sectors[sectorIdx].targets[targetIdx]
+				mask.Primitives = append(mask.Primitives, ScenePrimitive{
+					Kind:        PrimitivePath,
+					PathData:    fmt.Sprintf("M%.4f %.4fL%.4f %.4fL%.4f %.4fL%.4f %.4fZ", t.x-half, t.y-half, t.x+half, t.y-half, t.x+half, t.y+half, t.x-half, t.y+half),
+					FillMode:    FillModeNone,
+					StrokeColor: sceneBlack,
+					StrokeMM:    0.10,
+					PowerS:      b.TilePowerS,
+					FeedMMMin:   b.TileFeedMMMin,
+					LaserOnCmd:  mode,
+				})
+			}
+		}
+	}
+
+	return PlateScene{
+		Name:             "laser_calibration_sector_repeatability_test",
+		WidthMM:          workspaceMM,
+		HeightMM:         workspaceMM,
 		AnchorInPlate:    "origin",
 		OffsetInPlateXMM: b.OffsetXMM,
 		OffsetInPlateYMM: b.OffsetYMM,
@@ -878,6 +1261,10 @@ func ParseLaserCalibrationKind(v string) (LaserCalibrationKind, error) {
 		return LaserCalibrationFillStep, nil
 	case string(LaserCalibrationPowerFeed), "power-feed":
 		return LaserCalibrationPowerFeed, nil
+	case string(LaserCalibrationRepeat), "repeatability", "bed-repeatability":
+		return LaserCalibrationRepeat, nil
+	case string(LaserCalibrationSectorRep), "sector-repeatability", "sector-repeat", "sector-test", "bed-sector-repeatability":
+		return LaserCalibrationSectorRep, nil
 	default:
 		return "", fmt.Errorf("unknown laser calibration kind: %s", v)
 	}

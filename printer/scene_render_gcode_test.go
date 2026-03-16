@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -241,6 +242,54 @@ func TestSceneGCodeRenderer_Render_CalibrationAnchorUsesPlateOffset(t *testing.T
 		"Layout offset in plate: X=50.000mm Y=50.000mm",
 		"G0 X55.000 Y95.000",
 		"G1 X75.000 Y95.000",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("missing %q in output", want)
+		}
+	}
+}
+
+func TestSceneGCodeRenderer_Render_CalibrationCanExceedPlateSize(t *testing.T) {
+	doc := &PlateDocument{
+		Version: sceneVersion,
+		Scenes: []PlateScene{
+			{
+				Name:          "laser_calibration_sector_repeatability_test",
+				WidthMM:       150,
+				HeightMM:      150,
+				AnchorInPlate: "origin",
+				Layers: []SceneLayer{
+					{
+						Tag:     "mask",
+						Visible: true,
+						Primitives: []ScenePrimitive{
+							{Kind: PrimitiveRect, XMM: 0, YMM: 50, WidthMM: 100, HeightMM: 100, FillMode: FillModeNone, StrokeColor: sceneBlack, StrokeMM: 0.2},
+						},
+					},
+				},
+			},
+		},
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		BedMM:          150,
+		PlateMM:        100,
+		PlateOriginXMM: 0,
+		PlateOriginYMM: 0,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render oversized calibration scene: %v", err)
+	}
+	path := filepath.Join(outDir, "laser_calibration_sector_repeatability_test.gcode")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	s := string(data)
+	for _, want := range []string{
+		"Size: 150.000mm x 150.000mm",
+		"Plate: 100.000mm at work origin X=0.000mm Y=0.000mm",
+		"G0 X0.000 Y100.000",
+		"G1 X100.000 Y100.000",
 	} {
 		if !strings.Contains(s, want) {
 			t.Fatalf("missing %q in output", want)
@@ -660,6 +709,56 @@ func TestPlanHorizontalTextHatchBatches_GroupsSameRow(t *testing.T) {
 	}
 	if batched[4] {
 		t.Fatalf("unexpected batching for different-row primitive")
+	}
+}
+
+func TestSceneGCodeRenderer_withDefaults_NormalizesLaserPassOrder(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "default empty", in: "", want: laserPassOrderGrouped},
+		{name: "grouped", in: "grouped", want: laserPassOrderGrouped},
+		{name: "local", in: "local", want: laserPassOrderLocal},
+		{name: "case-insensitive", in: "LoCaL", want: laserPassOrderLocal},
+		{name: "invalid fallback", in: "anything", want: laserPassOrderGrouped},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := (SceneGCodeRenderer{LaserPassOrder: tt.in}).withDefaults().LaserPassOrder
+			if got != tt.want {
+				t.Fatalf("withDefaults pass order = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLayerPassPlan_GroupedBatchesInterleavedHorizontalText(t *testing.T) {
+	e := &gcodeEmitter{cfg: (SceneGCodeRenderer{LaserPassOrder: "grouped"}).withDefaults()}
+	prims := []ScenePrimitive{
+		newSceneText(5, 10, "1", 14, 0.05, TextDirHorizontal, TextAnchorBaselineLeft),
+		{Kind: PrimitivePath, PathData: "M40 12 L44 12"},
+		newSceneText(18, 10, "A", 14, 0.05, TextDirHorizontal, TextAnchorBaselineLeft),
+	}
+	got := e.layerPassPlan(prims)
+	want := [][]int{{0, 2}, {1}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("grouped pass plan = %v, want %v", got, want)
+	}
+}
+
+func TestLayerPassPlan_LocalKeepsPrimitiveOrder(t *testing.T) {
+	e := &gcodeEmitter{cfg: (SceneGCodeRenderer{LaserPassOrder: "local"}).withDefaults()}
+	prims := []ScenePrimitive{
+		newSceneText(5, 10, "1", 14, 0.05, TextDirHorizontal, TextAnchorBaselineLeft),
+		{Kind: PrimitivePath, PathData: "M40 12 L44 12"},
+		newSceneText(18, 10, "A", 14, 0.05, TextDirHorizontal, TextAnchorBaselineLeft),
+	}
+	got := e.layerPassPlan(prims)
+	want := [][]int{{0}, {1}, {2}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("local pass plan = %v, want %v", got, want)
 	}
 }
 

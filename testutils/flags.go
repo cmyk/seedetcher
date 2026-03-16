@@ -53,6 +53,7 @@ type Flags struct {
 	LaserOutlinePowerScale float64
 	LaserOutlineFeedScale  float64
 	LaserDualOutline       bool
+	LaserPassOrder         string
 	RapidFeed              float64
 	WalletName             string
 	EtchStatsPage          bool
@@ -83,7 +84,7 @@ func DefineFlags() *Flags {
 	flag.StringVar(&f.SVGOut, "svg-out", "", "Optional output directory for per-plate scene SVGs (seed-side foundation)")
 	flag.StringVar(&f.GCodeOut, "gcode-out", "", "Optional output directory for per-plate scene G-code (file-only laser prototype)")
 	flag.StringVar(&f.GCodeSide, "side", "both", "G-code scene side selection (seed, desc, or both)")
-	flag.StringVar(&f.LaserCalibration, "laser-calibration", "", "Generate laser calibration scene instead of wallet scene (supported: power-grid, test-tile, line-width-tile, fill-step-test, power-feed-test)")
+	flag.StringVar(&f.LaserCalibration, "laser-calibration", "", "Generate laser calibration scene instead of wallet scene (supported: power-grid, test-tile, line-width-tile, fill-step-test, power-feed-test, repeatability-test, sector-repeatability-test)")
 	flag.Float64Var(&f.CalibrationAreaMM, "calibration-area-mm", 50.0, "Calibration scene size in mm, centered within the physical plate")
 	flag.StringVar(&f.CalibrationOffset, "calibration-offset", "", "Convenience alias for calibration scene offset inside plate as x,y")
 	flag.Float64Var(&f.CalibrationOffsetXMM, "calibration-offset-x", 0.0, "Calibration scene offset X inside the physical plate")
@@ -113,6 +114,7 @@ func DefineFlags() *Flags {
 	flag.Float64Var(&f.LaserOutlinePowerScale, "laser-outline-power-scale", 1.0, "Scale factor for outline-pass laser power (default 1.0)")
 	flag.Float64Var(&f.LaserOutlineFeedScale, "laser-outline-feed-scale", 1.0, "Scale factor for outline-pass feed rate (default 1.0)")
 	flag.BoolVar(&f.LaserDualOutline, "laser-dual-outline", false, "Run a second outer outline pass for filled text/path when outline inset is active")
+	flag.StringVar(&f.LaserPassOrder, "laser-pass-order", "grouped", "Pass ordering for filled horizontal text on the same baseline (grouped or local)")
 	flag.Float64Var(&f.RapidFeed, "rapid-feed", 3000.0, "Rapid move feed in mm/min for generated G-code (default 3000)")
 	flag.StringVar(&f.WalletName, "wallet-name", "", "Optional wallet name to print on plates (defaults to SEEDETCHER)")
 	flag.BoolVar(&f.EtchStatsPage, "etch-stats-page", false, "Append an additional etch stats page with per-plate coverage metrics")

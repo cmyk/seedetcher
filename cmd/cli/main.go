@@ -54,6 +54,11 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+	laserPassOrder, err := parseLaserPassOrderFlag(f.LaserPassOrder)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 	if f.Verbose {
 		fmt.Printf("Processing %s wallet with descriptor: %v\n", config.Name, desc != nil)
 	}
@@ -185,6 +190,7 @@ func main() {
 				OutlinePowerScale: f.LaserOutlinePowerScale,
 				OutlineFeedScale:  f.LaserOutlineFeedScale,
 				DualOutlinePass:   f.LaserDualOutline,
+				LaserPassOrder:    laserPassOrder,
 				RapidFeedMMMin:    f.RapidFeed,
 				BedMM:             f.BedMM,
 				PlateMM:           f.PlateMM,
@@ -353,6 +359,11 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 			}
 		}
 	}
+	laserPassOrder, err := parseLaserPassOrderFlag(f.LaserPassOrder)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 	offsetX := f.CalibrationOffsetXMM
 	offsetY := f.CalibrationOffsetYMM
 	if strings.TrimSpace(f.CalibrationOffset) != "" {
@@ -460,6 +471,7 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 			OutlinePowerScale: f.LaserOutlinePowerScale,
 			OutlineFeedScale:  f.LaserOutlineFeedScale,
 			DualOutlinePass:   f.LaserDualOutline,
+			LaserPassOrder:    laserPassOrder,
 			RapidFeedMMMin:    f.RapidFeed,
 			BedMM:             f.BedMM,
 			PlateMM:           f.PlateMM,
@@ -485,6 +497,19 @@ func parseSinglesigLayoutFlag(v string) (printer.SinglesigLayoutMode, error) {
 		return printer.SinglesigLayoutSeedWithDescriptorQR, nil
 	default:
 		return 0, fmt.Errorf("invalid -singlesig-layout: %s (allowed: seed-info, seed-only, seed-desc)", v)
+	}
+}
+
+func parseLaserPassOrderFlag(v string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(v))
+	if mode == "" {
+		mode = "grouped"
+	}
+	switch mode {
+	case "grouped", "local":
+		return mode, nil
+	default:
+		return "", fmt.Errorf("invalid -laser-pass-order: %s (allowed: grouped, local)", v)
 	}
 }
 

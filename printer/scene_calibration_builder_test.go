@@ -1,9 +1,11 @@
 package printer
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -622,7 +624,7 @@ func TestLaserCalibrationBuilderBuildsPowerFeedTile(t *testing.T) {
 	powerSet := map[int]bool{}
 	feedSet := map[float64]bool{}
 	for _, p := range scene.Layers[0].Primitives {
-		if p.Kind == PrimitiveText && p.Text == "Power-Feed Test (M3)" {
+		if p.Kind == PrimitiveText && p.Text == "Power-Feed Test (M3, 0.04)" {
 			titleFound = true
 		}
 		if p.Kind == PrimitiveRect && p.FillMode == FillModeHatch && p.FillColor == sceneBlack {
@@ -688,5 +690,234 @@ func TestParseCalibrationIntSeries_RangeWithExplicitCount(t *testing.T) {
 	}
 	if got[0] != 650 || got[2] != 750 || got[4] != 850 {
 		t.Fatalf("unexpected values: %v", got)
+	}
+}
+
+func TestLaserCalibrationBuilderBuildsRepeatabilityTile(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationRepeat,
+		PlateMM:       150,
+		CalibrationMM: 150,
+		TilePowerS:    850,
+		TileFeedMMMin: 2000,
+		TileLaserMode: "m4",
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(doc.Scenes) != 1 {
+		t.Fatalf("expected 1 scene, got %d", len(doc.Scenes))
+	}
+	scene := doc.Scenes[0]
+	if scene.Name != "laser_calibration_repeatability_test" {
+		t.Fatalf("unexpected scene name %q", scene.Name)
+	}
+	titleFound := false
+	labelSet := map[string]bool{}
+	labelY := map[string]float64{}
+	titleY := 0.0
+	markCount := 0
+	for _, p := range scene.Layers[0].Primitives {
+		if p.Kind == PrimitiveText && p.Text == "Repeatability Test L12 (M4)" {
+			titleFound = true
+			titleY = p.YMM
+		}
+		if p.Kind == PrimitiveText && (p.Text == "LL" || p.Text == "LR" || p.Text == "UR" || p.Text == "UL" || p.Text == "C") {
+			labelSet[p.Text] = true
+			labelY[p.Text] = p.YMM
+		}
+		if p.Kind == PrimitivePath && p.FillMode == FillModeNone && p.PowerS == 850 && p.FeedMMMin == 2000 {
+			markCount++
+		}
+	}
+	if !titleFound {
+		t.Fatalf("missing repeatability title")
+	}
+	if len(labelSet) != 5 {
+		t.Fatalf("expected 5 sector labels, got %d", len(labelSet))
+	}
+	if labelY["UL"] <= titleY+2.0 || labelY["UR"] <= titleY+2.0 {
+		t.Fatalf("upper labels too close to title: titleY=%.3f UL=%.3f UR=%.3f", titleY, labelY["UL"], labelY["UR"])
+	}
+	if markCount != 60 {
+		t.Fatalf("expected 60 repeated marks (12 laps * 5 targets), got %d", markCount)
+	}
+}
+
+func TestLaserCalibrationRepeatabilityTileRendersGCodeWithinBounds(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationRepeat,
+		PlateMM:       150,
+		CalibrationMM: 150,
+		TilePowerS:    850,
+		TileFeedMMMin: 2000,
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserOnCmd:     "M4",
+		LaserMaxS:      850,
+		CutFeedMMMin:   2000,
+		FillStepMM:     0.04,
+		RapidFeedMMMin: 8000,
+		BedMM:          150,
+		PlateMM:        150,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "laser_calibration_repeatability_test.gcode")); err != nil {
+		t.Fatalf("expected gcode output: %v", err)
+	}
+}
+
+func TestParseLaserCalibrationKind_RepeatabilityAliases(t *testing.T) {
+	for _, in := range []string{"repeatability-test", "repeatability", "bed-repeatability"} {
+		got, err := ParseLaserCalibrationKind(in)
+		if err != nil {
+			t.Fatalf("parse %q: %v", in, err)
+		}
+		if got != LaserCalibrationRepeat {
+			t.Fatalf("parse %q got %q want %q", in, got, LaserCalibrationRepeat)
+		}
+	}
+}
+
+func TestLaserCalibrationBuilderBuildsSectorRepeatabilityTile(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationSectorRep,
+		PlateMM:       100,
+		CalibrationMM: 150,
+		TilePowerS:    850,
+		TileFeedMMMin: 2000,
+		TileLaserMode: "m4",
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(doc.Scenes) != 1 {
+		t.Fatalf("expected 1 scene, got %d", len(doc.Scenes))
+	}
+	scene := doc.Scenes[0]
+	if scene.Name != "laser_calibration_sector_repeatability_test" {
+		t.Fatalf("unexpected scene name %q", scene.Name)
+	}
+	labelSet := map[string]bool{}
+	labelPos := map[string]struct {
+		x      float64
+		y      float64
+		anchor TextAnchor
+	}{}
+	frameCount := 0
+	markCount := 0
+	for _, p := range scene.Layers[0].Primitives {
+		if p.Kind == PrimitivePath && p.FillMode == FillModeNone && p.StrokeMM == 0.12 {
+			frameCount++
+			if strings.Contains(p.PathData, " 0.0000") || strings.Contains(p.PathData, "150.0000") {
+				t.Fatalf("guide frame must stay inside workspace perimeter, got %q", p.PathData)
+			}
+		}
+		if p.Kind == PrimitiveText && (p.Text == "BL" || p.Text == "BR" || p.Text == "TL" || p.Text == "TR" || p.Text == "C") {
+			labelSet[p.Text] = true
+			labelPos[p.Text] = struct {
+				x      float64
+				y      float64
+				anchor TextAnchor
+			}{x: p.XMM, y: p.YMM, anchor: p.Anchor}
+		}
+		if p.Kind == PrimitivePath && p.FillMode == FillModeNone && p.PowerS == 850 && p.FeedMMMin == 2000 {
+			markCount++
+		}
+	}
+	if frameCount != 5 {
+		t.Fatalf("expected 5 sector guide frames, got %d", frameCount)
+	}
+	if len(labelSet) != 5 {
+		t.Fatalf("expected 5 sector labels, got %d", len(labelSet))
+	}
+	// Verify label semantics: each corner label is placed in matching frame corner.
+	if p, ok := labelPos["TL"]; !ok || !(p.x < 10 && p.y < 15 && p.anchor == TextAnchorBaselineLeft) {
+		t.Fatalf("TL label not in top-left corner: %+v", p)
+	}
+	if p, ok := labelPos["TR"]; !ok || !(p.x > 140 && p.y < 15 && p.anchor == TextAnchorBaselineLeft) {
+		t.Fatalf("TR label not in top-right corner: %+v", p)
+	}
+	if p, ok := labelPos["BL"]; !ok || !(p.x < 10 && p.y > 145 && p.anchor == TextAnchorBaselineLeft) {
+		t.Fatalf("BL label not in bottom-left corner: %+v", p)
+	}
+	if p, ok := labelPos["BR"]; !ok || !(p.x > 140 && p.y > 145 && p.anchor == TextAnchorBaselineLeft) {
+		t.Fatalf("BR label not in bottom-right corner: %+v", p)
+	}
+	if p, ok := labelPos["C"]; !ok || !(p.x > 70 && p.x < 80 && p.y > 70 && p.y < 80 && p.anchor == TextAnchorCenter) {
+		t.Fatalf("C label not centered: %+v", p)
+	}
+	if markCount != 50 {
+		t.Fatalf("expected 50 repeated marks (2 laps * 5 sectors * 5 anchors), got %d", markCount)
+	}
+	sectorLocalPrefix := 0
+	for _, p := range scene.Layers[0].Primitives {
+		if p.Kind != PrimitivePath || p.FillMode != FillModeNone || p.PowerS != 850 || p.FeedMMMin != 2000 {
+			continue
+		}
+		var x, y float64
+		if _, err := fmt.Sscanf(p.PathData, "M%f %fL", &x, &y); err != nil {
+			t.Fatalf("parse mark path %q: %v", p.PathData, err)
+		}
+		// First sector is BL: x in [0,100], y in [50,150] (using mark lower-left point).
+		if x < 0 || x > 100 || y < 50 || y > 150 {
+			break
+		}
+		sectorLocalPrefix++
+	}
+	if sectorLocalPrefix < 10 {
+		t.Fatalf("expected first sector marks to stay local for at least 10 marks, got %d", sectorLocalPrefix)
+	}
+}
+
+func TestLaserCalibrationSectorRepeatabilityRendersGCodeWithinBounds(t *testing.T) {
+	doc, err := (LaserCalibrationBuilder{
+		Kind:          LaserCalibrationSectorRep,
+		PlateMM:       100,
+		CalibrationMM: 150,
+		TilePowerS:    850,
+		TileFeedMMMin: 2000,
+	}).Build()
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	outDir := t.TempDir()
+	if err := (SceneGCodeRenderer{
+		LaserOnCmd:     "M4",
+		LaserMaxS:      850,
+		CutFeedMMMin:   2000,
+		FillStepMM:     0.04,
+		RapidFeedMMMin: 8000,
+		BedMM:          150,
+		PlateMM:        100,
+	}).Render(doc, outDir); err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "laser_calibration_sector_repeatability_test.gcode")); err != nil {
+		t.Fatalf("expected gcode output: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(outDir, "laser_calibration_sector_repeatability_test.gcode"))
+	if err != nil {
+		t.Fatalf("read gcode output: %v", err)
+	}
+	if strings.Contains(string(data), "; Preview frame (laser off)") {
+		t.Fatalf("sector repeatability gcode should not inject renderer preview frame")
+	}
+}
+
+func TestParseLaserCalibrationKind_SectorRepeatabilityAliases(t *testing.T) {
+	for _, in := range []string{"sector-repeatability-test", "sector-repeatability", "sector-repeat", "sector-test", "bed-sector-repeatability"} {
+		got, err := ParseLaserCalibrationKind(in)
+		if err != nil {
+			t.Fatalf("parse %q: %v", in, err)
+		}
+		if got != LaserCalibrationSectorRep {
+			t.Fatalf("parse %q got %q want %q", in, got, LaserCalibrationSectorRep)
+		}
 	}
 }
