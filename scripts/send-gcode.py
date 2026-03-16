@@ -291,6 +291,17 @@ def parse_xy_bounds(lines: list[str]) -> tuple[float, float, float, float]:
     return min_x, min_y, max_x, max_y
 
 
+def bounds_out_of_workspace(min_x: float, min_y: float, max_x: float, max_y: float, bed_mm: float) -> str | None:
+    if bed_mm <= 0:
+        return None
+    if min_x < 0 or min_y < 0 or max_x > bed_mm or max_y > bed_mm:
+        return (
+            f"motion bounds out of workspace: X[{min_x:.3f}..{max_x:.3f}] "
+            f"Y[{min_y:.3f}..{max_y:.3f}] workspace=0..{bed_mm:.3f}"
+        )
+    return None
+
+
 def preview_bounds_lines(lines: list[str], s_value: int, feed: float, margin: float, dx: float, dy: float) -> list[str]:
     if s_value <= 0:
         raise ValueError("--preview-s must be > 0")
@@ -351,6 +362,8 @@ def detect_default_port() -> str | None:
     candidates = []
     candidates.extend(sorted(glob.glob("/dev/ttyACM*")))
     candidates.extend(sorted(glob.glob("/dev/ttyUSB*")))
+    candidates.extend(sorted(glob.glob("/dev/ttyAMA*")))
+    candidates.extend(sorted(glob.glob("/dev/ttyS*")))
     return candidates[0] if candidates else None
 
 
@@ -373,6 +386,7 @@ def main() -> int:
     ap.add_argument("--preview-feed", type=float, default=600.0, help="feed rate for --preview-bounds trace (default 600)")
     ap.add_argument("--preview-margin", type=float, default=0.0, help="extra margin in mm around bounds for --preview-bounds")
     ap.add_argument("--offset", default="0,0", help="optional XY offset in mm applied at send time, format 'x,y' (for example '0,25')")
+    ap.add_argument("--bed-mm", type=float, default=150.0, help="workspace max X/Y in mm for preflight bounds checks (set <=0 to disable)")
     args = ap.parse_args()
 
     if not args.port:
@@ -408,6 +422,15 @@ def main() -> int:
         if not lines:
             print("No G-code lines to send.", file=sys.stderr)
             return 2
+        try:
+            min_x, min_y, max_x, max_y = parse_xy_bounds(lines)
+            bounds_err = bounds_out_of_workspace(min_x, min_y, max_x, max_y, args.bed_mm)
+            if bounds_err:
+                print(f"ERROR: {bounds_err}", file=sys.stderr)
+                return 2
+        except ValueError:
+            # No XY motion in this file/preview; nothing to validate.
+            pass
 
     fd = os.open(args.port, os.O_RDWR | os.O_NOCTTY | os.O_SYNC)
     try:
