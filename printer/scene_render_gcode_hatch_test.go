@@ -1,6 +1,9 @@
 package printer
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestHatchSegmentsHorizontalSerpentineOrder(t *testing.T) {
 	loops := [][]gcodePt{
@@ -42,7 +45,7 @@ func TestHatchSegmentsHorizontalSerpentineOrder(t *testing.T) {
 	}
 }
 
-func TestHatchSegmentsAutoVerticalForTallShape(t *testing.T) {
+func TestHatchSegmentsTallShapeStaysHorizontal(t *testing.T) {
 	loops := [][]gcodePt{
 		{
 			{x: 0, y: 0},
@@ -57,12 +60,12 @@ func TestHatchSegmentsAutoVerticalForTallShape(t *testing.T) {
 	if len(segs) == 0 {
 		t.Fatalf("expected segments for tall shape")
 	}
-	// Vertical hatch emits x-constant segments.
-	if segs[0][0].x != segs[0][1].x {
-		t.Fatalf("expected vertical hatch segment, got %+v", segs[0])
+	// Auto-rotation is disabled; hatch remains horizontal.
+	if segs[0][0].y != segs[0][1].y {
+		t.Fatalf("expected horizontal hatch segment, got %+v", segs[0])
 	}
-	if segs[0][0].y == segs[0][1].y {
-		t.Fatalf("expected non-zero vertical segment length, got %+v", segs[0])
+	if segs[0][0].x == segs[0][1].x {
+		t.Fatalf("expected non-zero horizontal segment length, got %+v", segs[0])
 	}
 }
 
@@ -97,5 +100,62 @@ func TestHatchSegments_NearSquareUsesHorizontalWithFloatNoise(t *testing.T) {
 	// Must stay horizontal for square-ish cells.
 	if segs[0][0].y != segs[0][1].y {
 		t.Fatalf("expected horizontal segment, got %+v", segs[0])
+	}
+}
+
+func TestHatchSegments_EdgeBiasedStartStaysInside(t *testing.T) {
+	loop := [][]gcodePt{
+		{
+			{x: 0.2, y: 0.583},
+			{x: 1.2, y: 0.583},
+			{x: 1.2, y: 1.168},
+			{x: 0.2, y: 1.168},
+			{x: 0.2, y: 0.583},
+		},
+	}
+	step := 0.05
+	segs := hatchSegments(loop, step)
+	if len(segs) == 0 {
+		t.Fatalf("expected hatch segments")
+	}
+	firstY := segs[0][0].y
+	// With remainder > step/2, the first line is shifted inward by the remainder.
+	// span=0.585, n=12, used=0.55 -> remainder=0.035 => 0.583+0.035 = 0.618 (plus eps).
+	if firstY < 0.6179 || firstY > 0.6191 {
+		t.Fatalf("expected edge-biased shifted start near 0.618, got %.9f", firstY)
+	}
+	// Still strictly inside shape bounds.
+	if firstY <= 0.583 || firstY >= 1.168 {
+		t.Fatalf("expected first line inside bounds, got %.9f", firstY)
+	}
+}
+
+func TestHatchSegmentsSparseHalfStep_AddsSparseCorrectionRow(t *testing.T) {
+	loops := [][]gcodePt{
+		{
+			{x: 0, y: 0},
+			{x: 3, y: 0},
+			{x: 3, y: 2},
+			{x: 0, y: 2},
+			{x: 0, y: 0},
+		},
+	}
+	base := hatchSegments(loops, 1.0)
+	corrected := hatchSegmentsSparseHalfStep(loops, 1.0)
+	if len(corrected) <= len(base) {
+		t.Fatalf("expected sparse half-step correction to add segments (base=%d corrected=%d)", len(base), len(corrected))
+	}
+	foundHalf := false
+	for _, seg := range corrected {
+		if len(seg) != 2 {
+			continue
+		}
+		if math.Abs(seg[0].y-0.5) <= 1e-6 || math.Abs(seg[0].y-1.5) <= 1e-6 {
+			foundHalf = true
+			break
+		}
+	}
+	if !foundHalf {
+		t.Fatalf("expected at least one half-step correction row at y=0.5 or y=1.5")
 	}
 }

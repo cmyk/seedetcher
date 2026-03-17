@@ -75,7 +75,7 @@ func TestLaserCalibrationBuilderPowerGridKeepsBottomClearance(t *testing.T) {
 	}
 }
 
-func TestLaserCalibrationBuilderPowerGridUsesReducedAnnotationPower(t *testing.T) {
+func TestLaserCalibrationBuilderPowerGridUsesFullAnnotationPower(t *testing.T) {
 	doc, err := (LaserCalibrationBuilder{
 		Kind:          LaserCalibrationPowerGrid,
 		PlateMM:       100,
@@ -87,8 +87,8 @@ func TestLaserCalibrationBuilderPowerGridUsesReducedAnnotationPower(t *testing.T
 		t.Fatalf("Build: %v", err)
 	}
 	scene := doc.Scenes[0]
-	wantPower := 500.0
-	wantFeed := 1000.0
+	wantPower := 1000.0
+	wantFeed := 400.0
 	foundBorder := false
 	foundLabel := false
 	foundMark := false
@@ -726,7 +726,7 @@ func TestLaserCalibrationBuilderBuildsRepeatabilityTile(t *testing.T) {
 			labelSet[p.Text] = true
 			labelY[p.Text] = p.YMM
 		}
-		if p.Kind == PrimitivePath && p.FillMode == FillModeNone && p.PowerS == 850 && p.FeedMMMin == 2000 {
+		if p.Kind == PrimitivePath && p.FillMode == FillModeNone && p.StrokeMM == 0.10 && p.PowerS == 850 && p.FeedMMMin == 2000 {
 			markCount++
 		}
 	}
@@ -826,7 +826,7 @@ func TestLaserCalibrationBuilderBuildsSectorRepeatabilityTile(t *testing.T) {
 				anchor TextAnchor
 			}{x: p.XMM, y: p.YMM, anchor: p.Anchor}
 		}
-		if p.Kind == PrimitivePath && p.FillMode == FillModeNone && p.PowerS == 850 && p.FeedMMMin == 2000 {
+		if p.Kind == PrimitivePath && p.FillMode == FillModeNone && p.StrokeMM == 0.10 && p.PowerS == 850 && p.FeedMMMin == 2000 {
 			markCount++
 		}
 	}
@@ -857,7 +857,7 @@ func TestLaserCalibrationBuilderBuildsSectorRepeatabilityTile(t *testing.T) {
 	}
 	sectorLocalPrefix := 0
 	for _, p := range scene.Layers[0].Primitives {
-		if p.Kind != PrimitivePath || p.FillMode != FillModeNone || p.PowerS != 850 || p.FeedMMMin != 2000 {
+		if p.Kind != PrimitivePath || p.FillMode != FillModeNone || p.StrokeMM != 0.10 || p.PowerS != 850 || p.FeedMMMin != 2000 {
 			continue
 		}
 		var x, y float64

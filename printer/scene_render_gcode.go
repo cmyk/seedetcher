@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -13,32 +14,39 @@ import (
 const (
 	laserPassOrderGrouped = "grouped"
 	laserPassOrderLocal   = "local"
+	laserPassOrderSweep   = "sweep"
+	laserTextFillRaster   = "raster"
+	laserTextFillContour  = "contour"
 )
 
 type SceneGCodeRenderer struct {
-	LaserOnCmd        string
-	LaserOffCmd       string
-	LaserMaxS         int
-	CutFeedMMMin      float64
-	RapidFeedMMMin    float64
-	CurveSteps        int
-	FillStepMM        float64
-	FillInsetMM       float64
-	OutlineInsetMM    float64
-	SpiralStepMM      float64
-	FeatureShrinkMM   float64
-	OutlinePowerScale float64
-	OutlineFeedScale  float64
-	DualOutlinePass   bool
-	LaserPassOrder    string
-	BedMM             float64
-	PlateMM           float64
-	PlateOriginXMM    float64
-	PlateOriginYMM    float64
-	MachineOffsetXMM  float64
-	MachineOffsetYMM  float64
-	LaserFlipX        bool
-	LaserFlipY        bool
+	LaserOnCmd              string
+	LaserOffCmd             string
+	LaserMaxS               int
+	CutFeedMMMin            float64
+	RapidFeedMMMin          float64
+	CurveSteps              int
+	FillStepMM              float64
+	FillInsetMM             float64
+	OutlineInsetMM          float64
+	SpiralStepMM            float64
+	FeatureShrinkMM         float64
+	OutlinePowerScale       float64
+	OutlineFeedScale        float64
+	HatchOverscanMM         float64
+	SweepHalfStepCorrection bool
+	NoOutlinePass           bool
+	DualOutlinePass         bool
+	LaserPassOrder          string
+	TextFillMode            string
+	BedMM                   float64
+	PlateMM                 float64
+	PlateOriginXMM          float64
+	PlateOriginYMM          float64
+	MachineOffsetXMM        float64
+	MachineOffsetYMM        float64
+	LaserFlipX              bool
+	LaserFlipY              bool
 }
 
 func (r SceneGCodeRenderer) Render(doc *PlateDocument, outDir string) error {
@@ -103,7 +111,11 @@ func (r SceneGCodeRenderer) withDefaults() SceneGCodeRenderer {
 	if r.OutlineFeedScale <= 0 {
 		r.OutlineFeedScale = 1
 	}
+	if r.HatchOverscanMM < 0 {
+		r.HatchOverscanMM = 0
+	}
 	r.LaserPassOrder = normalizeLaserPassOrder(r.LaserPassOrder)
+	r.TextFillMode = normalizeLaserTextFillMode(r.TextFillMode)
 	if r.PlateMM <= 0 {
 		r.PlateMM = 100
 	}
@@ -119,8 +131,21 @@ func normalizeLaserPassOrder(v string) string {
 		return laserPassOrderGrouped
 	case laserPassOrderLocal:
 		return laserPassOrderLocal
+	case laserPassOrderSweep, "global":
+		return laserPassOrderSweep
 	default:
 		return laserPassOrderGrouped
+	}
+}
+
+func normalizeLaserTextFillMode(v string) string {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", laserTextFillRaster:
+		return laserTextFillRaster
+	case laserTextFillContour:
+		return laserTextFillContour
+	default:
+		return laserTextFillRaster
 	}
 }
 
@@ -258,6 +283,22 @@ func (e *gcodeEmitter) emitPreviewFrame() {
 }
 
 func (e *gcodeEmitter) renderLayer(layer SceneLayer) {
+	if normalizeLaserPassOrder(e.cfg.LaserPassOrder) == laserPassOrderSweep {
+		swept := e.renderHatchSweep(layer.Primitives)
+		if e.err != nil {
+			return
+		}
+		for i := range layer.Primitives {
+			if swept[i] {
+				continue
+			}
+			e.renderPrimitive(layer.Primitives[i])
+			if e.err != nil {
+				return
+			}
+		}
+		return
+	}
 	for _, group := range e.layerPassPlan(layer.Primitives) {
 		if len(group) > 1 {
 			e.renderHorizontalTextHatchBatch(layer.Primitives, group)
@@ -271,6 +312,189 @@ func (e *gcodeEmitter) renderLayer(layer SceneLayer) {
 			return
 		}
 	}
+}
+
+type hatchSweepOutline struct {
+	original [][]gcodePt
+	outline  [][]gcodePt
+	emit     bool
+}
+
+type hatchSweepBatch struct {
+	params   primitiveLaserParams
+	fill     [][]gcodePt
+	outlines []hatchSweepOutline
+}
+
+func (e *gcodeEmitter) renderHatchSweep(primitives []ScenePrimitive) []bool {
+	swept := make([]bool, len(primitives))
+	keys := make([]string, 0, 4)
+	batches := make(map[string]*hatchSweepBatch)
+	for i, p := range primitives {
+		params := e.primitiveLaserParams(p)
+		data, ok := e.hatchSweepDataForPrimitive(p, params)
+		if !ok {
+			continue
+		}
+		key := fmt.Sprintf(
+			"f=%d|p=%d|lf=%s|of=%d|op=%d|fs=%d",
+			quantizedMM(params.cutFeed, 0.1),
+			params.powerS,
+			strings.ToUpper(strings.TrimSpace(params.laserOnCmd)),
+			quantizedMM(params.outlineFeed, 0.1),
+			params.outlinePowerS,
+			quantizedMM(params.fillStepMM, 0.001),
+		)
+		b, ok := batches[key]
+		if !ok {
+			b = &hatchSweepBatch{params: params}
+			batches[key] = b
+			keys = append(keys, key)
+		}
+		b.fill = append(b.fill, data.fillLoops...)
+		b.outlines = append(b.outlines, data.outlines...)
+		swept[i] = true
+	}
+	for _, key := range keys {
+		b := batches[key]
+		if len(b.fill) > 0 {
+			segs := hatchSegments(b.fill, b.params.fillStepMM)
+			if e.cfg.SweepHalfStepCorrection {
+				segs = hatchSegmentsSparseHalfStep(b.fill, b.params.fillStepMM)
+			}
+			e.traceHatchSweepSegments(segs, b.params.cutFeed, b.params.powerS, b.params.laserOnCmd)
+			if e.err != nil {
+				return swept
+			}
+		}
+		for _, it := range b.outlines {
+			if !it.emit {
+				continue
+			}
+			for _, poly := range it.outline {
+				e.tracePolyline(poly, b.params.outlineFeed, b.params.outlinePowerS, b.params.laserOnCmd)
+				if e.err != nil {
+					return swept
+				}
+			}
+			if e.cfg.DualOutlinePass && e.cfg.OutlineInsetMM > 0 && !loopsApproxEqual(it.original, it.outline) {
+				for _, poly := range it.original {
+					e.tracePolyline(poly, b.params.outlineFeed, b.params.outlinePowerS, b.params.laserOnCmd)
+					if e.err != nil {
+						return swept
+					}
+				}
+			}
+		}
+	}
+	return swept
+}
+
+type hatchSweepData struct {
+	fillLoops [][]gcodePt
+	outlines  []hatchSweepOutline
+}
+
+func (e *gcodeEmitter) hatchSweepDataForPrimitive(p ScenePrimitive, params primitiveLaserParams) (hatchSweepData, bool) {
+	if params.fillMode != FillModeHatch {
+		return hatchSweepData{}, false
+	}
+	emitOutline := e.shouldEmitOutline(p, params.fillMode)
+	switch p.Kind {
+	case PrimitiveRect:
+		loops := [][]gcodePt{{
+			{x: p.XMM, y: p.YMM},
+			{x: p.XMM + p.WidthMM, y: p.YMM},
+			{x: p.XMM + p.WidthMM, y: p.YMM + p.HeightMM},
+			{x: p.XMM, y: p.YMM + p.HeightMM},
+			{x: p.XMM, y: p.YMM},
+		}}
+		fill, outline := e.resolveHatchFillAndOutline(loops, nil, params.fillMode, e.cfg.FillInsetMM)
+		return hatchSweepData{
+			fillLoops: fill,
+			outlines:  []hatchSweepOutline{{original: loops, outline: outline, emit: emitOutline}},
+		}, true
+	case PrimitiveRound:
+		loops := [][]gcodePt{roundRectPolyline(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.RadiusMM, 6)}
+		fill, outline := e.resolveHatchFillAndOutline(loops, nil, params.fillMode, e.cfg.FillInsetMM)
+		return hatchSweepData{
+			fillLoops: fill,
+			outlines:  []hatchSweepOutline{{original: loops, outline: outline, emit: emitOutline}},
+		}, true
+	case PrimitiveCircle:
+		loops := [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)}
+		fill, outline := e.resolveHatchFillAndOutline(loops, nil, params.fillMode, e.cfg.FillInsetMM)
+		return hatchSweepData{
+			fillLoops: fill,
+			outlines:  []hatchSweepOutline{{original: loops, outline: outline, emit: emitOutline}},
+		}, true
+	case PrimitiveRing:
+		outer, inner := ringOutlines(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM)
+		loops := [][]gcodePt{outer, inner}
+		fill, outline := e.resolveHatchFillAndOutline(loops, nil, params.fillMode, e.cfg.FillInsetMM)
+		return hatchSweepData{
+			fillLoops: fill,
+			outlines:  []hatchSweepOutline{{original: loops, outline: outline, emit: emitOutline}},
+		}, true
+	case PrimitivePath:
+		loops := parseGCodePath(p.PathData, e.cfg.CurveSteps)
+		if e.shouldApplyFeatureShrink(p, params.fillMode) {
+			loops = shrinkFeatureLoops(loops, e.cfg.FeatureShrinkMM)
+		}
+		if len(loops) == 0 {
+			return hatchSweepData{}, false
+		}
+		outlineLoops := loops
+		if params.fillMode != FillModeNone && e.cfg.OutlineInsetMM > 0 {
+			if in := shrinkFeatureLoops(loops, e.cfg.OutlineInsetMM); len(in) > 0 {
+				outlineLoops = in
+			}
+		}
+		fillInsetMM := e.cfg.FillInsetMM
+		if params.fillMode != FillModeNone && e.cfg.OutlineInsetMM > fillInsetMM {
+			fillInsetMM = e.cfg.OutlineInsetMM
+		}
+		fill, outline := e.resolveHatchFillAndOutline(loops, outlineLoops, params.fillMode, fillInsetMM)
+		return hatchSweepData{
+			fillLoops: fill,
+			outlines:  []hatchSweepOutline{{original: loops, outline: outline, emit: emitOutline}},
+		}, true
+	case PrimitiveText:
+		loops, outlineLoops, fillLoops, ok := e.textLoopsForRender(p, params.fillMode)
+		if !ok {
+			return hatchSweepData{}, false
+		}
+		return hatchSweepData{
+			fillLoops: fillLoops,
+			outlines:  []hatchSweepOutline{{original: loops, outline: outlineLoops, emit: emitOutline}},
+		}, true
+	default:
+		return hatchSweepData{}, false
+	}
+}
+
+func (e *gcodeEmitter) resolveHatchFillAndOutline(loops, outlineLoops [][]gcodePt, fillMode FillMode, fillInsetMM float64) (fill [][]gcodePt, outline [][]gcodePt) {
+	hadExplicitOutline := len(outlineLoops) > 0
+	if len(outlineLoops) == 0 {
+		outlineLoops = loops
+	}
+	if fillMode != FillModeNone && e.cfg.OutlineInsetMM > 0 && !hadExplicitOutline {
+		if in := shrinkFeatureLoops(outlineLoops, e.cfg.OutlineInsetMM); len(in) > 0 {
+			outlineLoops = in
+		}
+	}
+	fillLoops := loops
+	if fillInsetMM > 0 && fillMode != FillModeNone {
+		if shrunk := shrinkFeatureLoops(loops, fillInsetMM); len(shrunk) > 0 {
+			fillLoops = shrunk
+		}
+	}
+	return fillLoops, outlineLoops
+}
+
+func (e *gcodeEmitter) renderTextHatchSweep(primitives []ScenePrimitive) []bool {
+	// Legacy alias retained for compatibility with older tests/call-sites.
+	return e.renderHatchSweep(primitives)
 }
 
 func (e *gcodeEmitter) layerPassPlan(primitives []ScenePrimitive) [][]int {
@@ -336,6 +560,10 @@ func (e *gcodeEmitter) planHorizontalTextHatchBatches(primitives []ScenePrimitiv
 }
 
 func (e *gcodeEmitter) renderHorizontalTextHatchBatch(primitives []ScenePrimitive, idxs []int) {
+	e.renderTextHatchBatch(primitives, idxs, true)
+}
+
+func (e *gcodeEmitter) renderTextHatchBatch(primitives []ScenePrimitive, idxs []int, centered bool) {
 	if e.err != nil || len(idxs) == 0 {
 		return
 	}
@@ -345,6 +573,7 @@ func (e *gcodeEmitter) renderHorizontalTextHatchBatch(primitives []ScenePrimitiv
 	type outlineItem struct {
 		original [][]gcodePt
 		outline  [][]gcodePt
+		emit     bool
 	}
 	outlines := make([]outlineItem, 0, len(idxs))
 	for _, idx := range idxs {
@@ -354,15 +583,37 @@ func (e *gcodeEmitter) renderHorizontalTextHatchBatch(primitives []ScenePrimitiv
 			continue
 		}
 		fillLoops = append(fillLoops, fill...)
-		outlines = append(outlines, outlineItem{original: orig, outline: outline})
+		outlines = append(outlines, outlineItem{
+			original: orig,
+			outline:  outline,
+			emit:     e.shouldEmitOutline(p, params.fillMode),
+		})
 	}
-	for _, seg := range hatchSegments(fillLoops, params.fillStepMM) {
-		e.tracePolyline(seg, params.cutFeed, params.powerS, params.laserOnCmd)
+	segs := hatchSegments(fillLoops, params.fillStepMM)
+	if centered {
+		segs = hatchSegmentsCenteredByComponent(fillLoops, params.fillStepMM)
+	}
+	continuousSweep := normalizeLaserPassOrder(e.cfg.LaserPassOrder) == laserPassOrderSweep && !centered
+	if continuousSweep && e.cfg.SweepHalfStepCorrection {
+		segs = hatchSegmentsSparseHalfStep(fillLoops, params.fillStepMM)
+	}
+	if continuousSweep {
+		e.traceHatchSweepSegments(segs, params.cutFeed, params.powerS, params.laserOnCmd)
 		if e.err != nil {
 			return
 		}
+	} else {
+		for _, seg := range segs {
+			e.traceHatchSegment(seg, params.cutFeed, params.powerS, params.laserOnCmd)
+			if e.err != nil {
+				return
+			}
+		}
 	}
 	for _, it := range outlines {
+		if !it.emit {
+			continue
+		}
 		for _, poly := range it.outline {
 			e.tracePolyline(poly, params.outlineFeed, params.outlinePowerS, params.laserOnCmd)
 			if e.err != nil {
@@ -376,6 +627,104 @@ func (e *gcodeEmitter) renderHorizontalTextHatchBatch(primitives []ScenePrimitiv
 					return
 				}
 			}
+		}
+	}
+}
+
+func splitHatchRows(segments [][]gcodePt) [][][]gcodePt {
+	const eps = 1e-6
+	rows := make([][][]gcodePt, 0, 64)
+	for _, seg := range segments {
+		if len(seg) != 2 {
+			continue
+		}
+		if len(rows) == 0 {
+			rows = append(rows, [][]gcodePt{seg})
+			continue
+		}
+		lastRow := rows[len(rows)-1]
+		lastSeg := lastRow[len(lastRow)-1]
+		if math.Abs(seg[0].y-lastSeg[0].y) <= eps && math.Abs(seg[1].y-lastSeg[1].y) <= eps {
+			rows[len(rows)-1] = append(rows[len(rows)-1], seg)
+			continue
+		}
+		rows = append(rows, [][]gcodePt{seg})
+	}
+	return rows
+}
+
+func (e *gcodeEmitter) traceHatchSweepSegments(segments [][]gcodePt, cutFeed float64, powerS int, laserOnCmd string) {
+	rows := splitHatchRows(segments)
+	for _, row := range rows {
+		if len(row) == 0 {
+			continue
+		}
+		start := row[0][0]
+		end := row[len(row)-1][1]
+		leadStart := start
+		leadEnd := end
+		if e.cfg.HatchOverscanMM > 0 {
+			if a, b, ok := hatchOverscanEndpoints([]gcodePt{start, end}, e.cfg.HatchOverscanMM, 0, e.sceneW, 0, e.sceneH); ok {
+				leadStart, leadEnd = a, b
+			}
+		}
+		e.laserOffSafe()
+		e.rapidTo(leadStart.x, leadStart.y)
+		if e.err != nil {
+			return
+		}
+		if strings.TrimSpace(laserOnCmd) == "" {
+			laserOnCmd = e.cfg.LaserOnCmd
+		}
+		fmt.Fprintf(&e.b, "G1 F%.1f\n", cutFeed)
+		fmt.Fprintf(&e.b, "%s S0\n", laserOnCmd)
+		e.laserOn = true
+		e.activeFeed = cutFeed
+		e.activePowerS = 0
+		e.activeLaserOnCmd = laserOnCmd
+
+		curr := leadStart
+		if !pointsEqual(curr, start) {
+			e.cutToWithPower(start.x, start.y, 0)
+			if e.err != nil {
+				return
+			}
+			curr = start
+		}
+		for i, seg := range row {
+			a, b := seg[0], seg[1]
+			if !pointsEqual(curr, a) {
+				e.cutToWithPower(a.x, a.y, 0)
+				if e.err != nil {
+					return
+				}
+				curr = a
+			}
+			e.cutToWithPower(b.x, b.y, powerS)
+			if e.err != nil {
+				return
+			}
+			curr = b
+			if i+1 < len(row) {
+				nextA := row[i+1][0]
+				if !pointsEqual(curr, nextA) {
+					e.cutToWithPower(nextA.x, nextA.y, 0)
+					if e.err != nil {
+						return
+					}
+					curr = nextA
+				}
+			}
+		}
+		if !pointsEqual(curr, leadEnd) {
+			e.cutToWithPower(leadEnd.x, leadEnd.y, 0)
+			if e.err != nil {
+				return
+			}
+		}
+		e.laserOffSafe()
+		if e.err != nil {
+			return
 		}
 	}
 }
@@ -415,9 +764,9 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 			{x: p.XMM, y: p.YMM + p.HeightMM},
 			{x: p.XMM, y: p.YMM},
 		}
-		e.fillOrTrace(fillMode, [][]gcodePt{loop}, nil, e.cfg.FillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, !p.NoOutline)
+		e.fillOrTrace(fillMode, [][]gcodePt{loop}, nil, e.cfg.FillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, e.shouldEmitOutline(p, fillMode), false)
 	case PrimitiveRound:
-		e.fillOrTrace(fillMode, [][]gcodePt{roundRectPolyline(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.RadiusMM, 6)}, nil, e.cfg.FillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, !p.NoOutline)
+		e.fillOrTrace(fillMode, [][]gcodePt{roundRectPolyline(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.RadiusMM, 6)}, nil, e.cfg.FillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, e.shouldEmitOutline(p, fillMode), false)
 	case PrimitiveCircle:
 		if fillMode == FillModeSpiral {
 			spiralStep := e.cfg.SpiralStepMM
@@ -425,7 +774,7 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 				spiralStep = p.FillStepMM
 			}
 			e.tracePolyline(circleSpiralPolyline(p.CXMM, p.CYMM, p.RadiusMM, spiralStep), cutFeed, powerS, laserOnCmd)
-			if !p.NoOutline {
+			if e.shouldEmitOutline(p, fillMode) {
 				baseOutlines := [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)}
 				outlineLoops := baseOutlines
 				if e.cfg.OutlineInsetMM > 0 {
@@ -443,15 +792,17 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 				}
 			}
 		} else {
-			e.fillOrTrace(fillMode, [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)}, nil, e.cfg.FillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, !p.NoOutline)
+			e.fillOrTrace(fillMode, [][]gcodePt{circlePolyline(p.CXMM, p.CYMM, p.RadiusMM, 40)}, nil, e.cfg.FillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, e.shouldEmitOutline(p, fillMode), false)
 		}
 	case PrimitiveRing:
 		outer, inner := ringOutlines(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM)
 		if fillMode == FillModeOffset {
-			for _, loop := range ringOffsetLoops(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM, fillStepMM) {
+			for i, loop := range ringOffsetLoops(p.XMM, p.YMM, p.WidthMM, p.HeightMM, p.ThicknessMM, p.RadiusMM, fillStepMM) {
+				// Avoid stacking all contour seams at the same finder corner.
+				loop = rotateClosedLoopStart(loop, i*7)
 				e.tracePolyline(loop, cutFeed, powerS, laserOnCmd)
 			}
-			if !p.NoOutline {
+			if e.shouldEmitOutline(p, fillMode) {
 				baseOutlines := [][]gcodePt{outer, inner}
 				outlineLoops := baseOutlines
 				if e.cfg.OutlineInsetMM > 0 {
@@ -469,7 +820,7 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 				}
 			}
 		} else {
-			e.fillOrTrace(fillMode, [][]gcodePt{outer, inner}, nil, e.cfg.FillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, !p.NoOutline)
+			e.fillOrTrace(fillMode, [][]gcodePt{outer, inner}, nil, e.cfg.FillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, e.shouldEmitOutline(p, fillMode), false)
 		}
 	case PrimitivePath:
 		loops := parseGCodePath(p.PathData, e.cfg.CurveSteps)
@@ -487,12 +838,12 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 			fillInsetMM = e.cfg.OutlineInsetMM
 		}
 		if fillMode == FillModeOffset && strings.EqualFold(p.FillRule, "evenodd") {
-			e.fillOrTrace(FillModeHatch, loops, outlineLoops, fillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, !p.NoOutline)
+			e.fillOrTrace(FillModeHatch, loops, outlineLoops, fillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, e.shouldEmitOutline(p, fillMode), false)
 		} else {
-			e.fillOrTrace(fillMode, loops, outlineLoops, fillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, !p.NoOutline)
+			e.fillOrTrace(fillMode, loops, outlineLoops, fillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, e.shouldEmitOutline(p, fillMode), false)
 		}
 	case PrimitiveText:
-		loops, outlineLoops, _, ok := e.textLoopsForRender(p, fillMode)
+		originalLoops, outlineLoops, fillLoops, ok := e.textLoopsForRender(p, fillMode)
 		if !ok {
 			return
 		}
@@ -500,12 +851,26 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 		if fillMode != FillModeNone && e.cfg.OutlineInsetMM > fillInsetMM {
 			fillInsetMM = e.cfg.OutlineInsetMM
 		}
-		e.fillOrTrace(fillMode, loops, outlineLoops, fillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, !p.NoOutline)
+		emitOutline := e.shouldEmitOutline(p, fillMode)
+		if fillMode == FillModeOffset {
+			e.renderTextContourByComponent(originalLoops, outlineLoops, fillLoops, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, emitOutline)
+			return
+		}
+		e.fillOrTrace(fillMode, originalLoops, outlineLoops, fillInsetMM, fillStepMM, cutFeed, powerS, outlineFeed, outlinePowerS, laserOnCmd, emitOutline, true)
 	}
 }
 
 func (e *gcodeEmitter) primitiveLaserParams(p ScenePrimitive) primitiveLaserParams {
 	fillMode := effectiveFillMode(p)
+	if fillMode != FillModeNone {
+		// Default production strategy: render all filled primitives via scanline raster.
+		// Keep text contour as an explicit opt-in for diagnostics/experiments.
+		if p.Kind == PrimitiveText && e.cfg.TextFillMode == laserTextFillContour {
+			fillMode = FillModeOffset
+		} else {
+			fillMode = FillModeHatch
+		}
+	}
 	fillStepMM := effectiveFillStepMM(e.cfg, p)
 	cutFeed := effectiveCutFeed(e.cfg, p)
 	powerS := effectivePowerS(e.cfg, p)
@@ -616,7 +981,7 @@ func almostEq(a, b float64) bool {
 	return math.Abs(a-b) <= 1e-6
 }
 
-func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, outlineLoops [][]gcodePt, fillInsetMM float64, fillStepMM float64, cutFeed float64, powerS int, outlineFeed float64, outlinePowerS int, laserOnCmd string, emitOutline bool) {
+func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, outlineLoops [][]gcodePt, fillInsetMM float64, fillStepMM float64, cutFeed float64, powerS int, outlineFeed float64, outlinePowerS int, laserOnCmd string, emitOutline bool, localHatchPhase bool) {
 	hadExplicitOutline := len(outlineLoops) > 0
 	fillLoops := loops
 	if len(outlineLoops) == 0 {
@@ -633,13 +998,23 @@ func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, outline
 		}
 	}
 	if fillMode == FillModeHatch {
-		for _, seg := range hatchSegments(fillLoops, fillStepMM) {
-			e.tracePolyline(seg, cutFeed, powerS, laserOnCmd)
+		segments := hatchSegments(fillLoops, fillStepMM)
+		if localHatchPhase {
+			segments = hatchSegmentsCenteredByComponent(fillLoops, fillStepMM)
+		}
+		if e.cfg.SweepHalfStepCorrection && !localHatchPhase {
+			segments = hatchSegmentsSparseHalfStep(fillLoops, fillStepMM)
+		}
+		for _, seg := range segments {
+			e.traceHatchSegment(seg, cutFeed, powerS, laserOnCmd)
 		}
 	}
 	if fillMode == FillModeOffset {
 		for _, poly := range fillLoops {
-			for _, loop := range offsetInwardLoops(poly, fillStepMM) {
+			loops := offsetInwardLoops(poly, fillStepMM)
+			for i, loop := range loops {
+				// Avoid visible "seam lines" by not starting every inset loop at the same vertex.
+				loop = rotateClosedLoopStart(loop, i*7)
 				e.tracePolyline(loop, cutFeed, powerS, laserOnCmd)
 			}
 		}
@@ -656,6 +1031,173 @@ func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, outline
 	}
 }
 
+func (e *gcodeEmitter) renderTextContourByComponent(originalLoops, outlineLoops, fillLoops [][]gcodePt, fillStepMM float64, cutFeed float64, powerS int, outlineFeed float64, outlinePowerS int, laserOnCmd string, emitOutline bool) {
+	outlineComps := loopContainmentComponents(outlineLoops)
+	fillComps := loopContainmentComponents(fillLoops)
+	origComps := loopContainmentComponents(originalLoops)
+
+	n := len(fillComps)
+	if len(outlineComps) > n {
+		n = len(outlineComps)
+	}
+	if n == 0 {
+		return
+	}
+
+	for i := 0; i < n; i++ {
+		if emitOutline && i < len(outlineComps) {
+			for _, poly := range outlineComps[i] {
+				e.tracePolyline(poly, outlineFeed, outlinePowerS, laserOnCmd)
+				if e.err != nil {
+					return
+				}
+			}
+			if e.cfg.DualOutlinePass && e.cfg.OutlineInsetMM > 0 && i < len(origComps) && !loopsApproxEqual(outlineComps[i], origComps[i]) {
+				for _, poly := range origComps[i] {
+					e.tracePolyline(poly, outlineFeed, outlinePowerS, laserOnCmd)
+					if e.err != nil {
+						return
+					}
+				}
+			}
+		}
+		if i < len(fillComps) {
+			e.traceContourComponent(fillComps[i], fillStepMM, cutFeed, powerS, laserOnCmd)
+			if e.err != nil {
+				return
+			}
+		}
+	}
+}
+
+func (e *gcodeEmitter) traceContourComponent(component [][]gcodePt, fillStepMM float64, cutFeed float64, powerS int, laserOnCmd string) {
+	if len(component) == 0 {
+		return
+	}
+	toolpaths := make([][]gcodePt, 0, 32)
+	for _, poly := range component {
+		inset := offsetInwardLoops(poly, fillStepMM)
+		if len(inset) == 0 {
+			toolpaths = append(toolpaths, poly)
+			continue
+		}
+		for i, loop := range inset {
+			// Avoid visible seam stacking by varying start vertex.
+			toolpaths = append(toolpaths, rotateClosedLoopStart(loop, i*7))
+		}
+	}
+	if len(toolpaths) == 0 {
+		return
+	}
+	for i, loop := range toolpaths {
+		cmd := laserOnCmd
+		if i == len(toolpaths)-1 {
+			// Final inner contour uses constant power for cleaner core closure.
+			cmd = "M3"
+		}
+		e.tracePolyline(loop, cutFeed, powerS, cmd)
+		if e.err != nil {
+			return
+		}
+	}
+}
+
+func (e *gcodeEmitter) traceHatchSegment(seg []gcodePt, cutFeed float64, powerS int, laserOnCmd string) {
+	if e.err != nil {
+		return
+	}
+	if e.cfg.HatchOverscanMM <= 0 || len(seg) != 2 {
+		e.tracePolyline(seg, cutFeed, powerS, laserOnCmd)
+		return
+	}
+	leadStart, leadEnd, ok := hatchOverscanEndpoints(seg, e.cfg.HatchOverscanMM, 0, e.sceneW, 0, e.sceneH)
+	if !ok {
+		e.tracePolyline(seg, cutFeed, powerS, laserOnCmd)
+		return
+	}
+	e.laserOffSafe()
+	e.rapidTo(leadStart.x, leadStart.y)
+	if e.err != nil {
+		return
+	}
+	// Keep acceleration/deceleration outside the burned span.
+	fmt.Fprintf(&e.b, "G1 F%.1f\n", cutFeed)
+	e.cutTo(seg[0].x, seg[0].y)
+	e.laserOnStart(cutFeed, powerS, laserOnCmd)
+	e.cutTo(seg[1].x, seg[1].y)
+	e.laserOffSafe()
+	e.cutTo(leadEnd.x, leadEnd.y)
+}
+
+func hatchOverscanEndpoints(seg []gcodePt, overscan, minX, maxX, minY, maxY float64) (gcodePt, gcodePt, bool) {
+	if len(seg) != 2 || overscan <= 0 {
+		return gcodePt{}, gcodePt{}, false
+	}
+	a := seg[0]
+	b := seg[1]
+	dx := b.x - a.x
+	dy := b.y - a.y
+	l := math.Hypot(dx, dy)
+	if l <= 1e-9 {
+		return gcodePt{}, gcodePt{}, false
+	}
+	ux := dx / l
+	uy := dy / l
+
+	backMax := maxRayT(a.x, a.y, -ux, -uy, minX, maxX, minY, maxY)
+	fwdMax := maxRayT(b.x, b.y, ux, uy, minX, maxX, minY, maxY)
+	back := overscan
+	if back > backMax {
+		back = backMax
+	}
+	fwd := overscan
+	if fwd > fwdMax {
+		fwd = fwdMax
+	}
+	if back < 0 {
+		back = 0
+	}
+	if fwd < 0 {
+		fwd = 0
+	}
+	return gcodePt{x: a.x - ux*back, y: a.y - uy*back}, gcodePt{x: b.x + ux*fwd, y: b.y + uy*fwd}, true
+}
+
+func maxRayT(x, y, dx, dy, minX, maxX, minY, maxY float64) float64 {
+	const inf = 1e18
+	tMax := inf
+	if math.Abs(dx) > 1e-12 {
+		if dx > 0 {
+			t := (maxX - x) / dx
+			if t < tMax {
+				tMax = t
+			}
+		} else {
+			t := (minX - x) / dx
+			if t < tMax {
+				tMax = t
+			}
+		}
+	}
+	if math.Abs(dy) > 1e-12 {
+		if dy > 0 {
+			t := (maxY - y) / dy
+			if t < tMax {
+				tMax = t
+			}
+		} else {
+			t := (minY - y) / dy
+			if t < tMax {
+				tMax = t
+			}
+		}
+	}
+	if tMax == inf {
+		return 0
+	}
+	return tMax
+}
+
 func (e *gcodeEmitter) shouldApplyFeatureShrink(p ScenePrimitive, fillMode FillMode) bool {
 	if e.cfg.FeatureShrinkMM <= 0 {
 		return false
@@ -665,6 +1207,16 @@ func (e *gcodeEmitter) shouldApplyFeatureShrink(p ScenePrimitive, fillMode FillM
 	}
 	// Keep calibration labels/readouts exact and legible even when global feature shrink is set.
 	if e.isCalibration && p.Kind == PrimitiveText && fillMode == FillModeNone {
+		return false
+	}
+	return true
+}
+
+func (e *gcodeEmitter) shouldEmitOutline(p ScenePrimitive, fillMode FillMode) bool {
+	if p.NoOutline {
+		return false
+	}
+	if e.cfg.NoOutlinePass && fillMode != FillModeNone {
 		return false
 	}
 	return true
@@ -706,6 +1258,20 @@ func (e *gcodeEmitter) cutTo(x, y float64) {
 	}
 	fmt.Fprintf(&e.b, "G1 X%.3f Y%.3f\n", x, y)
 	e.x, e.y = x, y
+}
+
+func (e *gcodeEmitter) cutToWithPower(x, y float64, powerS int) {
+	x += e.layoutOffsetX
+	y += e.layoutOffsetY
+	x, y = e.mapXY(x, y)
+	if !e.validXY(x, y) {
+		return
+	}
+	fmt.Fprintf(&e.b, "G1 X%.3f Y%.3f S%d\n", x, y, powerS)
+	e.x, e.y = x, y
+	if e.laserOn {
+		e.activePowerS = powerS
+	}
 }
 
 func (e *gcodeEmitter) laserOnStart(feed float64, powerS int, laserOnCmd string) {
@@ -871,9 +1437,6 @@ func effectiveFillMode(p ScenePrimitive) FillMode {
 	if p.FillColor == "" || p.FillColor == "none" {
 		return FillModeNone
 	}
-	if p.Kind == PrimitiveCircle {
-		return FillModeSpiral
-	}
 	return FillModeHatch
 }
 
@@ -954,6 +1517,33 @@ func maxInsetDistance(loop []gcodePt) float64 {
 		return 0
 	}
 	return math.Min(w, h) / 2
+}
+
+func rotateClosedLoopStart(loop []gcodePt, shift int) []gcodePt {
+	if len(loop) < 4 {
+		return loop
+	}
+	n := len(loop) - 1
+	if n < 3 {
+		return loop
+	}
+	if !pointsEqual(loop[0], loop[n]) {
+		return loop
+	}
+	if shift < 0 {
+		shift = -shift
+	}
+	if n > 0 {
+		shift = shift % n
+	}
+	if shift == 0 {
+		return loop
+	}
+	out := make([]gcodePt, 0, len(loop))
+	out = append(out, loop[shift:n]...)
+	out = append(out, loop[:shift]...)
+	out = append(out, out[0])
+	return out
 }
 
 func insetLoop(loop []gcodePt, d float64) []gcodePt {
@@ -1041,7 +1631,7 @@ func polygonArea(loop []gcodePt) float64 {
 	return a / 2
 }
 
-func hatchSegments(loops [][]gcodePt, step float64) [][]gcodePt {
+func hatchSegmentsCenteredByComponent(loops [][]gcodePt, step float64) [][]gcodePt {
 	if step <= 0 {
 		step = 0.12
 	}
@@ -1049,16 +1639,22 @@ func hatchSegments(loops [][]gcodePt, step float64) [][]gcodePt {
 	if len(loops) == 0 {
 		return nil
 	}
-	minX, maxX := loops[0][0].x, loops[0][0].x
+	components := loopContainmentComponents(loops)
+	out := make([][]gcodePt, 0, len(loops)*4)
+	for _, comp := range components {
+		out = append(out, hatchSegmentsCentered(comp, step)...)
+	}
+	return out
+}
+
+func hatchSegmentsCentered(loops [][]gcodePt, step float64) [][]gcodePt {
+	loops = normalizeClosedLoops(loops)
+	if len(loops) == 0 {
+		return nil
+	}
 	minY, maxY := loops[0][0].y, loops[0][0].y
 	for _, loop := range loops {
 		for _, p := range loop {
-			if p.x < minX {
-				minX = p.x
-			}
-			if p.x > maxX {
-				maxX = p.x
-			}
 			if p.y < minY {
 				minY = p.y
 			}
@@ -1067,21 +1663,247 @@ func hatchSegments(loops [][]gcodePt, step float64) [][]gcodePt {
 			}
 		}
 	}
+	return hatchSegmentsHorizontalCentered(loops, minY, maxY, step)
+}
 
-	// Auto-orient hatch: wide shapes scan by rows, tall shapes scan by columns.
-	// Use a tolerance so near-square features don't flip orientation due to float jitter.
-	if (maxY - minY) > (maxX-minX)+1e-6 {
-		return hatchSegmentsVertical(loops, minX, maxX, step)
+func centeredScanStartAndCount(minV, maxV, step float64) (float64, int) {
+	const eps = 1e-9
+	lo := minV + eps
+	hi := maxV - eps
+	if hi < lo || step <= 0 {
+		return 0, 0
+	}
+	span := hi - lo
+	count := int(math.Floor(span/step)) + 1
+	if count <= 0 {
+		return 0, 0
+	}
+	used := float64(count-1) * step
+	remainder := span - used
+	if remainder < 0 {
+		remainder = 0
+	}
+	return lo + remainder/2, count
+}
+
+func hatchSegmentsHorizontalCentered(loops [][]gcodePt, minY, maxY, step float64) [][]gcodePt {
+	const eps = 1e-9
+	startY, count := centeredScanStartAndCount(minY, maxY, step)
+	out := make([][]gcodePt, 0, count)
+	for line := 0; line < count; line++ {
+		y := startY + float64(line)*step
+		xs := scanlineIntersections(loops, y)
+		if len(xs) < 2 {
+			continue
+		}
+		if line%2 == 0 {
+			for i := 0; i+1 < len(xs); i += 2 {
+				x0, x1 := xs[i], xs[i+1]
+				if x1-x0 <= eps {
+					continue
+				}
+				out = append(out, []gcodePt{{x: x0, y: y}, {x: x1, y: y}})
+			}
+		} else {
+			for i := len(xs) - 2; i >= 0; i -= 2 {
+				x0, x1 := xs[i], xs[i+1]
+				if x1-x0 <= eps {
+					continue
+				}
+				out = append(out, []gcodePt{{x: x1, y: y}, {x: x0, y: y}})
+			}
+		}
+	}
+	return out
+}
+
+func hatchSegmentsVerticalCentered(loops [][]gcodePt, minX, maxX, step float64) [][]gcodePt {
+	const eps = 1e-9
+	startX, count := centeredScanStartAndCount(minX, maxX, step)
+	out := make([][]gcodePt, 0, count)
+	for col := 0; col < count; col++ {
+		x := startX + float64(col)*step
+		ys := scanlineIntersectionsVertical(loops, x)
+		if len(ys) < 2 {
+			continue
+		}
+		if col%2 == 0 {
+			for i := 0; i+1 < len(ys); i += 2 {
+				y0, y1 := ys[i], ys[i+1]
+				if y1-y0 <= eps {
+					continue
+				}
+				out = append(out, []gcodePt{{x: x, y: y0}, {x: x, y: y1}})
+			}
+		} else {
+			for i := len(ys) - 2; i >= 0; i -= 2 {
+				y0, y1 := ys[i], ys[i+1]
+				if y1-y0 <= eps {
+					continue
+				}
+				out = append(out, []gcodePt{{x: x, y: y1}, {x: x, y: y0}})
+			}
+		}
+	}
+	return out
+}
+
+func loopContainmentComponents(loops [][]gcodePt) [][][]gcodePt {
+	loops = normalizeClosedLoops(loops)
+	if len(loops) == 0 {
+		return nil
+	}
+	const eps = 1e-9
+	n := len(loops)
+	absAreas := make([]float64, n)
+	parent := make([]int, n)
+	for i := range loops {
+		absAreas[i] = math.Abs(polygonArea(loops[i]))
+		parent[i] = -1
+	}
+	for i := range loops {
+		seed := loops[i][0]
+		bestParent := -1
+		bestArea := math.Inf(1)
+		for j := range loops {
+			if i == j {
+				continue
+			}
+			if absAreas[j] <= absAreas[i]+eps {
+				continue
+			}
+			if !pointInPolygon(seed, loops[j]) {
+				continue
+			}
+			if absAreas[j] < bestArea {
+				bestArea = absAreas[j]
+				bestParent = j
+			}
+		}
+		parent[i] = bestParent
 	}
 
+	children := make([][]int, n)
+	roots := make([]int, 0, n)
+	for i, p := range parent {
+		if p < 0 {
+			roots = append(roots, i)
+			continue
+		}
+		children[p] = append(children[p], i)
+	}
+
+	var collect func(int, *[][]gcodePt)
+	collect = func(idx int, acc *[][]gcodePt) {
+		*acc = append(*acc, loops[idx])
+		for _, child := range children[idx] {
+			collect(child, acc)
+		}
+	}
+
+	components := make([][][]gcodePt, 0, len(roots))
+	for _, root := range roots {
+		component := make([][]gcodePt, 0, 1+len(children[root]))
+		collect(root, &component)
+		components = append(components, component)
+	}
+	return components
+}
+
+func hatchSegments(loops [][]gcodePt, step float64) [][]gcodePt {
+	if step <= 0 {
+		step = 0.12
+	}
+	loops = normalizeClosedLoops(loops)
+	if len(loops) == 0 {
+		return nil
+	}
+	minY, maxY := loops[0][0].y, loops[0][0].y
+	for _, loop := range loops {
+		for _, p := range loop {
+			if p.y < minY {
+				minY = p.y
+			}
+			if p.y > maxY {
+				maxY = p.y
+			}
+		}
+	}
 	return hatchSegmentsHorizontal(loops, minY, maxY, step)
+}
+
+func hatchSegmentsSparseHalfStep(loops [][]gcodePt, step float64) [][]gcodePt {
+	if step <= 0 {
+		step = 0.12
+	}
+	loops = normalizeClosedLoops(loops)
+	if len(loops) == 0 {
+		return nil
+	}
+	minY, maxY := loops[0][0].y, loops[0][0].y
+	for _, loop := range loops {
+		for _, p := range loop {
+			if p.y < minY {
+				minY = p.y
+			}
+			if p.y > maxY {
+				maxY = p.y
+			}
+		}
+	}
+	return hatchSegmentsHorizontalSparseHalfStep(loops, minY, maxY, step)
 }
 
 func hatchSegmentsHorizontal(loops [][]gcodePt, minY, maxY, step float64) [][]gcodePt {
 	const eps = 1e-9
-	out := make([][]gcodePt, 0, int((maxY-minY)/step)+1)
+	rows := regularScanRows(minY, maxY, step, eps)
+	return hatchSegmentsForRows(loops, rows, eps)
+}
+
+func hatchSegmentsHorizontalSparseHalfStep(loops [][]gcodePt, minY, maxY, step float64) [][]gcodePt {
+	const eps = 1e-9
+	baseRows := regularScanRows(minY, maxY, step, eps)
+	rows := append([]float64(nil), baseRows...)
+	if len(baseRows) == 0 {
+		return nil
+	}
+	const dedupeEps = 1e-6
+	minExtraGap := step * 0.34
+	for _, loop := range loops {
+		lmin, lmax := loopYBounds(loop)
+		lo := lmin + step*0.5
+		hi := lmax - step*0.5
+		y, ok := pickSparseCorrectionRow(lo, hi, minY, maxY, baseRows, minExtraGap, eps)
+		if !ok {
+			continue
+		}
+		if nearestRowDistance(y, rows) <= step*0.2 {
+			continue
+		}
+		xs := scanlineIntersections(loops, y)
+		if !hasScanSpan(xs, eps) {
+			continue
+		}
+		rows = append(rows, y)
+	}
+	sort.Float64s(rows)
+	rows = dedupeRows(rows, dedupeEps)
+	return hatchSegmentsForRows(loops, rows, eps)
+}
+
+func regularScanRows(minY, maxY, step, eps float64) []float64 {
+	rows := make([]float64, 0, int((maxY-minY)/step)+1)
+	startY := edgeBiasedScanStart(minY, maxY, step, eps)
+	for y := startY; y <= maxY-eps; y += step {
+		rows = append(rows, y)
+	}
+	return rows
+}
+
+func hatchSegmentsForRows(loops [][]gcodePt, rows []float64, eps float64) [][]gcodePt {
+	out := make([][]gcodePt, 0, len(rows)*2)
 	line := 0
-	for y := minY + eps; y <= maxY-eps; y += step {
+	for _, y := range rows {
 		xs := scanlineIntersections(loops, y)
 		if len(xs) < 2 {
 			line++
@@ -1109,11 +1931,89 @@ func hatchSegmentsHorizontal(loops [][]gcodePt, minY, maxY, step float64) [][]gc
 	return out
 }
 
+func hasScanSpan(xs []float64, eps float64) bool {
+	for i := 0; i+1 < len(xs); i += 2 {
+		if xs[i+1]-xs[i] > eps {
+			return true
+		}
+	}
+	return false
+}
+
+func loopYBounds(loop []gcodePt) (float64, float64) {
+	if len(loop) == 0 {
+		return 0, 0
+	}
+	minY, maxY := loop[0].y, loop[0].y
+	for _, p := range loop {
+		if p.y < minY {
+			minY = p.y
+		}
+		if p.y > maxY {
+			maxY = p.y
+		}
+	}
+	return minY, maxY
+}
+
+func pickSparseCorrectionRow(lo, hi, minY, maxY float64, baseRows []float64, minGap, eps float64) (float64, bool) {
+	cands := []float64{lo, hi}
+	bestY := 0.0
+	bestD := -1.0
+	for _, y := range cands {
+		if y <= minY+eps || y >= maxY-eps {
+			continue
+		}
+		d := nearestRowDistance(y, baseRows)
+		if d <= minGap {
+			continue
+		}
+		if d > bestD {
+			bestY = y
+			bestD = d
+		}
+	}
+	if bestD < 0 {
+		return 0, false
+	}
+	return bestY, true
+}
+
+func nearestRowDistance(y float64, rows []float64) float64 {
+	if len(rows) == 0 {
+		return math.Inf(1)
+	}
+	best := math.Abs(y - rows[0])
+	for i := 1; i < len(rows); i++ {
+		d := math.Abs(y - rows[i])
+		if d < best {
+			best = d
+		}
+	}
+	return best
+}
+
+func dedupeRows(rows []float64, eps float64) []float64 {
+	if len(rows) <= 1 {
+		return rows
+	}
+	out := make([]float64, 0, len(rows))
+	out = append(out, rows[0])
+	for i := 1; i < len(rows); i++ {
+		if math.Abs(rows[i]-out[len(out)-1]) <= eps {
+			continue
+		}
+		out = append(out, rows[i])
+	}
+	return out
+}
+
 func hatchSegmentsVertical(loops [][]gcodePt, minX, maxX, step float64) [][]gcodePt {
 	const eps = 1e-9
 	out := make([][]gcodePt, 0, int((maxX-minX)/step)+1)
 	col := 0
-	for x := minX + eps; x <= maxX-eps; x += step {
+	startX := edgeBiasedScanStart(minX, maxX, step, eps)
+	for x := startX; x <= maxX-eps; x += step {
 		ys := scanlineIntersectionsVertical(loops, x)
 		if len(ys) < 2 {
 			col++
@@ -1139,6 +2039,34 @@ func hatchSegmentsVertical(loops [][]gcodePt, minX, maxX, step float64) [][]gcod
 		col++
 	}
 	return out
+}
+
+func edgeBiasedScanStart(minV, maxV, step, eps float64) float64 {
+	lo := minV + eps
+	hi := maxV - eps
+	if hi < lo {
+		return lo
+	}
+	if step <= 0 {
+		return lo
+	}
+	span := hi - lo
+	n := int(math.Floor(span/step)) + 1
+	if n <= 1 {
+		return lo
+	}
+	used := float64(n-1) * step
+	rem := span - used
+	if rem <= eps {
+		return lo
+	}
+	// Keep step unchanged and place the residual on one edge only:
+	// small residual -> keep it at the tail (start at lower edge),
+	// large residual -> shift first line inward so tail closes near the upper edge.
+	if rem > step*0.5 {
+		return lo + rem
+	}
+	return lo
 }
 
 func normalizeClosedLoops(loops [][]gcodePt) [][]gcodePt {
@@ -1179,6 +2107,51 @@ func loopsApproxEqual(a, b [][]gcodePt) bool {
 		}
 	}
 	return true
+}
+
+func pointInPolygon(pt gcodePt, loop []gcodePt) bool {
+	const eps = 1e-9
+	n := len(loop)
+	if n < 3 {
+		return false
+	}
+	if pointsEqual(loop[0], loop[n-1]) {
+		n--
+	}
+	if n < 3 {
+		return false
+	}
+	inside := false
+	j := n - 1
+	for i := 0; i < n; i++ {
+		a := loop[i]
+		b := loop[j]
+		if pointOnSegment(pt, a, b) {
+			return true
+		}
+		intersects := false
+		if (a.y > pt.y) != (b.y > pt.y) {
+			intersects = pt.x < (b.x-a.x)*(pt.y-a.y)/(b.y-a.y)+a.x
+		}
+		if intersects {
+			inside = !inside
+		}
+		j = i
+	}
+	return inside
+}
+
+func pointOnSegment(p, a, b gcodePt) bool {
+	const eps = 1e-9
+	cross := (p.y-a.y)*(b.x-a.x) - (p.x-a.x)*(b.y-a.y)
+	if math.Abs(cross) > eps {
+		return false
+	}
+	minX := math.Min(a.x, b.x) - eps
+	maxX := math.Max(a.x, b.x) + eps
+	minY := math.Min(a.y, b.y) - eps
+	maxY := math.Max(a.y, b.y) + eps
+	return p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY
 }
 
 func scanlineIntersections(loops [][]gcodePt, y float64) []float64 {

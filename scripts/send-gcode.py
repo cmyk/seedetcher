@@ -95,12 +95,17 @@ def wait_for_ready(fd: int, timeout_s: float) -> None:
             return
 
 
-def send_and_wait_ok(fd: int, cmd: str, timeout_s: float) -> None:
+def send_and_wait_ok(fd: int, cmd: str, timeout_s: float, watchdog: LaserWatchdog | None = None) -> None:
     os.write(fd, (cmd + "\n").encode("ascii", errors="ignore"))
+    deadline = time.time() + timeout_s
     while True:
-        line = read_line(fd, timeout_s)
+        if watchdog is not None:
+            watchdog.check(cmd)
+        line = read_line(fd, 0.1)
         if line is None:
-            raise TimeoutError(f"timeout waiting for response to: {cmd}")
+            if time.time() >= deadline:
+                raise TimeoutError(f"timeout waiting for response to: {cmd}")
+            continue
         if not line:
             continue
         print(f"<< {line}")
@@ -109,6 +114,78 @@ def send_and_wait_ok(fd: int, cmd: str, timeout_s: float) -> None:
             return
         if low.startswith("error") or low.startswith("alarm"):
             raise RuntimeError(f"controller rejected line '{cmd}': {line}")
+
+
+class LaserWatchdog:
+    """Tracks predicted laser-on state from outgoing G-code and enforces a max on-duration."""
+
+    def __init__(self, max_on_seconds: float) -> None:
+        self.max_on_seconds = max_on_seconds
+        self.mode: str | None = None
+        self.power = 0.0
+        self.motion_mode: int | None = None
+        self.on_since: float | None = None
+
+    def _update_on_timer(self, now: float) -> None:
+        laser_on = self._predicted_laser_on
+        if laser_on:
+            if self.on_since is None:
+                self.on_since = now
+        else:
+            self.on_since = None
+
+    @property
+    def _predicted_laser_on(self) -> bool:
+        return getattr(self, "_laser_on_now", False)
+
+    def pre_send(self, cmd: str) -> None:
+        if self.max_on_seconds <= 0:
+            return
+        up = cmd.upper()
+        words = WORD_RE.findall(up)
+        m_vals = [int(float(v)) for k, v in words if k.upper() == "M"]
+        s_vals = [float(v) for k, v in words if k.upper() == "S"]
+        g_vals = [int(float(v)) for k, v in words if k.upper() == "G"]
+        has_axis_word = any(k.upper() in ("X", "Y", "Z") for k, _ in words)
+
+        # Track modal motion mode so axis-only lines can be interpreted.
+        for g in g_vals:
+            if g in (0, 1, 2, 3):
+                self.motion_mode = g
+
+        if 5 in m_vals:
+            self.mode = None
+            self.power = 0.0
+        else:
+            if 3 in m_vals:
+                self.mode = "M3"
+            elif 4 in m_vals:
+                self.mode = "M4"
+            if s_vals:
+                self.power = s_vals[-1]
+
+        # Determine whether this outgoing command can keep the beam actively on.
+        laser_on_now = False
+        if self.mode == "M3":
+            # Constant-power mode can be on while stationary.
+            laser_on_now = self.power > 0.0
+        elif self.mode == "M4":
+            # Dynamic mode should only be considered "on" during burn motion.
+            burn_motion = any(g in (1, 2, 3) for g in g_vals)
+            if not burn_motion and has_axis_word and self.motion_mode in (1, 2, 3):
+                burn_motion = True
+            laser_on_now = self.power > 0.0 and burn_motion
+        self._laser_on_now = laser_on_now
+        self._update_on_timer(time.monotonic())
+
+    def check(self, cmd: str) -> None:
+        if self.max_on_seconds <= 0 or self.on_since is None:
+            return
+        elapsed = time.monotonic() - self.on_since
+        if elapsed > self.max_on_seconds:
+            raise RuntimeError(
+                f"laser watchdog tripped after {elapsed:.2f}s (> {self.max_on_seconds:.2f}s) while waiting for: {cmd}"
+            )
 
 
 def best_effort_safe_stop(fd: int, line_timeout_s: float) -> None:
@@ -387,6 +464,12 @@ def main() -> int:
     ap.add_argument("--preview-margin", type=float, default=0.0, help="extra margin in mm around bounds for --preview-bounds")
     ap.add_argument("--offset", default="0,0", help="optional XY offset in mm applied at send time, format 'x,y' (for example '0,25')")
     ap.add_argument("--bed-mm", type=float, default=150.0, help="workspace max X/Y in mm for preflight bounds checks (set <=0 to disable)")
+    ap.add_argument(
+        "--max-laser-on-seconds",
+        type=float,
+        default=3.0,
+        help="safety watchdog: max continuous predicted laser-on time before forced stop (set <=0 to disable, default 3.0)",
+    )
     args = ap.parse_args()
 
     if not args.port:
@@ -478,9 +561,11 @@ def main() -> int:
 
         total = len(lines)
         print(f"Sending {total} lines...")
+        watchdog = LaserWatchdog(args.max_laser_on_seconds)
         for i, cmd in enumerate(lines, start=1):
+            watchdog.pre_send(cmd)
             try:
-                send_and_wait_ok(fd, cmd, args.line_timeout)
+                send_and_wait_ok(fd, cmd, args.line_timeout, watchdog=watchdog)
             except Exception as e:
                 is_preview_final_m5 = args.preview_bounds and i == total and cmd.strip().upper() == "M5"
                 if is_preview_final_m5:
@@ -496,6 +581,14 @@ def main() -> int:
                 print(f"[{i}/{total}] {cmd}")
         print("Done.")
         return 0
+    except KeyboardInterrupt:
+        print("WARN: interrupted by user (Ctrl-C); attempting emergency laser stop", file=sys.stderr)
+        try:
+            best_effort_safe_stop(fd, args.line_timeout)
+        except Exception:
+            # Keep Ctrl-C path resilient even if serial link is unstable.
+            pass
+        return 130
     except Exception as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

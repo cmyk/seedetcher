@@ -3,6 +3,10 @@ FONTLOG for SeedEtcher
 
 This file records changes for the SeedEtcher font family.
 
+v1.002
+----
+- fixed center bar height of number 8 and some symbols
+
 v1.001
 ----
 - removed remaining overlap shapes for clean outlines

@@ -59,6 +59,11 @@ func main() {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+	laserTextFillMode, err := parseLaserTextFillModeFlag(f.LaserTextFillMode)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 	if f.Verbose {
 		fmt.Printf("Processing %s wallet with descriptor: %v\n", config.Name, desc != nil)
 	}
@@ -180,24 +185,28 @@ func main() {
 				os.Exit(1)
 			}
 			if err := (printer.SceneGCodeRenderer{
-				LaserOnCmd:        strings.ToUpper(strings.TrimSpace(f.LaserMode)),
-				LaserMaxS:         f.LaserMaxS,
-				CutFeedMMMin:      f.LaserFeed,
-				FillStepMM:        f.LaserFillStepMM,
-				FillInsetMM:       f.LaserFillInsetMM,
-				OutlineInsetMM:    f.LaserOutlineInsetMM,
-				FeatureShrinkMM:   f.LaserFeatureShrinkMM,
-				OutlinePowerScale: f.LaserOutlinePowerScale,
-				OutlineFeedScale:  f.LaserOutlineFeedScale,
-				DualOutlinePass:   f.LaserDualOutline,
-				LaserPassOrder:    laserPassOrder,
-				RapidFeedMMMin:    f.RapidFeed,
-				BedMM:             f.BedMM,
-				PlateMM:           f.PlateMM,
-				PlateOriginXMM:    f.PlateOriginXMM,
-				PlateOriginYMM:    f.PlateOriginYMM,
-				MachineOffsetXMM:  f.MachineOffsetXMM,
-				MachineOffsetYMM:  f.MachineOffsetYMM,
+				LaserOnCmd:              strings.ToUpper(strings.TrimSpace(f.LaserMode)),
+				LaserMaxS:               f.LaserMaxS,
+				CutFeedMMMin:            f.LaserFeed,
+				FillStepMM:              f.LaserFillStepMM,
+				FillInsetMM:             f.LaserFillInsetMM,
+				OutlineInsetMM:          f.LaserOutlineInsetMM,
+				FeatureShrinkMM:         f.LaserFeatureShrinkMM,
+				OutlinePowerScale:       f.LaserOutlinePowerScale,
+				OutlineFeedScale:        f.LaserOutlineFeedScale,
+				HatchOverscanMM:         f.LaserHatchOverscanMM,
+				SweepHalfStepCorrection: f.LaserSweepCorrection,
+				NoOutlinePass:           f.LaserNoOutline,
+				DualOutlinePass:         f.LaserDualOutline,
+				LaserPassOrder:          laserPassOrder,
+				TextFillMode:            laserTextFillMode,
+				RapidFeedMMMin:          f.RapidFeed,
+				BedMM:                   f.BedMM,
+				PlateMM:                 f.PlateMM,
+				PlateOriginXMM:          f.PlateOriginXMM,
+				PlateOriginYMM:          f.PlateOriginYMM,
+				MachineOffsetXMM:        f.MachineOffsetXMM,
+				MachineOffsetYMM:        f.MachineOffsetYMM,
 			}).Render(sideScenes, gcodeOutDir); err != nil {
 				fmt.Printf("Error writing scene G-code: %v\n", err)
 				os.Exit(1)
@@ -364,6 +373,11 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)
 	}
+	laserTextFillMode, err := parseLaserTextFillModeFlag(f.LaserTextFillMode)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
 	offsetX := f.CalibrationOffsetXMM
 	offsetY := f.CalibrationOffsetYMM
 	if strings.TrimSpace(f.CalibrationOffset) != "" {
@@ -461,24 +475,28 @@ func runLaserCalibrationCLI(f *testutils.Flags) {
 	}
 	if gcodeOutDir != "" {
 		if err := (printer.SceneGCodeRenderer{
-			LaserOnCmd:        strings.ToUpper(strings.TrimSpace(f.LaserMode)),
-			LaserMaxS:         f.LaserMaxS,
-			CutFeedMMMin:      f.LaserFeed,
-			FillStepMM:        f.LaserFillStepMM,
-			FillInsetMM:       f.LaserFillInsetMM,
-			OutlineInsetMM:    f.LaserOutlineInsetMM,
-			FeatureShrinkMM:   f.LaserFeatureShrinkMM,
-			OutlinePowerScale: f.LaserOutlinePowerScale,
-			OutlineFeedScale:  f.LaserOutlineFeedScale,
-			DualOutlinePass:   f.LaserDualOutline,
-			LaserPassOrder:    laserPassOrder,
-			RapidFeedMMMin:    f.RapidFeed,
-			BedMM:             f.BedMM,
-			PlateMM:           f.PlateMM,
-			PlateOriginXMM:    f.PlateOriginXMM,
-			PlateOriginYMM:    f.PlateOriginYMM,
-			MachineOffsetXMM:  f.MachineOffsetXMM,
-			MachineOffsetYMM:  f.MachineOffsetYMM,
+			LaserOnCmd:              strings.ToUpper(strings.TrimSpace(f.LaserMode)),
+			LaserMaxS:               f.LaserMaxS,
+			CutFeedMMMin:            f.LaserFeed,
+			FillStepMM:              f.LaserFillStepMM,
+			FillInsetMM:             f.LaserFillInsetMM,
+			OutlineInsetMM:          f.LaserOutlineInsetMM,
+			FeatureShrinkMM:         f.LaserFeatureShrinkMM,
+			OutlinePowerScale:       f.LaserOutlinePowerScale,
+			OutlineFeedScale:        f.LaserOutlineFeedScale,
+			HatchOverscanMM:         f.LaserHatchOverscanMM,
+			SweepHalfStepCorrection: f.LaserSweepCorrection,
+			NoOutlinePass:           f.LaserNoOutline,
+			DualOutlinePass:         f.LaserDualOutline,
+			LaserPassOrder:          laserPassOrder,
+			TextFillMode:            laserTextFillMode,
+			RapidFeedMMMin:          f.RapidFeed,
+			BedMM:                   f.BedMM,
+			PlateMM:                 f.PlateMM,
+			PlateOriginXMM:          f.PlateOriginXMM,
+			PlateOriginYMM:          f.PlateOriginYMM,
+			MachineOffsetXMM:        f.MachineOffsetXMM,
+			MachineOffsetYMM:        f.MachineOffsetYMM,
 		}).Render(doc, gcodeOutDir); err != nil {
 			fmt.Printf("Error writing scene G-code: %v\n", err)
 			os.Exit(1)
@@ -506,10 +524,25 @@ func parseLaserPassOrderFlag(v string) (string, error) {
 		mode = "grouped"
 	}
 	switch mode {
-	case "grouped", "local":
+	case "grouped", "local", "sweep":
+		return mode, nil
+	case "global":
+		return "sweep", nil
+	default:
+		return "", fmt.Errorf("invalid -laser-pass-order: %s (allowed: grouped, local, sweep)", v)
+	}
+}
+
+func parseLaserTextFillModeFlag(v string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(v))
+	if mode == "" {
+		mode = "raster"
+	}
+	switch mode {
+	case "raster", "contour":
 		return mode, nil
 	default:
-		return "", fmt.Errorf("invalid -laser-pass-order: %s (allowed: grouped, local)", v)
+		return "", fmt.Errorf("invalid -laser-text-fill-mode: %s (allowed: raster, contour)", v)
 	}
 }
 

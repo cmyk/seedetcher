@@ -149,8 +149,8 @@ func (b LaserCalibrationBuilder) buildPowerGridScene() (PlateScene, error) {
 	if len(b.Powers) == 0 || len(b.Feeds) == 0 {
 		return PlateScene{}, fmt.Errorf("power-grid calibration requires at least one power and one feed")
 	}
-	annotationPower := maxInt(1, maxIntSlice(b.Powers)/2)
-	annotationFeed := maxFloat(900, maxFloatSlice(b.Feeds))
+	annotationPower := maxInt(1, maxIntSlice(b.Powers))
+	annotationFeed := maxFloat(1, minPositiveFloat(b.Feeds, maxFloatSlice(b.Feeds)))
 	labelFontMM := maxFloat(6.0, b.CalibrationMM*0.12)
 	sampleTextMM := 11.0
 	sideMarginMM := maxFloat(0.8, b.CalibrationMM*0.02)
@@ -295,8 +295,8 @@ func (b LaserCalibrationBuilder) buildTestTileScene() (PlateScene, error) {
 	if b.TileFeedMMMin <= 0 {
 		b.TileFeedMMMin = 900
 	}
-	annotationPower := maxInt(1, b.TilePowerS/2)
-	annotationFeed := maxFloat(900, b.TileFeedMMMin)
+	annotationPower := maxInt(1, b.TilePowerS)
+	annotationFeed := maxFloat(1, b.TileFeedMMMin)
 	sizeMM := b.CalibrationMM
 	marginMM := maxFloat(1.0, sizeMM*0.04)
 	mask := SceneLayer{Tag: "mask", Visible: true}
@@ -397,8 +397,8 @@ func (b LaserCalibrationBuilder) buildLineWidthTileScene() (PlateScene, error) {
 	}
 	sizeMM := b.CalibrationMM
 	marginMM := maxFloat(1.0, sizeMM*0.04)
-	annotationPower := maxInt(1, b.TilePowerS/2)
-	annotationFeed := maxFloat(900, b.TileFeedMMMin)
+	annotationPower := maxInt(1, b.TilePowerS)
+	annotationFeed := maxFloat(1, b.TileFeedMMMin)
 	mask := SceneLayer{Tag: "mask", Visible: true}
 
 	mask.Primitives = append(mask.Primitives, ScenePrimitive{
@@ -501,8 +501,8 @@ func (b LaserCalibrationBuilder) buildFillStepTileScene() (PlateScene, error) {
 	}
 	sizeMM := b.CalibrationMM
 	marginMM := maxFloat(1.0, sizeMM*0.04)
-	annotationPower := maxInt(1, b.TilePowerS/2)
-	annotationFeed := maxFloat(900, b.TileFeedMMMin)
+	annotationPower := maxInt(1, b.TilePowerS)
+	annotationFeed := maxFloat(1, b.TileFeedMMMin)
 	mask := SceneLayer{Tag: "mask", Visible: true}
 
 	mask.Primitives = append(mask.Primitives, ScenePrimitive{
@@ -635,8 +635,8 @@ func (b LaserCalibrationBuilder) buildPowerFeedTileScene() (PlateScene, error) {
 	}
 	sizeMM := b.CalibrationMM
 	marginMM := maxFloat(1.0, sizeMM*0.04)
-	annotationPower := maxInt(1, b.TilePowerS/2)
-	annotationFeed := maxFloat(900, b.TileFeedMMMin)
+	annotationPower := maxInt(1, b.TilePowerS)
+	annotationFeed := maxFloat(1, b.TileFeedMMMin)
 	fillStep := b.TileFillStepMM
 	if fillStep <= 0 {
 		fillStep = 0.04
@@ -783,8 +783,8 @@ func (b LaserCalibrationBuilder) buildRepeatabilityScene() (PlateScene, error) {
 		return PlateScene{}, fmt.Errorf("repeatability test needs at least 60mm area (got %.3f)", sizeMM)
 	}
 	marginMM := maxFloat(8.0, sizeMM*0.08)
-	annotationPower := maxInt(1, b.TilePowerS/2)
-	annotationFeed := maxFloat(900, b.TileFeedMMMin)
+	annotationPower := maxInt(1, b.TilePowerS)
+	annotationFeed := maxFloat(1, b.TileFeedMMMin)
 	mask := SceneLayer{Tag: "mask", Visible: true}
 
 	mask.Primitives = append(mask.Primitives, ScenePrimitive{
@@ -909,11 +909,8 @@ func (b LaserCalibrationBuilder) buildSectorRepeatabilityScene() (PlateScene, er
 	if shiftMM <= 0 {
 		return PlateScene{}, fmt.Errorf("sector-repeatability test needs calibration area > plate")
 	}
-	annotationPower := maxInt(1, int(math.Round(float64(b.TilePowerS)*0.8)))
-	annotationFeed := minFloat(b.TileFeedMMMin, 1200)
-	if annotationFeed <= 0 {
-		annotationFeed = 1200
-	}
+	annotationPower := maxInt(1, b.TilePowerS)
+	annotationFeed := maxFloat(1, b.TileFeedMMMin)
 	mode := strings.ToUpper(strings.TrimSpace(b.TileLaserMode))
 	if mode != "M3" && mode != "M4" {
 		mode = "M4"
