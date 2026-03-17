@@ -9,6 +9,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import glob
 import os
 import re
@@ -99,7 +100,7 @@ def send_and_wait_ok(fd: int, cmd: str, timeout_s: float, watchdog: LaserWatchdo
     os.write(fd, (cmd + "\n").encode("ascii", errors="ignore"))
     deadline = time.time() + timeout_s
     while True:
-        if watchdog is not None:
+        if watchdog is not None and not _is_long_motion_exec_cmd(cmd):
             watchdog.check(cmd)
         line = read_line(fd, 0.1)
         if line is None:
@@ -114,6 +115,72 @@ def send_and_wait_ok(fd: int, cmd: str, timeout_s: float, watchdog: LaserWatchdo
             return
         if low.startswith("error") or low.startswith("alarm"):
             raise RuntimeError(f"controller rejected line '{cmd}': {line}")
+
+
+def _wire_len(cmd: str) -> int:
+    return len(cmd.encode("ascii", errors="ignore")) + 1
+
+
+def send_job_buffered(
+    fd: int,
+    lines: list[str],
+    line_timeout_s: float,
+    watchdog: LaserWatchdog | None,
+    stream_buffer_bytes: int,
+) -> None:
+    total = len(lines)
+    pending: deque[list[object]] = deque()  # [1-based line number, cmd, wire bytes, watchdog_applied]
+    queued_bytes = 0
+    next_idx = 0
+    acked = 0
+    last_rx = time.monotonic()
+
+    while acked < total:
+        # Fill planner/RX window.
+        while next_idx < total:
+            cmd = lines[next_idx]
+            n = _wire_len(cmd)
+            if pending and queued_bytes+n > stream_buffer_bytes:
+                break
+            os.write(fd, (cmd + "\n").encode("ascii", errors="ignore"))
+            pending.append([next_idx + 1, cmd, n, False])
+            queued_bytes += n
+            next_idx += 1
+            if next_idx == total:
+                break
+
+        if pending and watchdog is not None:
+            head = pending[0]
+            head_cmd = head[1]
+            if not head[3]:
+                watchdog.pre_send(head_cmd)
+                head[3] = True
+            if not _is_long_motion_exec_cmd(head_cmd):
+                watchdog.check(head_cmd)
+
+        line = read_line(fd, 0.05)
+        if line is None:
+            if pending and time.monotonic()-last_rx >= line_timeout_s:
+                raise TimeoutError(f"timeout waiting for response to: {pending[0][1]}")
+            continue
+        if not line:
+            continue
+
+        print(f"<< {line}")
+        low = line.lower()
+        last_rx = time.monotonic()
+        if low == "ok":
+            if not pending:
+                continue
+            idx, cmd, n, _ = pending.popleft()
+            queued_bytes -= n
+            acked = idx
+            if acked == 1 or acked % 100 == 0 or acked == total:
+                print(f"[{acked}/{total}] {cmd}")
+            continue
+        if low.startswith("error") or low.startswith("alarm"):
+            failing = pending[0][1] if pending else "<unknown>"
+            raise RuntimeError(f"controller rejected line '{failing}': {line}")
 
 
 class LaserWatchdog:
@@ -249,6 +316,21 @@ def _is_motion_line(cmd: str) -> bool:
     for m in G_WORD_RE.finditer(cmd):
         g = int(float(m.group(1)))
         if g in (0, 1, 2, 3):
+            return True
+    return False
+
+
+def _is_long_motion_exec_cmd(cmd: str) -> bool:
+    """True for commands that can legitimately take long to acknowledge."""
+    up = cmd.upper()
+    words = WORD_RE.findall(up)
+    if not words:
+        return False
+    g_vals = [int(float(v)) for k, v in words if k.upper() == "G"]
+    has_xyz = any(k.upper() in ("X", "Y", "Z") for k, _ in words)
+    has_arc = any(k.upper() in ("I", "J", "K", "R") for k, _ in words)
+    for g in g_vals:
+        if g in (0, 1, 2, 3) and (has_xyz or has_arc):
             return True
     return False
 
@@ -465,6 +547,12 @@ def main() -> int:
     ap.add_argument("--offset", default="0,0", help="optional XY offset in mm applied at send time, format 'x,y' (for example '0,25')")
     ap.add_argument("--bed-mm", type=float, default=150.0, help="workspace max X/Y in mm for preflight bounds checks (set <=0 to disable)")
     ap.add_argument(
+        "--stream-buffer-bytes",
+        type=int,
+        default=96,
+        help="queued command bytes before waiting for GRBL acks (default 96, set <=0 for legacy line-by-line)",
+    )
+    ap.add_argument(
         "--max-laser-on-seconds",
         type=float,
         default=3.0,
@@ -561,24 +649,36 @@ def main() -> int:
 
         total = len(lines)
         print(f"Sending {total} lines...")
-        watchdog = LaserWatchdog(args.max_laser_on_seconds)
-        for i, cmd in enumerate(lines, start=1):
-            watchdog.pre_send(cmd)
+        watchdog: LaserWatchdog | None
+        if args.preview_bounds or args.dry_run:
+            watchdog = None
+        else:
+            watchdog = LaserWatchdog(args.max_laser_on_seconds)
+        if not args.preview_bounds and args.stream_buffer_bytes > 0:
             try:
-                send_and_wait_ok(fd, cmd, args.line_timeout, watchdog=watchdog)
-            except Exception as e:
-                is_preview_final_m5 = args.preview_bounds and i == total and cmd.strip().upper() == "M5"
-                if is_preview_final_m5:
-                    print(f"WARN: timed out waiting for final preview M5 ack: {e}", file=sys.stderr)
-                    best_effort_safe_stop(fd, args.line_timeout)
-                    print("Preview completed with non-fatal final M5 timeout.")
-                    return 0
-                # Burn mode must fail hard and attempt best-effort stop sequence.
+                send_job_buffered(fd, lines, args.line_timeout, watchdog, args.stream_buffer_bytes)
+            except Exception:
                 if not args.dry_run:
                     best_effort_safe_stop(fd, args.line_timeout)
                 raise
-            if i == 1 or i % 100 == 0 or i == total:
-                print(f"[{i}/{total}] {cmd}")
+        else:
+            for i, cmd in enumerate(lines, start=1):
+                if watchdog is not None:
+                    watchdog.pre_send(cmd)
+                try:
+                    send_and_wait_ok(fd, cmd, args.line_timeout, watchdog=watchdog)
+                except Exception as e:
+                    is_preview_final_m5 = args.preview_bounds and i == total and cmd.strip().upper() == "M5"
+                    if is_preview_final_m5:
+                        print(f"WARN: timed out waiting for final preview M5 ack: {e}", file=sys.stderr)
+                        best_effort_safe_stop(fd, args.line_timeout)
+                        print("Preview completed with non-fatal final M5 timeout.")
+                        return 0
+                    if not args.dry_run:
+                        best_effort_safe_stop(fd, args.line_timeout)
+                    raise
+                if i == 1 or i % 100 == 0 or i == total:
+                    print(f"[{i}/{total}] {cmd}")
         print("Done.")
         return 0
     except KeyboardInterrupt:

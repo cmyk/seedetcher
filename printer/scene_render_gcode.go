@@ -34,6 +34,7 @@ type SceneGCodeRenderer struct {
 	OutlinePowerScale       float64
 	OutlineFeedScale        float64
 	HatchOverscanMM         float64
+	MinBurnSpanMM           float64
 	SweepHalfStepCorrection bool
 	NoOutlinePass           bool
 	DualOutlinePass         bool
@@ -113,6 +114,9 @@ func (r SceneGCodeRenderer) withDefaults() SceneGCodeRenderer {
 	}
 	if r.HatchOverscanMM < 0 {
 		r.HatchOverscanMM = 0
+	}
+	if r.MinBurnSpanMM <= 0 {
+		r.MinBurnSpanMM = 0.05
 	}
 	r.LaserPassOrder = normalizeLaserPassOrder(r.LaserPassOrder)
 	r.TextFillMode = normalizeLaserTextFillMode(r.TextFillMode)
@@ -358,9 +362,9 @@ func (e *gcodeEmitter) renderHatchSweep(primitives []ScenePrimitive) []bool {
 	for _, key := range keys {
 		b := batches[key]
 		if len(b.fill) > 0 {
-			segs := hatchSegments(b.fill, b.params.fillStepMM)
+			segs := hatchSegmentsWithMinBurnSpan(b.fill, b.params.fillStepMM, e.cfg.MinBurnSpanMM)
 			if e.cfg.SweepHalfStepCorrection {
-				segs = hatchSegmentsSparseHalfStep(b.fill, b.params.fillStepMM)
+				segs = hatchSegmentsSparseHalfStepWithMinBurnSpan(b.fill, b.params.fillStepMM, e.cfg.MinBurnSpanMM)
 			}
 			e.traceHatchSweepSegments(segs, b.params.cutFeed, b.params.powerS, b.params.laserOnCmd)
 			if e.err != nil {
@@ -589,13 +593,13 @@ func (e *gcodeEmitter) renderTextHatchBatch(primitives []ScenePrimitive, idxs []
 			emit:     e.shouldEmitOutline(p, params.fillMode),
 		})
 	}
-	segs := hatchSegments(fillLoops, params.fillStepMM)
+	segs := hatchSegmentsWithMinBurnSpan(fillLoops, params.fillStepMM, e.cfg.MinBurnSpanMM)
 	if centered {
 		segs = hatchSegmentsCenteredByComponent(fillLoops, params.fillStepMM)
 	}
 	continuousSweep := normalizeLaserPassOrder(e.cfg.LaserPassOrder) == laserPassOrderSweep && !centered
 	if continuousSweep && e.cfg.SweepHalfStepCorrection {
-		segs = hatchSegmentsSparseHalfStep(fillLoops, params.fillStepMM)
+		segs = hatchSegmentsSparseHalfStepWithMinBurnSpan(fillLoops, params.fillStepMM, e.cfg.MinBurnSpanMM)
 	}
 	if continuousSweep {
 		e.traceHatchSweepSegments(segs, params.cutFeed, params.powerS, params.laserOnCmd)
@@ -655,6 +659,13 @@ func splitHatchRows(segments [][]gcodePt) [][][]gcodePt {
 
 func (e *gcodeEmitter) traceHatchSweepSegments(segments [][]gcodePt, cutFeed float64, powerS int, laserOnCmd string) {
 	rows := splitHatchRows(segments)
+	type sweepRow struct {
+		segs      [][]gcodePt
+		start     gcodePt
+		leadStart gcodePt
+		leadEnd   gcodePt
+	}
+	plan := make([]sweepRow, 0, len(rows))
 	for _, row := range rows {
 		if len(row) == 0 {
 			continue
@@ -668,30 +679,48 @@ func (e *gcodeEmitter) traceHatchSweepSegments(segments [][]gcodePt, cutFeed flo
 				leadStart, leadEnd = a, b
 			}
 		}
-		e.laserOffSafe()
-		e.rapidTo(leadStart.x, leadStart.y)
-		if e.err != nil {
-			return
-		}
-		if strings.TrimSpace(laserOnCmd) == "" {
-			laserOnCmd = e.cfg.LaserOnCmd
-		}
-		fmt.Fprintf(&e.b, "G1 F%.1f\n", cutFeed)
-		fmt.Fprintf(&e.b, "%s S0\n", laserOnCmd)
-		e.laserOn = true
-		e.activeFeed = cutFeed
-		e.activePowerS = 0
-		e.activeLaserOnCmd = laserOnCmd
+		plan = append(plan, sweepRow{
+			segs:      row,
+			start:     start,
+			leadStart: leadStart,
+			leadEnd:   leadEnd,
+		})
+	}
+	if len(plan) == 0 {
+		return
+	}
+	if strings.TrimSpace(laserOnCmd) == "" {
+		laserOnCmd = e.cfg.LaserOnCmd
+	}
+	e.laserOffSafe()
+	e.rapidTo(plan[0].leadStart.x, plan[0].leadStart.y)
+	if e.err != nil {
+		return
+	}
+	fmt.Fprintf(&e.b, "G1 F%.1f\n", cutFeed)
+	fmt.Fprintf(&e.b, "%s S0\n", laserOnCmd)
+	e.laserOn = true
+	e.activeFeed = cutFeed
+	e.activePowerS = 0
+	e.activeLaserOnCmd = laserOnCmd
 
-		curr := leadStart
-		if !pointsEqual(curr, start) {
-			e.cutToWithPower(start.x, start.y, 0)
+	curr := plan[0].leadStart
+	for i, row := range plan {
+		if !pointsEqual(curr, row.leadStart) {
+			e.cutToWithPower(row.leadStart.x, row.leadStart.y, 0)
 			if e.err != nil {
 				return
 			}
-			curr = start
+			curr = row.leadStart
 		}
-		for i, seg := range row {
+		if !pointsEqual(curr, row.start) {
+			e.cutToWithPower(row.start.x, row.start.y, 0)
+			if e.err != nil {
+				return
+			}
+			curr = row.start
+		}
+		for j, seg := range row.segs {
 			a, b := seg[0], seg[1]
 			if !pointsEqual(curr, a) {
 				e.cutToWithPower(a.x, a.y, 0)
@@ -705,8 +734,8 @@ func (e *gcodeEmitter) traceHatchSweepSegments(segments [][]gcodePt, cutFeed flo
 				return
 			}
 			curr = b
-			if i+1 < len(row) {
-				nextA := row[i+1][0]
+			if j+1 < len(row.segs) {
+				nextA := row.segs[j+1][0]
 				if !pointsEqual(curr, nextA) {
 					e.cutToWithPower(nextA.x, nextA.y, 0)
 					if e.err != nil {
@@ -716,17 +745,25 @@ func (e *gcodeEmitter) traceHatchSweepSegments(segments [][]gcodePt, cutFeed flo
 				}
 			}
 		}
-		if !pointsEqual(curr, leadEnd) {
-			e.cutToWithPower(leadEnd.x, leadEnd.y, 0)
+		if !pointsEqual(curr, row.leadEnd) {
+			e.cutToWithPower(row.leadEnd.x, row.leadEnd.y, 0)
 			if e.err != nil {
 				return
 			}
+			curr = row.leadEnd
 		}
-		e.laserOffSafe()
-		if e.err != nil {
-			return
+		if i+1 < len(plan) {
+			nextLead := plan[i+1].leadStart
+			if !pointsEqual(curr, nextLead) {
+				e.cutToWithPower(nextLead.x, nextLead.y, 0)
+				if e.err != nil {
+					return
+				}
+				curr = nextLead
+			}
 		}
 	}
+	e.laserOffSafe()
 }
 
 func quantizedMM(v, step float64) int64 {
@@ -998,12 +1035,12 @@ func (e *gcodeEmitter) fillOrTrace(fillMode FillMode, loops [][]gcodePt, outline
 		}
 	}
 	if fillMode == FillModeHatch {
-		segments := hatchSegments(fillLoops, fillStepMM)
+		segments := hatchSegmentsWithMinBurnSpan(fillLoops, fillStepMM, e.cfg.MinBurnSpanMM)
 		if localHatchPhase {
 			segments = hatchSegmentsCenteredByComponent(fillLoops, fillStepMM)
 		}
 		if e.cfg.SweepHalfStepCorrection && !localHatchPhase {
-			segments = hatchSegmentsSparseHalfStep(fillLoops, fillStepMM)
+			segments = hatchSegmentsSparseHalfStepWithMinBurnSpan(fillLoops, fillStepMM, e.cfg.MinBurnSpanMM)
 		}
 		for _, seg := range segments {
 			e.traceHatchSegment(seg, cutFeed, powerS, laserOnCmd)
@@ -1810,7 +1847,7 @@ func loopContainmentComponents(loops [][]gcodePt) [][][]gcodePt {
 	return components
 }
 
-func hatchSegments(loops [][]gcodePt, step float64) [][]gcodePt {
+func hatchSegmentsWithMinBurnSpan(loops [][]gcodePt, step, minBurnSpan float64) [][]gcodePt {
 	if step <= 0 {
 		step = 0.12
 	}
@@ -1829,38 +1866,46 @@ func hatchSegments(loops [][]gcodePt, step float64) [][]gcodePt {
 			}
 		}
 	}
-	return hatchSegmentsHorizontal(loops, minY, maxY, step)
+	return hatchSegmentsHorizontal(loops, minY, maxY, step, minBurnSpan)
+}
+
+func hatchSegments(loops [][]gcodePt, step float64) [][]gcodePt {
+	return hatchSegmentsWithMinBurnSpan(loops, step, 0.05)
+}
+
+func hatchSegmentsSparseHalfStepWithMinBurnSpan(loops [][]gcodePt, step, minBurnSpan float64) [][]gcodePt {
+	if step <= 0 {
+		step = 0.12
+	}
+	loops = normalizeClosedLoops(loops)
+	if len(loops) == 0 {
+		return nil
+	}
+	minY, maxY := loops[0][0].y, loops[0][0].y
+	for _, loop := range loops {
+		for _, p := range loop {
+			if p.y < minY {
+				minY = p.y
+			}
+			if p.y > maxY {
+				maxY = p.y
+			}
+		}
+	}
+	return hatchSegmentsHorizontalSparseHalfStep(loops, minY, maxY, step, minBurnSpan)
 }
 
 func hatchSegmentsSparseHalfStep(loops [][]gcodePt, step float64) [][]gcodePt {
-	if step <= 0 {
-		step = 0.12
-	}
-	loops = normalizeClosedLoops(loops)
-	if len(loops) == 0 {
-		return nil
-	}
-	minY, maxY := loops[0][0].y, loops[0][0].y
-	for _, loop := range loops {
-		for _, p := range loop {
-			if p.y < minY {
-				minY = p.y
-			}
-			if p.y > maxY {
-				maxY = p.y
-			}
-		}
-	}
-	return hatchSegmentsHorizontalSparseHalfStep(loops, minY, maxY, step)
+	return hatchSegmentsSparseHalfStepWithMinBurnSpan(loops, step, 0.05)
 }
 
-func hatchSegmentsHorizontal(loops [][]gcodePt, minY, maxY, step float64) [][]gcodePt {
+func hatchSegmentsHorizontal(loops [][]gcodePt, minY, maxY, step, minBurnSpan float64) [][]gcodePt {
 	const eps = 1e-9
 	rows := regularScanRows(minY, maxY, step, eps)
-	return hatchSegmentsForRows(loops, rows, eps)
+	return hatchSegmentsForRows(loops, rows, step, minBurnSpan, eps)
 }
 
-func hatchSegmentsHorizontalSparseHalfStep(loops [][]gcodePt, minY, maxY, step float64) [][]gcodePt {
+func hatchSegmentsHorizontalSparseHalfStep(loops [][]gcodePt, minY, maxY, step, minBurnSpan float64) [][]gcodePt {
 	const eps = 1e-9
 	baseRows := regularScanRows(minY, maxY, step, eps)
 	rows := append([]float64(nil), baseRows...)
@@ -1888,7 +1933,7 @@ func hatchSegmentsHorizontalSparseHalfStep(loops [][]gcodePt, minY, maxY, step f
 	}
 	sort.Float64s(rows)
 	rows = dedupeRows(rows, dedupeEps)
-	return hatchSegmentsForRows(loops, rows, eps)
+	return hatchSegmentsForRows(loops, rows, step, minBurnSpan, eps)
 }
 
 func regularScanRows(minY, maxY, step, eps float64) []float64 {
@@ -1900,7 +1945,7 @@ func regularScanRows(minY, maxY, step, eps float64) []float64 {
 	return rows
 }
 
-func hatchSegmentsForRows(loops [][]gcodePt, rows []float64, eps float64) [][]gcodePt {
+func hatchSegmentsForRows(loops [][]gcodePt, rows []float64, step, minBurnSpan, eps float64) [][]gcodePt {
 	out := make([][]gcodePt, 0, len(rows)*2)
 	line := 0
 	for _, y := range rows {
@@ -1909,26 +1954,100 @@ func hatchSegmentsForRows(loops [][]gcodePt, rows []float64, eps float64) [][]gc
 			line++
 			continue
 		}
+		spans := rowSpansFromIntersections(xs, eps)
+		spans = sanitizeRowSpans(spans, step, minBurnSpan, eps)
+		if len(spans) == 0 {
+			line++
+			continue
+		}
 		if line%2 == 0 {
-			for i := 0; i+1 < len(xs); i += 2 {
-				x0, x1 := xs[i], xs[i+1]
-				if x1-x0 <= eps {
-					continue
-				}
-				out = append(out, []gcodePt{{x: x0, y: y}, {x: x1, y: y}})
+			for _, sp := range spans {
+				out = append(out, []gcodePt{{x: sp.x0, y: y}, {x: sp.x1, y: y}})
 			}
 		} else {
-			for i := len(xs) - 2; i >= 0; i -= 2 {
-				x0, x1 := xs[i], xs[i+1]
-				if x1-x0 <= eps {
-					continue
-				}
-				out = append(out, []gcodePt{{x: x1, y: y}, {x: x0, y: y}})
+			for i := len(spans) - 1; i >= 0; i-- {
+				sp := spans[i]
+				out = append(out, []gcodePt{{x: sp.x1, y: y}, {x: sp.x0, y: y}})
 			}
 		}
 		line++
 	}
 	return out
+}
+
+type rowSpan struct {
+	x0 float64
+	x1 float64
+}
+
+func rowSpansFromIntersections(xs []float64, eps float64) []rowSpan {
+	spans := make([]rowSpan, 0, len(xs)/2)
+	for i := 0; i+1 < len(xs); i += 2 {
+		x0, x1 := xs[i], xs[i+1]
+		if x1 < x0 {
+			x0, x1 = x1, x0
+		}
+		if x1-x0 <= eps {
+			continue
+		}
+		spans = append(spans, rowSpan{x0: x0, x1: x1})
+	}
+	return spans
+}
+
+func sanitizeRowSpans(spans []rowSpan, step, minBurnSpan, eps float64) []rowSpan {
+	if len(spans) == 0 || step <= 0 {
+		return spans
+	}
+	mergeGap := maxFloat(step*0.35, 0.008)
+	if minBurnSpan <= 0 {
+		minBurnSpan = 0.05
+	}
+	minEdgeSpan := maxFloat(maxFloat(step*0.90, minBurnSpan), 0.020)
+
+	merged := make([]rowSpan, 0, len(spans))
+	cur := spans[0]
+	for i := 1; i < len(spans); i++ {
+		s := spans[i]
+		if s.x0-cur.x1 <= mergeGap+eps {
+			if s.x1 > cur.x1 {
+				cur.x1 = s.x1
+			}
+			continue
+		}
+		merged = append(merged, cur)
+		cur = s
+	}
+	merged = append(merged, cur)
+
+	if len(merged) <= 1 {
+		if len(merged) == 1 && merged[0].x1-merged[0].x0+eps >= minBurnSpan {
+			return merged
+		}
+		return nil
+	}
+	if merged[0].x1-merged[0].x0 < minEdgeSpan {
+		merged = merged[1:]
+	}
+	if len(merged) > 1 {
+		last := len(merged) - 1
+		if merged[last].x1-merged[last].x0 < minEdgeSpan {
+			merged = merged[:last]
+		}
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	filtered := merged[:0]
+	for _, sp := range merged {
+		if sp.x1-sp.x0+eps >= minBurnSpan {
+			filtered = append(filtered, sp)
+		}
+	}
+	if len(filtered) > 0 {
+		return filtered
+	}
+	return nil
 }
 
 func hasScanSpan(xs []float64, eps float64) bool {

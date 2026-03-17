@@ -923,6 +923,12 @@ func TestTraceHatchSweepSegments_UsesInlinePowerModulation(t *testing.T) {
 	if !strings.Contains(g, "G1 X7.000 Y10.000 S0") {
 		t.Fatalf("expected inline non-burn travel with S0 in output:\n%s", g)
 	}
+	if got := strings.Count(g, "M4 S0"); got != 1 {
+		t.Fatalf("expected one sweep arm command, got %d in output:\n%s", got, g)
+	}
+	if got := strings.Count(g, "M5"); got != 1 {
+		t.Fatalf("expected one sweep stop command, got %d in output:\n%s", got, g)
+	}
 }
 
 func TestTraceHatchSweepSegments_AppliesRowOverscan(t *testing.T) {

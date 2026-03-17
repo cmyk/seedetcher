@@ -53,6 +53,7 @@ type Flags struct {
 	LaserOutlinePowerScale float64
 	LaserOutlineFeedScale  float64
 	LaserHatchOverscanMM   float64
+	LaserMinBurnSpanMM     float64
 	LaserSweepCorrection   bool
 	LaserNoOutline         bool
 	LaserDualOutline       bool
@@ -118,6 +119,7 @@ func DefineFlags() *Flags {
 	flag.Float64Var(&f.LaserOutlinePowerScale, "laser-outline-power-scale", 1.0, "Scale factor for outline-pass laser power (default 1.0)")
 	flag.Float64Var(&f.LaserOutlineFeedScale, "laser-outline-feed-scale", 1.0, "Scale factor for outline-pass feed rate (default 1.0)")
 	flag.Float64Var(&f.LaserHatchOverscanMM, "laser-hatch-overscan-mm", 0.0, "Optional lead-in/out distance in mm for hatch scanlines (laser off) to reduce edge dwell artifacts")
+	flag.Float64Var(&f.LaserMinBurnSpanMM, "laser-min-burn-span-mm", 0.05, "Minimum burn span length in mm for hatch rows; shorter spans are dropped to reduce stutter artifacts")
 	flag.BoolVar(&f.LaserSweepCorrection, "laser-sweep-correction", false, "Add sparse half-step correction scanlines for hatch fills to improve clipped curved edges")
 	flag.BoolVar(&f.LaserNoOutline, "laser-no-outline", false, "Disable outline pass for filled primitives (diagnostic/ablation tuning)")
 	flag.BoolVar(&f.LaserDualOutline, "laser-dual-outline", false, "Run a second outer outline pass for filled text/path when outline inset is active")

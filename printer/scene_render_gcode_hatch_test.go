@@ -159,3 +159,32 @@ func TestHatchSegmentsSparseHalfStep_AddsSparseCorrectionRow(t *testing.T) {
 		t.Fatalf("expected at least one half-step correction row at y=0.5 or y=1.5")
 	}
 }
+
+func TestSanitizeRowSpans_DropsTinyEdgeFragments(t *testing.T) {
+	spans := []rowSpan{
+		{x0: 0.0, x1: 0.015},
+		{x0: 0.4, x1: 1.0},
+		{x0: 1.5, x1: 1.512},
+	}
+	got := sanitizeRowSpans(spans, 0.05, 0.05, 1e-9)
+	if len(got) != 1 {
+		t.Fatalf("expected one surviving span, got %d (%+v)", len(got), got)
+	}
+	if math.Abs(got[0].x0-0.4) > 1e-9 || math.Abs(got[0].x1-1.0) > 1e-9 {
+		t.Fatalf("unexpected surviving span: %+v", got[0])
+	}
+}
+
+func TestSanitizeRowSpans_MergesSmallGaps(t *testing.T) {
+	spans := []rowSpan{
+		{x0: 0.2, x1: 0.5},
+		{x0: 0.51, x1: 0.8},
+	}
+	got := sanitizeRowSpans(spans, 0.05, 0.05, 1e-9)
+	if len(got) != 1 {
+		t.Fatalf("expected merged span count=1, got %d (%+v)", len(got), got)
+	}
+	if math.Abs(got[0].x0-0.2) > 1e-9 || math.Abs(got[0].x1-0.8) > 1e-9 {
+		t.Fatalf("unexpected merged span: %+v", got[0])
+	}
+}
