@@ -249,8 +249,14 @@ func TestLaserCalibrationBuilderBuildsTestTile(t *testing.T) {
 			}
 		case p.Kind == PrimitiveText && p.Text == "2000/850/0.04/1/0.7":
 			foundInfo = true
-			if p.FillMode != FillModeNone {
-				t.Fatalf("info text should be stroke-only, got fill mode %q", p.FillMode)
+			if p.FillMode != FillModeHatch {
+				t.Fatalf("info text should be raster-filled, got fill mode %q", p.FillMode)
+			}
+			if !p.NoOutline {
+				t.Fatalf("info text should be fill-only (NoOutline=true)")
+			}
+			if p.FillStepMM != 0.04 {
+				t.Fatalf("info text should inherit tile fill-step, got %.3f", p.FillStepMM)
 			}
 			infoX = p.XMM
 			infoY = p.YMM
@@ -623,9 +629,25 @@ func TestLaserCalibrationBuilderBuildsPowerFeedTile(t *testing.T) {
 	fillCells := 0
 	powerSet := map[int]bool{}
 	feedSet := map[float64]bool{}
+	colLabels := map[string]bool{}
+	rowLabels := map[string]bool{}
 	for _, p := range scene.Layers[0].Primitives {
 		if p.Kind == PrimitiveText && p.Text == "Power-Feed Test (M3, 0.04)" {
 			titleFound = true
+		}
+		if p.Kind == PrimitiveText {
+			switch p.Text {
+			case "680", "720", "760", "800", "850":
+				colLabels[p.Text] = true
+			case "1400", "1700", "2000", "2300", "2600":
+				rowLabels[p.Text] = true
+			}
+			if p.FillMode != FillModeHatch {
+				t.Fatalf("power-feed labels should be raster-filled, got fill mode %q for %q", p.FillMode, p.Text)
+			}
+			if !p.NoOutline {
+				t.Fatalf("power-feed labels should be no-outline raster, got NoOutline=%v for %q", p.NoOutline, p.Text)
+			}
 		}
 		if p.Kind == PrimitiveRect && p.FillMode == FillModeHatch && p.FillColor == sceneBlack {
 			fillCells++
@@ -641,6 +663,12 @@ func TestLaserCalibrationBuilderBuildsPowerFeedTile(t *testing.T) {
 	}
 	if !titleFound {
 		t.Fatalf("missing power-feed title")
+	}
+	if len(colLabels) != 5 {
+		t.Fatalf("expected 5 column labels, got %d", len(colLabels))
+	}
+	if len(rowLabels) != 5 {
+		t.Fatalf("expected 5 row labels, got %d", len(rowLabels))
 	}
 	if fillCells != 25 {
 		t.Fatalf("expected 25 fill cells, got %d", fillCells)

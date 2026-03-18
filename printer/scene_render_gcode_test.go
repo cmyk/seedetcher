@@ -1050,6 +1050,66 @@ func TestSceneGCodeRenderer_Render_UsesHatchOverscan(t *testing.T) {
 	}
 }
 
+func TestSanitizeRowSpans_TwoSpanRowsStaySymmetric(t *testing.T) {
+	const eps = 1e-9
+	spans := []rowSpan{
+		{x0: 0.00, x1: 0.09},
+		{x0: 0.20, x1: 0.50},
+	}
+	got := sanitizeRowSpans(spans, 0.2, 0.05, eps)
+	if len(got) != 2 {
+		t.Fatalf("expected both spans kept for asymmetric 2-span row, got %d spans: %+v", len(got), got)
+	}
+}
+
+func TestSanitizeRowSpans_TwoSpanRowsDropTogetherWhenTiny(t *testing.T) {
+	const eps = 1e-9
+	spans := []rowSpan{
+		{x0: 0.00, x1: 0.03},
+		{x0: 0.20, x1: 0.30},
+	}
+	got := sanitizeRowSpans(spans, 0.2, 0.05, eps)
+	if len(got) != 0 {
+		t.Fatalf("expected tiny asymmetric 2-span row to be dropped entirely, got %+v", got)
+	}
+}
+
+func TestHatchSegmentsSparseHalfStepWithMinBurnSpan_IsSparseNotGlobalHalfStep(t *testing.T) {
+	loops := [][]gcodePt{{
+		{x: 0, y: 0},
+		{x: 8, y: 0},
+		{x: 8, y: 8},
+		{x: 0, y: 8},
+		{x: 0, y: 0},
+	}}
+	step := 2.0
+	segs := hatchSegmentsSparseHalfStepWithMinBurnSpan(loops, step, 0.05)
+	rows := map[int]struct{}{}
+	for _, seg := range segs {
+		if len(seg) != 2 {
+			t.Fatalf("expected 2-point segments, got %d", len(seg))
+		}
+		if math.Abs(seg[0].y-seg[1].y) > 1e-6 {
+			t.Fatalf("expected horizontal segment, got %+v", seg)
+		}
+		rows[int(math.Round(seg[0].y*1000))] = struct{}{}
+	}
+	baseRows := regularScanRows(0, 8, step, 1e-9)
+	if len(baseRows) == 0 {
+		t.Fatalf("expected regular scan rows")
+	}
+	wantGlobal := len(baseRows)
+	for y := baseRows[0] + step*0.5; y <= 8-1e-9; y += step {
+		wantGlobal++
+	}
+	if len(rows) <= len(baseRows) {
+		t.Fatalf("expected at least one sparse correction row beyond base rows, got base=%d total=%d", len(baseRows), len(rows))
+	}
+	if len(rows) >= wantGlobal {
+		t.Fatalf("expected sparse correction rows, got full global half-step density: base=%d global=%d got=%d", len(baseRows), wantGlobal, len(rows))
+	}
+}
+
 func TestSceneGCodeRenderer_Render_NoOutlinePassSkipsFilledOutlines(t *testing.T) {
 	scene := PlateScene{
 		Name:     "no_outline_pass_test",

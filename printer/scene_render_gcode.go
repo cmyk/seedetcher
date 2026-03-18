@@ -325,9 +325,10 @@ type hatchSweepOutline struct {
 }
 
 type hatchSweepBatch struct {
-	params   primitiveLaserParams
-	fill     [][]gcodePt
-	outlines []hatchSweepOutline
+	params                primitiveLaserParams
+	fill                  [][]gcodePt
+	outlines              []hatchSweepOutline
+	allowSweepCorrection  bool
 }
 
 func (e *gcodeEmitter) renderHatchSweep(primitives []ScenePrimitive) []bool {
@@ -351,7 +352,10 @@ func (e *gcodeEmitter) renderHatchSweep(primitives []ScenePrimitive) []bool {
 		)
 		b, ok := batches[key]
 		if !ok {
-			b = &hatchSweepBatch{params: params}
+			b = &hatchSweepBatch{
+				params:               params,
+				allowSweepCorrection: true,
+			}
 			batches[key] = b
 			keys = append(keys, key)
 		}
@@ -363,7 +367,7 @@ func (e *gcodeEmitter) renderHatchSweep(primitives []ScenePrimitive) []bool {
 		b := batches[key]
 		if len(b.fill) > 0 {
 			segs := hatchSegmentsWithMinBurnSpan(b.fill, b.params.fillStepMM, e.cfg.MinBurnSpanMM)
-			if e.cfg.SweepHalfStepCorrection {
+			if e.cfg.SweepHalfStepCorrection && b.allowSweepCorrection {
 				segs = hatchSegmentsSparseHalfStepWithMinBurnSpan(b.fill, b.params.fillStepMM, e.cfg.MinBurnSpanMM)
 			}
 			e.traceHatchSweepSegments(segs, b.params.cutFeed, b.params.powerS, b.params.laserOnCmd)
@@ -1908,31 +1912,40 @@ func hatchSegmentsHorizontal(loops [][]gcodePt, minY, maxY, step, minBurnSpan fl
 func hatchSegmentsHorizontalSparseHalfStep(loops [][]gcodePt, minY, maxY, step, minBurnSpan float64) [][]gcodePt {
 	const eps = 1e-9
 	baseRows := regularScanRows(minY, maxY, step, eps)
-	rows := append([]float64(nil), baseRows...)
 	if len(baseRows) == 0 {
 		return nil
 	}
-	const dedupeEps = 1e-6
+	rows := append([]float64(nil), baseRows...)
 	minExtraGap := step * 0.34
+	halfStart := baseRows[0] + step*0.5
 	for _, loop := range loops {
 		lmin, lmax := loopYBounds(loop)
-		lo := lmin + step*0.5
-		hi := lmax - step*0.5
-		y, ok := pickSparseCorrectionRow(lo, hi, minY, maxY, baseRows, minExtraGap, eps)
-		if !ok {
-			continue
+		cands := []float64{
+			quantizeToCorrectionGrid(lmin+step*0.5, halfStart, step),
+			quantizeToCorrectionGrid(lmax-step*0.5, halfStart, step),
 		}
-		if nearestRowDistance(y, rows) <= step*0.2 {
-			continue
+		for i, y := range cands {
+			if i > 0 && math.Abs(y-cands[0]) <= eps {
+				continue
+			}
+			if y <= minY+eps || y >= maxY-eps {
+				continue
+			}
+			if nearestRowDistance(y, baseRows) <= minExtraGap {
+				continue
+			}
+			if nearestRowDistance(y, rows) <= step*0.2 {
+				continue
+			}
+			xs := scanlineIntersections(loops, y)
+			if !hasScanSpan(xs, eps) {
+				continue
+			}
+			rows = append(rows, y)
 		}
-		xs := scanlineIntersections(loops, y)
-		if !hasScanSpan(xs, eps) {
-			continue
-		}
-		rows = append(rows, y)
 	}
 	sort.Float64s(rows)
-	rows = dedupeRows(rows, dedupeEps)
+	rows = dedupeRows(rows, 1e-6)
 	return hatchSegmentsForRows(loops, rows, step, minBurnSpan, eps)
 }
 
@@ -2026,6 +2039,21 @@ func sanitizeRowSpans(spans []rowSpan, step, minBurnSpan, eps float64) []rowSpan
 		}
 		return nil
 	}
+	if len(merged) == 2 {
+		leftW := merged[0].x1 - merged[0].x0
+		rightW := merged[1].x1 - merged[1].x0
+		// Avoid asymmetric one-sided correction rows (notably on ring/finder edges):
+		// with two spans we either keep both or drop both.
+		if leftW+eps < minBurnSpan || rightW+eps < minBurnSpan {
+			return nil
+		}
+		leftSmall := leftW < minEdgeSpan
+		rightSmall := rightW < minEdgeSpan
+		if leftSmall && rightSmall {
+			return nil
+		}
+		return merged
+	}
 	if merged[0].x1-merged[0].x0 < minEdgeSpan {
 		merged = merged[1:]
 	}
@@ -2048,6 +2076,21 @@ func sanitizeRowSpans(spans []rowSpan, step, minBurnSpan, eps float64) []rowSpan
 		return filtered
 	}
 	return nil
+}
+
+func dedupeRows(rows []float64, eps float64) []float64 {
+	if len(rows) <= 1 {
+		return rows
+	}
+	out := make([]float64, 0, len(rows))
+	out = append(out, rows[0])
+	for i := 1; i < len(rows); i++ {
+		if math.Abs(rows[i]-out[len(out)-1]) <= eps {
+			continue
+		}
+		out = append(out, rows[i])
+	}
+	return out
 }
 
 func hasScanSpan(xs []float64, eps float64) bool {
@@ -2075,27 +2118,12 @@ func loopYBounds(loop []gcodePt) (float64, float64) {
 	return minY, maxY
 }
 
-func pickSparseCorrectionRow(lo, hi, minY, maxY float64, baseRows []float64, minGap, eps float64) (float64, bool) {
-	cands := []float64{lo, hi}
-	bestY := 0.0
-	bestD := -1.0
-	for _, y := range cands {
-		if y <= minY+eps || y >= maxY-eps {
-			continue
-		}
-		d := nearestRowDistance(y, baseRows)
-		if d <= minGap {
-			continue
-		}
-		if d > bestD {
-			bestY = y
-			bestD = d
-		}
+func quantizeToCorrectionGrid(y, start, step float64) float64 {
+	if step <= 0 {
+		return y
 	}
-	if bestD < 0 {
-		return 0, false
-	}
-	return bestY, true
+	k := math.Round((y - start) / step)
+	return start + k*step
 }
 
 func nearestRowDistance(y float64, rows []float64) float64 {
@@ -2110,21 +2138,6 @@ func nearestRowDistance(y float64, rows []float64) float64 {
 		}
 	}
 	return best
-}
-
-func dedupeRows(rows []float64, eps float64) []float64 {
-	if len(rows) <= 1 {
-		return rows
-	}
-	out := make([]float64, 0, len(rows))
-	out = append(out, rows[0])
-	for i := 1; i < len(rows); i++ {
-		if math.Abs(rows[i]-out[len(out)-1]) <= eps {
-			continue
-		}
-		out = append(out, rows[i])
-	}
-	return out
 }
 
 func hatchSegmentsVertical(loops [][]gcodePt, minX, maxX, step float64) [][]gcodePt {

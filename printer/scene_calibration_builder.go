@@ -359,7 +359,9 @@ func (b LaserCalibrationBuilder) buildTestTileScene() (PlateScene, error) {
 	infoX := smallFinderX
 	infoY := smallFinderY + 5*step + maxFloat(0.80, step*0.72)
 	info := newSceneText(infoX, infoY, infoText, infoPt, infoHSpaceEM, TextDirHorizontal, TextAnchorTopLeft)
-	info.FillMode = FillModeNone
+	info.FillMode = FillModeHatch
+	info.NoOutline = true
+	info.FillStepMM = infoFillStep
 	info.PowerS = annotationPower
 	info.FeedMMMin = annotationFeed
 	mask.Primitives = append(mask.Primitives, info)
@@ -634,7 +636,6 @@ func (b LaserCalibrationBuilder) buildPowerFeedTileScene() (PlateScene, error) {
 		b.TileFeedMMMin = 2000
 	}
 	sizeMM := b.CalibrationMM
-	marginMM := maxFloat(1.0, sizeMM*0.04)
 	annotationPower := maxInt(1, b.TilePowerS)
 	annotationFeed := maxFloat(1, b.TileFeedMMMin)
 	fillStep := b.TileFillStepMM
@@ -687,66 +688,91 @@ func (b LaserCalibrationBuilder) buildPowerFeedTileScene() (PlateScene, error) {
 		title = fmt.Sprintf("Power-Feed Test (%s, %s)", mode, formatCompactFloat(fillStep))
 	}
 
-	titlePt := maxFloat(3.9, sizeMM*0.15)
-	topLabelPt := maxFloat(3.2, sizeMM*0.125)
-	rowLabelPt := maxFloat(3.2, sizeMM*0.125)
-	topTextY := marginMM + titlePt*25.4/72.0
-	titleText := newSceneText(marginMM, topTextY, title, titlePt, 0.01, TextDirHorizontal, TextAnchorBaselineLeft)
-	titleText.FillMode = FillModeNone
-	titleText.PowerS = annotationPower
-	titleText.FeedMMMin = annotationFeed
+	labelDPI := 600.0
+	labelCapMM := 1.0
+	labelPt := fontSizeForCapHeightMM(labelCapMM, labelDPI)
+	labelFace := loadFace(labelPt, labelDPI)
+	labelCapActualMM := capBaselineOffsetMM(labelFace, labelDPI)
+	if labelCapActualMM <= 0 {
+		labelCapActualMM = labelCapMM
+	}
+	rowTrackEM := 0.0
+	rowTrackPx := rowTrackEM * labelPt * labelDPI / 72.0
+	maxRowLabelW := 0.0
+	for _, f := range feeds {
+		w := trackedTextWidthMM(labelFace, labelDPI, formatCompactFloat(f), rowTrackPx)
+		if w > maxRowLabelW {
+			maxRowLabelW = w
+		}
+	}
+	applyRasterLabelStyle := func(p *ScenePrimitive) {
+		p.FillMode = FillModeHatch
+		p.NoOutline = true
+		p.FillStepMM = fillStep
+		p.PowerS = annotationPower
+		p.FeedMMMin = annotationFeed
+	}
+
+	cellSizeMM := 3.0
+	cellGapMM := 1.0
+	gridW := 5*cellSizeMM + 4*cellGapMM
+	gridH := 5*cellSizeMM + 4*cellGapMM
+
+	leftPadMM := snapMMToPixel(maxFloat(0.5, sizeMM*0.02), labelDPI)
+	rightPadMM := snapMMToPixel(maxFloat(0.5, sizeMM*0.02), labelDPI)
+	topPadMM := snapMMToPixel(maxFloat(0.5, sizeMM*0.02), labelDPI)
+	rowLabelGapMM := snapMMToPixel(0.7, labelDPI)
+	titleGapMM := snapMMToPixel(0.8, labelDPI)
+	colLabelGapMM := snapMMToPixel(0.8, labelDPI)
+	colLabelDropMM := snapMMToPixel(1.0, labelDPI)
+
+	rowLabelX := leftPadMM
+	gridX := snapMMToPixel(rowLabelX+maxRowLabelW+rowLabelGapMM, labelDPI)
+	if gridX+gridW > sizeMM-rightPadMM {
+		gridX = sizeMM - rightPadMM - gridW
+		gridX = snapMMToPixel(gridX, labelDPI)
+	}
+	if gridX < rowLabelX+maxRowLabelW {
+		return PlateScene{}, fmt.Errorf("power-feed layout too tight for labels in %.1fmm area", sizeMM)
+	}
+
+	titleX := leftPadMM
+	titleY := snapMMToPixel(topPadMM+labelCapActualMM, labelDPI)
+	colLabelYBase := snapMMToPixel(titleY+labelCapActualMM+titleGapMM, labelDPI)
+	colLabelY := snapMMToPixel(colLabelYBase+colLabelDropMM, labelDPI)
+	gridY := snapMMToPixel(colLabelYBase+labelCapActualMM+colLabelGapMM, labelDPI)
+
+	if gridY+gridH > sizeMM-topPadMM {
+		return PlateScene{}, fmt.Errorf("power-feed layout overflow: grid exceeds %.1fmm area", sizeMM)
+	}
+
+	titleText := newSceneText(titleX, titleY, title, labelPt, 0.0, TextDirHorizontal, TextAnchorBaselineLeft)
+	applyRasterLabelStyle(&titleText)
 	mask.Primitives = append(mask.Primitives, titleText)
 
-	gridTop := topTextY + maxFloat(0.9, sizeMM*0.036)
-	topLabelH := topLabelPt * 25.4 / 72.0
-	rowLabelW := maxFloat(4.8, sizeMM*0.19)
-	cellGap := maxFloat(0.2, sizeMM*0.008)
-	gridX := marginMM + rowLabelW
-	rawGridY := gridTop + topLabelH + maxFloat(0.55, sizeMM*0.022)
-	availW := sizeMM - marginMM - gridX
-	availH := sizeMM - marginMM - rawGridY
-	if availW <= 0 || availH <= 0 {
-		return PlateScene{}, fmt.Errorf("plate too small for power-feed layout")
-	}
-	cellWAvail := (availW - 4*cellGap) / 5
-	cellHAvail := (availH - 4*cellGap) / 5
-	cellSize := minFloat(cellWAvail, cellHAvail)
-	if cellSize <= 1.0 {
-		return PlateScene{}, fmt.Errorf("invalid power-feed grid sizing")
-	}
-	gridH := 5*cellSize + 4*cellGap
-	extraH := availH - gridH
-	if extraH < 0 {
-		extraH = 0
-	}
-	gridY := rawGridY + extraH
-	cellW := cellSize
-	cellH := cellSize
-
 	for c := 0; c < 5; c++ {
-		x := gridX + float64(c)*(cellW+cellGap)
-		label := newSceneText(x+cellW/2, gridTop+topLabelH*0.88, fmt.Sprintf("S%d", powers[c]), topLabelPt, 0.0, TextDirHorizontal, TextAnchorCenter)
-		label.FillMode = FillModeNone
-		label.PowerS = annotationPower
-		label.FeedMMMin = annotationFeed
+		x := snapMMToPixel(gridX+float64(c)*(cellSizeMM+cellGapMM), labelDPI)
+		s := fmt.Sprintf("%d", powers[c])
+		w := trackedTextWidthMM(labelFace, labelDPI, s, 0)
+		label := newSceneText(snapMMToPixel(x+(cellSizeMM-w)/2, labelDPI), colLabelY, s, labelPt, 0.0, TextDirHorizontal, TextAnchorBaselineLeft)
+		applyRasterLabelStyle(&label)
 		mask.Primitives = append(mask.Primitives, label)
 	}
 
 	for r := 0; r < 5; r++ {
-		y := gridY + float64(r)*(cellH+cellGap)
-		rowLabel := newSceneText(marginMM, y+cellH*0.76, fmt.Sprintf("F%.0f", feeds[r]), rowLabelPt, 0.01, TextDirHorizontal, TextAnchorBaselineLeft)
-		rowLabel.FillMode = FillModeNone
-		rowLabel.PowerS = annotationPower
-		rowLabel.FeedMMMin = annotationFeed
+		y := snapMMToPixel(gridY+float64(r)*(cellSizeMM+cellGapMM), labelDPI)
+		rowLabelY := snapMMToPixel(y+cellSizeMM*0.5+labelCapActualMM*0.5, labelDPI)
+		rowLabel := newSceneText(rowLabelX, rowLabelY, formatCompactFloat(feeds[r]), labelPt, rowTrackEM, TextDirHorizontal, TextAnchorBaselineLeft)
+		applyRasterLabelStyle(&rowLabel)
 		mask.Primitives = append(mask.Primitives, rowLabel)
 		for c := 0; c < 5; c++ {
-			x := gridX + float64(c)*(cellW+cellGap)
+			x := snapMMToPixel(gridX+float64(c)*(cellSizeMM+cellGapMM), labelDPI)
 			mask.Primitives = append(mask.Primitives, ScenePrimitive{
 				Kind:       PrimitiveRect,
 				XMM:        x,
 				YMM:        y,
-				WidthMM:    cellW,
-				HeightMM:   cellH,
+				WidthMM:    cellSizeMM,
+				HeightMM:   cellSizeMM,
 				FillColor:  sceneBlack,
 				FillMode:   FillModeHatch,
 				FillStepMM: fillStep,
@@ -1429,6 +1455,37 @@ func ParseCalibrationLaserModes(v string, rows int) ([]string, error) {
 		return nil, fmt.Errorf("invalid calibration laser modes: got %d mode(s), want 1 or %d", len(out), rows)
 	}
 	return out, nil
+}
+
+func snapMMToPixel(mm, dpi float64) float64 {
+	if dpi <= 0 {
+		return mm
+	}
+	step := 25.4 / dpi
+	return math.Round(mm/step) * step
+}
+
+func fontSizeForCapHeightMM(targetCapMM, dpi float64) float64 {
+	if targetCapMM <= 0 {
+		return 1
+	}
+	pt := targetCapMM * 72.0 / 25.4
+	if pt <= 0 {
+		pt = 1
+	}
+	for i := 0; i < 6; i++ {
+		face := loadFace(pt, dpi)
+		got := capBaselineOffsetMM(face, dpi)
+		if got <= 0 {
+			break
+		}
+		pt *= targetCapMM / got
+		if pt <= 0 {
+			pt = 1
+			break
+		}
+	}
+	return pt
 }
 
 func minFloat(a, b float64) float64 {

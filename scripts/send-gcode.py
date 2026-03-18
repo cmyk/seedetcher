@@ -500,17 +500,37 @@ def preview_bounds_lines(lines: list[str], s_value: int, feed: float, margin: fl
 
 
 def load_lines(path: str, dry_run: bool = False) -> list[str]:
+    if os.path.isdir(path):
+        candidates = sorted(
+            glob.glob(os.path.join(path, "*.gcode"))
+            + glob.glob(os.path.join(path, "*.gc"))
+            + glob.glob(os.path.join(path, "*.nc"))
+        )
+        hint = ""
+        if candidates:
+            sample = ", ".join(os.path.basename(p) for p in candidates[:3])
+            if len(candidates) > 3:
+                sample += ", ..."
+            hint = f" Available files: {sample}"
+        raise ValueError(f"gcode path is a directory: {path}. Pass a file path instead.{hint}")
+    if not os.path.exists(path):
+        raise ValueError(f"gcode file does not exist: {path}")
+    if not os.path.isfile(path):
+        raise ValueError(f"gcode path is not a regular file: {path}")
     out: list[str] = []
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        for raw in f:
-            line = clean_gcode_line(raw)
-            if not line:
-                continue
-            if dry_run:
-                line = to_dry_run_line(line)
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            for raw in f:
+                line = clean_gcode_line(raw)
                 if not line:
                     continue
-            out.append(line)
+                if dry_run:
+                    line = to_dry_run_line(line)
+                    if not line:
+                        continue
+                out.append(line)
+    except OSError as e:
+        raise ValueError(f"cannot read gcode file '{path}': {e}") from e
     if dry_run:
         out.insert(0, "M5")
         out.append("M5")
@@ -541,8 +561,8 @@ def main() -> int:
     ap.add_argument("--home-only", action="store_true", help="connect, optionally unlock, home, then exit")
     ap.add_argument("--dry-run", action="store_true", help="force laser-off: rewrite M3/M4 to M5 and strip S words")
     ap.add_argument("--preview-bounds", action="store_true", help="send only a low-power perimeter preview of gcode XY bounds")
-    ap.add_argument("--preview-s", type=int, default=20, help="laser power for --preview-bounds (default 20)")
-    ap.add_argument("--preview-feed", type=float, default=600.0, help="feed rate for --preview-bounds trace (default 600)")
+    ap.add_argument("--preview-s", type=int, default=10, help="laser power for --preview-bounds (default 10)")
+    ap.add_argument("--preview-feed", type=float, default=1500.0, help="feed rate for --preview-bounds trace (default 1500)")
     ap.add_argument("--preview-margin", type=float, default=0.0, help="extra margin in mm around bounds for --preview-bounds")
     ap.add_argument("--offset", default="0,0", help="optional XY offset in mm applied at send time, format 'x,y' (for example '0,25')")
     ap.add_argument("--bed-mm", type=float, default=150.0, help="workspace max X/Y in mm for preflight bounds checks (set <=0 to disable)")
@@ -584,12 +604,16 @@ def main() -> int:
         if not args.gcode:
             print("ERROR: gcode file required unless --home-only or --cmd is set", file=sys.stderr)
             return 2
-        if args.preview_bounds:
-            source_lines = load_lines(args.gcode, dry_run=False)
-            lines = preview_bounds_lines(source_lines, args.preview_s, args.preview_feed, args.preview_margin, offset_x, offset_y)
-        else:
-            lines = load_lines(args.gcode, dry_run=args.dry_run)
-            lines = apply_offset(lines, offset_x, offset_y)
+        try:
+            if args.preview_bounds:
+                source_lines = load_lines(args.gcode, dry_run=False)
+                lines = preview_bounds_lines(source_lines, args.preview_s, args.preview_feed, args.preview_margin, offset_x, offset_y)
+            else:
+                lines = load_lines(args.gcode, dry_run=args.dry_run)
+                lines = apply_offset(lines, offset_x, offset_y)
+        except ValueError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
         if not lines:
             print("No G-code lines to send.", file=sys.stderr)
             return 2
@@ -665,14 +689,18 @@ def main() -> int:
             for i, cmd in enumerate(lines, start=1):
                 if watchdog is not None:
                     watchdog.pre_send(cmd)
+                cmd_timeout = args.line_timeout
+                is_preview_final_m5 = args.preview_bounds and i == total and cmd.strip().upper() == "M5"
+                if is_preview_final_m5:
+                    # Final preview M5 is queued after the entire perimeter motion.
+                    # Use a long timeout here instead of status-poll loops/resets.
+                    cmd_timeout = max(args.line_timeout, 120.0)
                 try:
-                    send_and_wait_ok(fd, cmd, args.line_timeout, watchdog=watchdog)
+                    send_and_wait_ok(fd, cmd, cmd_timeout, watchdog=watchdog)
                 except Exception as e:
-                    is_preview_final_m5 = args.preview_bounds and i == total and cmd.strip().upper() == "M5"
                     if is_preview_final_m5:
                         print(f"WARN: timed out waiting for final preview M5 ack: {e}", file=sys.stderr)
-                        best_effort_safe_stop(fd, args.line_timeout)
-                        print("Preview completed with non-fatal final M5 timeout.")
+                        print("Preview completed with non-fatal final M5 timeout (no forced reset in preview mode).")
                         return 0
                     if not args.dry_run:
                         best_effort_safe_stop(fd, args.line_timeout)

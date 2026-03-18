@@ -92,6 +92,14 @@
   - [ ] line-by-line send with `ok`/`error` ack handling
   - [ ] timeout and retry policy
   - [ ] alarm/reset handling (`?`, soft reset, unlock flow)
+- [ ] Pi sender implementation plan (production path):
+  - [ ] implement native Go sender package (`internal/serialsender`) and keep Python helper as fallback/debug tool
+  - [ ] support buffered streaming (bytes-in-flight planner window), not whole-file blast
+  - [ ] support realtime control channel (`?`, `!`, `~`, `Ctrl-X`) alongside queued G-code
+  - [ ] implement explicit job state machine (`idle/homing/running/paused/done/error`)
+  - [ ] motion-aware timeout policy (short normal lines, long long-motion/final preview `M5`)
+  - [ ] preflight before send: bounds check, spindle `S` min/max summary, optional preview-bounds frame
+  - [ ] run as single long-lived Pi service (systemd), expose local API to UI/CLI, prevent serial-port contention
 - [ ] Ensure transport is isolated from printer `/dev/usb/lp*` path.
 - [ ] Add a dry-run mode that writes G-code only (no device send).
 
