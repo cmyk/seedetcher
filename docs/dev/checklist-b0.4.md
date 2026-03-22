@@ -108,6 +108,11 @@
   - [ ] singlesig
   - [ ] multisig 2-of-3
   - [ ] multisig 3-of-5
+- [ ] Privacy-hardening execution plan for laser jobs:
+  - [ ] randomize engraving order of independent glyphs/words without changing final geometry
+  - [ ] randomize QR traversal order (modules/regions) without changing encoded content or readability
+  - [ ] keep actual stroke geometry deterministic; randomize scheduling/travel only
+  - [ ] document threat model and tradeoffs for side-channel leakage (acoustic/vibration/timing)
 - [ ] Physical validation on K1:
   - [ ] seed side readability (words + QR)
   - [ ] descriptor side readability
