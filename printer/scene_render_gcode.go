@@ -874,7 +874,7 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 				outlineLoops = in
 			}
 		}
-		fillInsetMM := e.cfg.FillInsetMM
+		fillInsetMM := e.effectiveFillInsetMM(p, fillMode)
 		if fillMode != FillModeNone && e.cfg.OutlineInsetMM > fillInsetMM {
 			fillInsetMM = e.cfg.OutlineInsetMM
 		}
@@ -888,7 +888,7 @@ func (e *gcodeEmitter) renderPrimitive(p ScenePrimitive) {
 		if !ok {
 			return
 		}
-		fillInsetMM := e.cfg.FillInsetMM
+		fillInsetMM := e.effectiveFillInsetMM(p, fillMode)
 		if fillMode != FillModeNone && e.cfg.OutlineInsetMM > fillInsetMM {
 			fillInsetMM = e.cfg.OutlineInsetMM
 		}
@@ -953,7 +953,7 @@ func (e *gcodeEmitter) textLoopsForRender(p ScenePrimitive, fillMode FillMode) (
 		}
 	}
 	fillLoops = loops
-	fillInsetMM := e.cfg.FillInsetMM
+	fillInsetMM := e.effectiveFillInsetMM(p, fillMode)
 	if fillMode != FillModeNone && e.cfg.OutlineInsetMM > fillInsetMM {
 		fillInsetMM = e.cfg.OutlineInsetMM
 	}
@@ -1251,6 +1251,15 @@ func (e *gcodeEmitter) shouldApplyFeatureShrink(p ScenePrimitive, fillMode FillM
 		return false
 	}
 	return true
+}
+
+func (e *gcodeEmitter) effectiveFillInsetMM(p ScenePrimitive, fillMode FillMode) float64 {
+	// Keep calibration text labels geometrically faithful: global fill inset is for
+	// shape edge tuning and should not thin calibration readout text.
+	if e.isCalibration && p.Kind == PrimitiveText && fillMode != FillModeNone {
+		return 0
+	}
+	return e.cfg.FillInsetMM
 }
 
 func (e *gcodeEmitter) shouldEmitOutline(p ScenePrimitive, fillMode FillMode) bool {

@@ -2,7 +2,7 @@
 """Minimal GRBL G-code sender with line-by-line handshake.
 
 Usage:
-  python3 scripts/send-gcode.py --port /dev/ttyUSB0 --baud 115200 file.gcode
+  python3 scripts/send-gcode.py --port /dev/ttyUSB0 --baud 460800 file.gcode
   python3 scripts/send-gcode.py --cmd '$$'
 """
 
@@ -26,6 +26,8 @@ BAUD_MAP = {
     57600: termios.B57600,
     115200: termios.B115200,
     230400: termios.B230400,
+    460800: termios.B460800,
+    921600: termios.B921600,
 }
 
 _RX_BUF = bytearray()
@@ -461,6 +463,49 @@ def bounds_out_of_workspace(min_x: float, min_y: float, max_x: float, max_y: flo
     return None
 
 
+def pick_prime_line(
+    min_x: float,
+    min_y: float,
+    max_x: float,
+    max_y: float,
+    bed_mm: float,
+    margin_mm: float,
+    length_mm: float,
+) -> tuple[float, float, float]:
+    if margin_mm < 0:
+        raise ValueError("--prime-margin-mm must be >= 0")
+    if length_mm <= 0:
+        raise ValueError("--prime-length-mm must be > 0")
+
+    y_above = max_y + margin_mm
+    y_below = min_y - margin_mm
+    if bed_mm > 0:
+        if y_above <= bed_mm:
+            y = y_above
+        elif y_below >= 0:
+            y = y_below
+        else:
+            raise ValueError("cannot place prime line outside job bounds within workspace")
+        span = min(length_mm, max(0.0, bed_mm))
+        x0 = max(0.0, min_x)
+        x1 = x0 + span
+        if x1 > bed_mm:
+            shift = x1 - bed_mm
+            x0 -= shift
+            x1 = bed_mm
+        if x0 < 0:
+            x1 -= x0
+            x0 = 0
+    else:
+        y = y_above
+        x0 = min_x
+        x1 = x0 + length_mm
+
+    if x1-x0 < 1.0:
+        raise ValueError("prime line span too short; increase --prime-length-mm")
+    return x0, y, x1
+
+
 def preview_bounds_lines(lines: list[str], s_value: int, feed: float, margin: float, dx: float, dy: float) -> list[str]:
     if s_value <= 0:
         raise ValueError("--preview-s must be > 0")
@@ -552,7 +597,7 @@ def main() -> int:
     ap.add_argument("gcode", nargs="?", help="path to .gcode file")
     ap.add_argument("--cmd", help="send a single GRBL/controller command and exit (for example '$#', '$$', '?')")
     ap.add_argument("--port", default=default_port, help="serial port, default: autodetect (/dev/ttyACM0, /dev/ttyUSB0)")
-    ap.add_argument("--baud", type=int, default=115200, help="serial baud (default 115200)")
+    ap.add_argument("--baud", type=int, default=460800, help="serial baud (default 460800)")
     ap.add_argument("--startup-wait", type=float, default=2.0, help="seconds to wait after wakeup")
     ap.add_argument("--line-timeout", type=float, default=10.0, help="timeout per line response")
     ap.add_argument("--unlock", action="store_true", help="send $X after wakeup")
@@ -564,6 +609,12 @@ def main() -> int:
     ap.add_argument("--preview-s", type=int, default=10, help="laser power for --preview-bounds (default 10)")
     ap.add_argument("--preview-feed", type=float, default=1500.0, help="feed rate for --preview-bounds trace (default 1500)")
     ap.add_argument("--preview-margin", type=float, default=0.0, help="extra margin in mm around bounds for --preview-bounds")
+    ap.add_argument("--prime-line", action="store_true", help="before job, burn one short warmup line outside job bounds")
+    ap.add_argument("--prime-s", type=int, default=200, help="laser power for --prime-line (default 200)")
+    ap.add_argument("--prime-feed", type=float, default=2100.0, help="feed for --prime-line (default 2100)")
+    ap.add_argument("--prime-margin-mm", type=float, default=10.0, help="distance outside job bounds for --prime-line (default 10)")
+    ap.add_argument("--prime-length-mm", type=float, default=50.0, help="burn length for --prime-line (default 50)")
+    ap.add_argument("--prime-cmd", default="M4", choices=("M3", "M4", "m3", "m4"), help="laser mode for --prime-line (default M4)")
     ap.add_argument("--offset", default="0,0", help="optional XY offset in mm applied at send time, format 'x,y' (for example '0,25')")
     ap.add_argument("--bed-mm", type=float, default=150.0, help="workspace max X/Y in mm for preflight bounds checks (set <=0 to disable)")
     ap.add_argument(
@@ -600,6 +651,7 @@ def main() -> int:
     do_home = args.home_only or args.home or (not args.no_home and args.gcode is not None)
 
     lines: list[str] = []
+    job_bounds: tuple[float, float, float, float] | None = None
     if not args.home_only and not args.cmd:
         if not args.gcode:
             print("ERROR: gcode file required unless --home-only or --cmd is set", file=sys.stderr)
@@ -619,6 +671,7 @@ def main() -> int:
             return 2
         try:
             min_x, min_y, max_x, max_y = parse_xy_bounds(lines)
+            job_bounds = (min_x, min_y, max_x, max_y)
             bounds_err = bounds_out_of_workspace(min_x, min_y, max_x, max_y, args.bed_mm)
             if bounds_err:
                 print(f"ERROR: {bounds_err}", file=sys.stderr)
@@ -670,6 +723,38 @@ def main() -> int:
             if saw_output:
                 return 0
             raise TimeoutError(f"timeout waiting for response to: {cmd}")
+
+        if args.prime_line:
+            if args.preview_bounds:
+                print("WARN: --prime-line ignored with --preview-bounds", file=sys.stderr)
+            elif args.dry_run:
+                print("WARN: --prime-line ignored with --dry-run", file=sys.stderr)
+            else:
+                if args.prime_s <= 0:
+                    print("ERROR: --prime-s must be > 0", file=sys.stderr)
+                    return 2
+                if args.prime_feed <= 0:
+                    print("ERROR: --prime-feed must be > 0", file=sys.stderr)
+                    return 2
+                if job_bounds is None:
+                    print("ERROR: --prime-line needs XY motion bounds in gcode", file=sys.stderr)
+                    return 2
+                px0, py, px1 = pick_prime_line(
+                    job_bounds[0], job_bounds[1], job_bounds[2], job_bounds[3],
+                    args.bed_mm, args.prime_margin_mm, args.prime_length_mm,
+                )
+                prime_cmd = args.prime_cmd.upper()
+                print(f"Prime line: {prime_cmd} S{args.prime_s} F{args.prime_feed:.1f} X[{px0:.3f}->{px1:.3f}] Y{py:.3f}")
+                for pcmd in (
+                    "M5",
+                    "G21",
+                    "G90",
+                    f"G0 X{px0:.3f} Y{py:.3f}",
+                    f"{prime_cmd} S{args.prime_s}",
+                    f"G1 F{args.prime_feed:.1f} X{px1:.3f} Y{py:.3f}",
+                    "M5",
+                ):
+                    send_and_wait_ok(fd, pcmd, args.line_timeout)
 
         total = len(lines)
         print(f"Sending {total} lines...")

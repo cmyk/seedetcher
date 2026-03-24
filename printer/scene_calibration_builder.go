@@ -415,6 +415,24 @@ func (b LaserCalibrationBuilder) buildLineWidthTileScene() (PlateScene, error) {
 		FeedMMMin:   annotationFeed,
 	})
 
+	mode := strings.ToUpper(strings.TrimSpace(b.TileLaserMode))
+	if mode != "M3" && mode != "M4" {
+		mode = "M4"
+	}
+	title := strings.TrimSpace(b.Title)
+	if title == "" {
+		title = fmt.Sprintf("Line-Width Test S%d (%s)", b.TilePowerS, mode)
+	}
+	titlePt := maxFloat(4.8, sizeMM*0.16)
+	titleY := marginMM + titlePt*25.4/72.0
+	titleText := newSceneText(marginMM, titleY, title, titlePt, 0.0, TextDirHorizontal, TextAnchorBaselineLeft)
+	titleText.FillMode = FillModeHatch
+	titleText.NoOutline = true
+	titleText.FillStepMM = 0.10
+	titleText.PowerS = annotationPower
+	titleText.FeedMMMin = annotationFeed
+	mask.Primitives = append(mask.Primitives, titleText)
+
 	feeds := append([]float64(nil), b.Feeds...)
 	if len(feeds) == 0 {
 		base := b.TileFeedMMMin
@@ -453,6 +471,7 @@ func (b LaserCalibrationBuilder) buildLineWidthTileScene() (PlateScene, error) {
 	labelX := (marginMM + lineStartX) / 2
 	lineEndX := sizeMM - marginMM
 	topY := maxFloat(3.2, sizeMM*0.13)
+	topY = maxFloat(topY, titleY+titlePt*25.4/72.0+0.8)
 	bottomY := sizeMM - maxFloat(2.8, sizeMM*0.11)
 	stepY := 0.0
 	if len(feeds) > 1 {
@@ -474,7 +493,9 @@ func (b LaserCalibrationBuilder) buildLineWidthTileScene() (PlateScene, error) {
 		mask.Primitives = append(mask.Primitives, line)
 
 		label := newSceneText(labelX, y, fmt.Sprintf("%.0f", feeds[i]), labelPt, 0.01, TextDirHorizontal, TextAnchorCenter)
-		label.FillMode = FillModeNone
+		label.FillMode = FillModeHatch
+		label.NoOutline = true
+		label.FillStepMM = 0.10
 		label.PowerS = annotationPower
 		label.FeedMMMin = annotationFeed
 		mask.Primitives = append(mask.Primitives, label)
@@ -705,10 +726,12 @@ func (b LaserCalibrationBuilder) buildPowerFeedTileScene() (PlateScene, error) {
 			maxRowLabelW = w
 		}
 	}
+	const labelFillStep = 0.10
 	applyRasterLabelStyle := func(p *ScenePrimitive) {
 		p.FillMode = FillModeHatch
 		p.NoOutline = true
-		p.FillStepMM = fillStep
+		// Keep calibration labels raster-only but coarser than tile fills for speed/readability.
+		p.FillStepMM = labelFillStep
 		p.PowerS = annotationPower
 		p.FeedMMMin = annotationFeed
 	}

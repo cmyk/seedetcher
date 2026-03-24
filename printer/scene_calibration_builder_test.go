@@ -395,8 +395,8 @@ func TestLaserCalibrationBuilderBuildsLineWidthTile(t *testing.T) {
 	if lineCount != 9 {
 		t.Fatalf("expected 9 calibration lines, got %d", lineCount)
 	}
-	if labelCount != 9 {
-		t.Fatalf("expected 9 labels, got %d", labelCount)
+	if labelCount != 10 {
+		t.Fatalf("expected 10 labels (9 rows + title), got %d", labelCount)
 	}
 	if centeredLabelCount != 9 {
 		t.Fatalf("expected 9 center-anchored labels, got %d", centeredLabelCount)
